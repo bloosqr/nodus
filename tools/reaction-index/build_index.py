@@ -2,7 +2,9 @@
 
 Per reaction:
   * exact key      — unmapped, canonical, order-independent (sorted reactants > sorted products), hashed
-  * retro template — RDChiral reaction-center SMARTS, where the source is atom-mapped
+  * retro template — reaction-center SMARTS, where the source is atom-mapped: RDChiral for reactions at
+                     or below --template-threshold atoms, the fast centre extractor above (per-row
+                     rdchiral/fast provenance is recorded)
   * reaction DRFP  — differential reaction fingerprint for similarity search
   * product key    — canonical product, for a product -> reactions reverse map
 
@@ -11,14 +13,14 @@ Progress prints every few seconds and mirrors to <out>/progress.json.
 
 Artifacts (in --out):
   exact.tsv.zst          "<hash>\t<count>\t<sample ids>"
-  templates.tsv.zst      "<count>\t<sample ids>\t<retro_smarts>"
+  templates.tsv.zst      "<count>\t<rdchiral>\t<fast>\t<sample ids>\t<retro_smarts>"
   products.tsv.zst       "<product_key>\t<count>\t<sample reaction hashes>"
   reactions.faiss.zst    faiss binary HNSW over reaction DRFPs (Hamming)
   reaction-keys.txt.zst  row -> exact hash, aligned with the faiss index
   manifest.json          source revision, licence, counts, sizes, sha256
 """
 
-import argparse, contextlib, glob, hashlib, io, json, os, re, sys, time
+import argparse, atexit, contextlib, glob, hashlib, io, json, os, re, sys, time
 from collections import Counter, defaultdict
 
 import multiprocessing as mp
@@ -44,30 +46,33 @@ DRFP_BYTES = DRFP_BITS // 8
 
 _PARTS_DIR = None
 _TEMPLATE_THRESHOLD = 150  # <= this many atoms: RDChiral; above: the fast centre extractor
-_FAST = None
 
 
 def _strip_and_canon(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return None
+        return None, 0
+    n = mol.GetNumAtoms()
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
-    return Chem.MolToSmiles(mol)
+    return Chem.MolToSmiles(mol), n
 
 
-def _side_key(side):
+def _side_key_atoms(side):
+    """Canonical key and heavy-atom count of one side, parsing each fragment once."""
     cans = []
+    atoms = 0
     for frag in side.split('.'):
         if not frag:
             continue
-        c = _strip_and_canon(frag)
+        c, n = _strip_and_canon(frag)
         if c is None:
-            return None
+            return None, atoms
+        atoms += n
         if c in ('[H]', '[H+]'):
             continue
         cans.append(c)
-    return '.'.join(sorted(cans)) if cans else None
+    return ('.'.join(sorted(cans)) if cans else None), atoms
 
 
 def _split_cxsmiles(cx):
@@ -138,30 +143,35 @@ def _template(reactants, agents, products, rid):
     return (out or {}).get('reaction_smarts') or None
 
 
-def _atoms(side):
-    m = Chem.MolFromSmiles(side)
-    return m.GetNumAtoms() if m else 0
-
-
-def _template_for(reactants, agents, products, rid, force_fast=False):
+def _template_for(reactants, agents, products, rid, n_atoms, force_fast=False):
     """RDChiral for small/moderate reactions, the fast centre extractor above the threshold.
-    `force_fast` (used by the watchdog retry) bypasses RDChiral entirely.
+    `n_atoms` (reactant+product heavy atoms) is computed during the canonicalisation pass so we
+    never parse the sides twice. `force_fast` (used by the watchdog retry) bypasses RDChiral.
     Returns (template_or_None, 'rdchiral'|'fast')."""
-    if not force_fast and _atoms(reactants) + _atoms(products) <= _TEMPLATE_THRESHOLD:
+    if not force_fast and n_atoms <= _TEMPLATE_THRESHOLD:
         return _template(reactants, agents, products, rid), 'rdchiral'
     from template_fast import extract_template
     return extract_template(reactants, products), 'fast'
 
 
+def part_name(path, group):
+    return hashlib.sha1(f'{path}::{group}'.encode()).hexdigest()[:24]
+
+
 def _part_path(path, group):
-    key = hashlib.sha1(f'{path}::{group}'.encode()).hexdigest()[:24]
-    return os.path.join(_PARTS_DIR, f'{key}.json')
+    return os.path.join(_PARTS_DIR, f'{part_name(path, group)}.json')
 
 
 def init_worker(parts_dir, threshold):
     global _PARTS_DIR, _TEMPLATE_THRESHOLD
     _PARTS_DIR = parts_dir
     _TEMPLATE_THRESHOLD = threshold
+    # A worker the watchdog terminates mid-result prints a BrokenPipeError traceback; that is
+    # expected, so send worker stderr to /dev/null to keep the run's log readable.
+    try:
+        sys.stderr = open(os.devnull, 'w')
+    except Exception:
+        pass
 
 
 def process_row_group(args):
@@ -172,6 +182,7 @@ def process_row_group(args):
         return ('skip', path, group)
     started = time.time()
     exact, templates = Counter(), Counter()
+    templates_rdchiral, templates_fast = Counter(), Counter()
     exact_samples, template_samples = defaultdict(list), defaultdict(list)
     fast_templates = rdchiral_templates = 0
     # representative canonical reaction "r>>p" and product key per exact hash, for later fingerprints
@@ -185,8 +196,8 @@ def process_row_group(args):
         if not parsed:
             continue
         reactants, agents, products_s, mapped = parsed
-        r_key = _side_key(reactants)
-        p_key = _side_key(products_s)
+        r_key, r_atoms = _side_key_atoms(reactants)
+        p_key, p_atoms = _side_key_atoms(products_s)
         if not r_key or not p_key:
             continue
         key = hashlib.sha1(f'{r_key}>>{p_key}'.encode()).hexdigest()[:32]
@@ -203,16 +214,18 @@ def process_row_group(args):
             if len(entry['k']) < SAMPLE_KEYS_PER_PRODUCT and key not in entry['k']:
                 entry['k'].append(key)
         if mapped:
-            t, who = _template_for(reactants, agents, products_s, rid, force_fast)
+            t, who = _template_for(reactants, agents, products_s, rid, r_atoms + p_atoms, force_fast)
             if who == 'fast':
                 fast_templates += 1
             else:
                 rdchiral_templates += 1
             if t:
                 templates[t] += 1
+                (templates_fast if who == 'fast' else templates_rdchiral)[t] += 1
                 if len(template_samples[t]) < SAMPLE_PER_TEMPLATE:
                     template_samples[t].append(rid)
     payload = {'reactions': n, 'exact': dict(exact), 'templates': dict(templates),
+               'templatesRdchiral': dict(templates_rdchiral), 'templatesFast': dict(templates_fast),
                'exactSamples': dict(exact_samples), 'templateSamples': dict(template_samples),
                'reactionMeta': reaction_meta, 'products': products,
                'fastTemplates': fast_templates, 'rdchiralTemplates': rdchiral_templates,
@@ -256,14 +269,27 @@ def main():
     ap.add_argument('--root', default='/Users/avijit/Code/NodusResearch/ord-data')
     ap.add_argument('--out', required=True)
     ap.add_argument('--files', nargs='*')
-    ap.add_argument('--workers', type=int, default=max(1, (os.cpu_count() or 4) - 1))
+    ap.add_argument('--workers', type=int, default=max(1, (os.cpu_count() or 4) - 2),
+                    help='worker processes (default leaves two logical CPUs free so the machine stays usable; '
+                         'override with --workers N)')
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--interval', type=float, default=5.0)
     ap.add_argument('--no-fp', action='store_true', help='skip the DRFP/faiss step (exact+templates+products only)')
+    ap.add_argument('--reuse-fp', action='store_true',
+                    help='skip the DRFP/faiss computation and re-record the existing reactions.faiss.zst and '
+                         'reaction-keys.txt.zst. Exact keys are deterministic, so re-merging over the same '
+                         'checkpoints leaves the similarity index valid; use after re-extracting a few parts')
     ap.add_argument('--template-threshold', type=int, default=150,
                     help='<= this many atoms: RDChiral; above: the fast centre extractor (no cap on data)')
-    ap.add_argument('--task-timeout', type=float, default=90.0,
-                    help='seconds without progress before the watchdog requeues a stuck group with the fast extractor')
+    ap.add_argument('--task-timeout', type=float, default=1800.0,
+                    help='seconds a group may run before the watchdog requeues it with the fast extractor. '
+                         'Deliberately generous (30 min): a merely slow-but-finishing group keeps RDChiral '
+                         'quality, and only a genuine hang reaches the swap. Use --force-fast for datasets '
+                         'known to hang so they never wait for the timeout at all.')
+    ap.add_argument('--force-fast', nargs='*', default=[],
+                    help='filename substrings whose row groups skip RDChiral and use the fast centre extractor '
+                         '(for datasets with pathological RDChiral inputs, e.g. e7830cd6). Matching existing '
+                         'checkpoints are discarded so the file is rebuilt uniformly fast.')
     ap.add_argument('--fresh', action='store_true', help='delete existing checkpoints and rebuild from scratch')
     ap.add_argument('--revision', default='93475c46949f9218e1dfb6624096025135db2add')
     args = ap.parse_args()
@@ -274,6 +300,19 @@ def main():
         shutil.rmtree(parts_dir)
     os.makedirs(parts_dir, exist_ok=True)
     progress_path = os.path.join(args.out, 'progress.json')
+
+    # A pid file so progress.py can tell a live build from a finished one.
+    pid_path = os.path.join(args.out, 'build.pid')
+    with open(pid_path, 'w') as fh:
+        fh.write(str(os.getpid()))
+
+    def _clear_pid():
+        try:
+            os.remove(pid_path)
+        except OSError:
+            pass
+
+    atexit.register(_clear_pid)
 
     tasks = list_tasks(args.root, args.files, args.limit)
     total_tasks = len(tasks)
@@ -296,75 +335,111 @@ def main():
         print(f"  [{done}/{total_tasks}] {rate:.1f} grp/s elapsed {elapsed/60:.1f}m ETA {eta/60:.1f}m"
               f"{'  DONE' if final else ''}", flush=True)
 
-    # Batched scan with a watchdog: a batch that makes no progress within `task_timeout` means
-    # a worker is stuck inside RDChiral (a C++ call a signal cannot interrupt). We terminate the
-    # pool, requeue the unfinished groups once forcing the fast centre extractor, and continue.
-    # Nothing is dropped: worst case a group is templated by the fast extractor.
-    tasks = [(p, g, False) for (p, g) in tasks]
-    batch_size = max(args.workers, args.workers * 2)
+    # Sliding-window scan with a watchdog. The pool is kept continuously busy (no batch barrier,
+    # so a single slow task can't stall the others). Each in-flight task is timestamped: if one
+    # has run longer than `task_timeout` — a worker stuck inside RDChiral, a C++ call a signal
+    # cannot interrupt — the pool is terminated, that group is requeued once forcing the fast
+    # centre extractor, and the run continues. Nothing is dropped.
+    fast_sub = tuple(args.force_fast)
+    tasks = [(p, g, any(s in p for s in fast_sub)) for (p, g) in tasks]
+    if fast_sub:
+        removed = 0
+        for (p, g, ff) in tasks:
+            if ff:
+                pf = os.path.join(parts_dir, f'{part_name(p, g)}.json')
+                if os.path.exists(pf):
+                    os.remove(pf)
+                    removed += 1
+        print(f'force-fast {args.force_fast}: {sum(1 for t in tasks if t[2])} groups, '
+              f'{removed} checkpoints discarded', flush=True)
     remaining = list(tasks)
     requeued = set()
     forced_fast = 0
     timed_out = 0
+    window = args.workers + 2
 
     def new_pool():
         return mp.Pool(args.workers, initializer=init_worker, initargs=(parts_dir, args.template_threshold))
 
     pool = new_pool()
+    inflight = {}  # AsyncResult -> [task, submit_time]
     try:
-        while remaining:
-            batch = remaining[:batch_size]
-            remaining = remaining[batch_size:]
-            results = [pool.apply_async(process_row_group, (t,)) for t in batch]
-            start = time.time()
-            finished = set()
-            while len(finished) < len(batch) and time.time() - start < args.task_timeout:
-                for i, r in enumerate(results):
-                    if i not in finished and r.ready():
-                        try:
-                            if r.get()[0] == 'skip':
-                                skipped += 1
-                        except Exception as e:
-                            print(f'  task error {batch[i][:2]}: {e}', flush=True)
-                        finished.add(i)
-                        done += 1
-                if len(finished) < len(batch):
-                    if time.time() - last >= args.interval:
-                        last = time.time()
-                        report()
-                    time.sleep(0.1)
-            hung = [i for i in range(len(batch)) if i not in finished]
-            if hung:
+        while remaining or inflight:
+            while remaining and len(inflight) < window:
+                t = remaining.pop(0)
+                inflight[pool.apply_async(process_row_group, (t,))] = [t, time.time()]
+            progressed = False
+            for ar in list(inflight):
+                if ar.ready():
+                    t = inflight.pop(ar)[0]
+                    try:
+                        if ar.get()[0] == 'skip':
+                            skipped += 1
+                    except Exception as e:
+                        print(f'  task error {t[:2]}: {e}', flush=True)
+                    done += 1
+                    progressed = True
+            now = time.time()
+            stuck = [ar for ar, (t, st) in inflight.items() if now - st > args.task_timeout]
+            if stuck:
+                # Killing the pool aborts every in-flight result, so requeue them all — dropping the
+                # non-stuck ones would silently lose their row groups. The one(s) that actually hit the
+                # timeout are downgraded to the fast extractor; the rest keep their previous mode.
+                inflight_tasks = [inflight[ar][0] for ar in list(inflight)]
+                stuck_keys = {(inflight[ar][0][0], inflight[ar][0][1]) for ar in stuck}
                 pool.terminate()
                 pool.join()
                 pool = new_pool()
-                for i in hung:
-                    key = (batch[i][0], batch[i][1])
-                    print(f'  WATCHDOG: group {key} stuck >{args.task_timeout}s', flush=True)
-                    if key in requeued:
-                        timed_out += 1
-                        done += 1
+                inflight.clear()
+                for t in inflight_tasks:
+                    key = (t[0], t[1])
+                    if key in stuck_keys:
+                        print(f'  WATCHDOG: group {key} stuck >{args.task_timeout}s', flush=True)
+                        if key in requeued:
+                            timed_out += 1
+                            done += 1
+                        else:
+                            requeued.add(key)
+                            forced_fast += 1
+                            remaining.insert(0, (key[0], key[1], True))
                     else:
-                        requeued.add(key)
-                        forced_fast += 1
-                        remaining.insert(0, (key[0], key[1], True))
-            report(final=(done == total_tasks))
+                        remaining.insert(0, (t[0], t[1], t[2]))
+                progressed = True
+            if time.time() - last >= args.interval:
+                last = time.time()
+                report(final=(not remaining and not inflight))
+            if not progressed:
+                time.sleep(0.05)
     finally:
         pool.terminate()
         pool.join()
 
     print(f'scan done: forced-fast retries={forced_fast} timed-out-and-skipped={timed_out}', flush=True)
+    expected = {part_name(p, g) for (p, g, _) in tasks}
+    present = {os.path.basename(f)[:-5] for f in glob.glob(os.path.join(parts_dir, '*.json'))}
+    missing = expected - present
+    if missing:
+        print(f'WARNING: {len(missing)}/{len(expected)} groups have no checkpoint '
+              f'(e.g. {sorted(missing)[:5]}); the index is INCOMPLETE', flush=True)
+    else:
+        print(f'completeness OK: {len(present)}/{len(expected)} checkpoints', flush=True)
     print('merging checkpoints...', flush=True)
     exact, templates = Counter(), Counter()
+    templates_r, templates_f = Counter(), Counter()
     exact_samples, template_samples = {}, {}
     reaction_meta, products = {}, {}
     fast_templates = rdchiral_templates = forced_fast_parts = 0
     for part in sorted(glob.glob(os.path.join(parts_dir, '*.json'))):
         with open(part) as fh:
             p = json.load(fh)
+        if 'templatesRdchiral' not in p or 'templatesFast' not in p:
+            raise SystemExit(f'checkpoint {os.path.basename(part)} predates per-template provenance; '
+                             f'delete it and re-run so its row group is re-extracted')
         forced_fast_parts += p.get('forcedFast', 0)
         exact.update(p['exact'])
         templates.update(p['templates'])
+        templates_r.update(p['templatesRdchiral'])
+        templates_f.update(p['templatesFast'])
         fast_templates += p.get('fastTemplates', 0)
         rdchiral_templates += p.get('rdchiralTemplates', 0)
         for k, v in p['exactSamples'].items():
@@ -382,7 +457,7 @@ def main():
             else:
                 e['n'] += v['n']
                 for key in v['k']:
-                    if len(e['k']) < SAMPLE_KEYS_PER_PRODUCT:
+                    if key not in e['k'] and len(e['k']) < SAMPLE_KEYS_PER_PRODUCT:
                         e['k'].append(key)
     print(f'merged: {len(exact)} exact keys, {len(templates)} templates, {len(products)} products', flush=True)
 
@@ -397,7 +472,8 @@ def main():
     write_zst(os.path.join(args.out, 'exact.tsv.zst'),
               '\n'.join(f'{k}\t{exact[k]}\t{",".join(exact_samples.get(k, []))}' for k in sorted(exact)))
     write_zst(os.path.join(args.out, 'templates.tsv.zst'),
-              '\n'.join(f'{templates[t]}\t{",".join(template_samples.get(t, []))}\t{t}' for t in sorted(templates)))
+              '\n'.join(f'{templates[t]}\t{templates_r.get(t, 0)}\t{templates_f.get(t, 0)}\t'
+                        f'{",".join(template_samples.get(t, []))}\t{t}' for t in sorted(templates)))
     write_zst(os.path.join(args.out, 'products.tsv.zst'),
               '\n'.join(f'{k}\t{products[k]["n"]}\t{",".join(products[k]["k"])}' for k in sorted(products)))
 
@@ -416,7 +492,14 @@ def main():
     for name in ('exact.tsv.zst', 'templates.tsv.zst', 'products.tsv.zst'):
         record(name, os.path.join(args.out, name))
 
-    if not args.no_fp:
+    if args.reuse_fp:
+        for name in ('reactions.faiss.zst', 'reaction-keys.txt.zst'):
+            path = os.path.join(args.out, name)
+            if not os.path.exists(path):
+                raise SystemExit(f'--reuse-fp: {name} not found in {args.out}')
+            record(name, path)
+        print(f'reusing existing faiss index ({files_meta["reactions.faiss.zst"]["bytes"]} bytes)', flush=True)
+    elif not args.no_fp:
         print('computing reaction fingerprints (DRFP)...', flush=True)
         items = sorted((k, reaction_meta[k][0]) for k in reaction_meta)
         chunk = max(1, len(items) // (args.workers * 4))
@@ -449,7 +532,8 @@ def main():
 
     manifest = {
         'format': 'nodus.reaction-index',
-        'version': 1,
+        'version': 2,
+        'templatesColumns': ['count', 'rdchiral', 'fast', 'sampleIds', 'smarts'],
         'source': 'open-reaction-database/ord-data',
         'revision': args.revision,
         'licence': 'CC-BY-SA-4.0',
