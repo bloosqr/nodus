@@ -12,10 +12,12 @@ import {
   findStepNamedSpecies,
   findStepProse,
   formatNamedRouteFixPrompts,
+  formatReactionPrecedents,
   formatRouteAudit,
   formatStructureAudit,
   formatUnresolvedNameClarification,
   normalizeMoleculeDossier,
+  normalizeReactionPrecedent,
   normalizeRouteAudit,
   parseNameFeedback,
   parseRouteReview,
@@ -24,6 +26,7 @@ import {
   type MoleculeDossier,
   type NamedSpecies,
   type NameFeedbackEntry,
+  type ReactionPrecedent,
   type ResolvedSpecies,
   type RouteAudit,
   type RouteStepAudit,
@@ -33,6 +36,7 @@ import {
 } from '@shared/moleculeInspection';
 import { capabilityRegistry, pinCapabilitiesForTurn, type CapabilityProvider } from '../capabilities/registry';
 import { createTrustedCapabilityRunner } from '../capabilities/runner';
+import { reactionIndexService } from '../reactionIndex';
 import { completeText } from './aiClient';
 import type { ViewDocumentV1 } from '../../packages/capability-api/src/views';
 
@@ -42,6 +46,7 @@ const CHEMISTRY_CAPABILITY = 'nodus:chemistry';
 const INSPECT_TOOL = 'inspect';
 const ROUTE_TOOL = 'verify-route';
 const COMPILE_TOOL = 'compile';
+const KNOWN_REACTIONS_TOOL = 'known-reactions';
 const MAX_BATCH = 24;
 /** Each step is a full validated compile. The route checker refuses a plan with more than
  *  sixteen steps, so every step it accepted fits; keep the cap aligned so a long route never
@@ -147,6 +152,11 @@ export function routeVerificationAvailable(): boolean {
   return routeProvider() !== null;
 }
 
+function knownReactionsProvider() {
+  const provider = capabilityRegistry().providers.get(CHEMISTRY_CAPABILITY);
+  return provider && provider.tools.some((tool) => tool.id === KNOWN_REACTIONS_TOOL) ? provider : null;
+}
+
 /** A runner lease for one phase. A caller-supplied shared runner is reused and this lease
  *  owns nothing; otherwise it owns a fresh runner and disposing stops it. Sharing opens the
  *  capability worker once per turn, so its reference cache serves the resolve pass and the
@@ -187,6 +197,32 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'route-audit');
   return artifact ? normalizeRouteAudit(artifact.data) : null;
+}
+
+/** Looks the route's reactions and target up in the local Open Reaction Database index, when
+ *  the package exposes the tool and the index has been downloaded and verified. Best-effort:
+ *  an absent index, an older package or a tool failure all return null and change nothing. */
+async function lookupReactionPrecedent(runner: Runner, steps: string[], options: InspectOptions): Promise<ReactionPrecedent | null> {
+  const provider = knownReactionsProvider();
+  if (!provider) return null;
+  const indexDir = await reactionIndexService().localDirectory();
+  if (!indexDir) return null;
+  try {
+    const result = await runner.invoke({
+      provider,
+      toolId: KNOWN_REACTIONS_TOOL,
+      input: {
+        indexDir,
+        reactions: steps.slice(0, 32),
+        products: options.target ? [options.target] : [],
+        similar: steps.slice(0, 16),
+      },
+    });
+    const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-precedent');
+    return artifact ? normalizeReactionPrecedent(artifact.data) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function verifyRouteSteps(steps: string[], options: InspectOptions, racemic?: boolean): Promise<RouteAudit | null> {
@@ -579,6 +615,9 @@ export async function appendRouteReportAndDrawings(
   try {
     const audit = await invokeRoute(runner, provider, steps, racemic, options.target, labels);
     if (!audit) return finalAnswer;
+    // The index lookup runs alongside the review and the drawings; it is skipped entirely
+    // when the package has no such tool or the index has not been downloaded.
+    const precedentPromise = lookupReactionPrecedent(runner, steps, options);
     // One model review looks for plan problems the checker cannot see (prose vs names, a
     // product that is a different compound, a step that cannot work, a redundant step). It is
     // blocking: a finding marks the route not verified. An unreadable reply never blocks. It
@@ -591,10 +630,12 @@ export async function appendRouteReportAndDrawings(
     if (options.onDeterministic) options.onDeterministic(`${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit, labels, null)}\n${drawings}`);
     const review = await reviewPromise;
     const report = formatRouteAudit(audit, labels, review);
+    const precedent = await precedentPromise;
+    const precedentText = precedent ? formatReactionPrecedents(precedent) : '';
     // A refusal the checker can name and the app cannot fix is offered back to the model as one
     // click: names and roles only — the model never authored the derived SMILES.
     const fix = formatNamedRouteFixPrompts(labels, audit, review);
-    return `${finalAnswer.trimEnd()}\n\n${report}\n${drawings}${fix ? `\n${fix}\n` : ''}`;
+    return `${finalAnswer.trimEnd()}\n\n${report}\n${drawings}${precedentText}${fix ? `\n${fix}\n` : ''}`;
   } catch {
     return finalAnswer;
   } finally {

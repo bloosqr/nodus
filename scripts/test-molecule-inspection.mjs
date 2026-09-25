@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, normalizeReactionPrecedent, formatReactionPrecedents } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -830,4 +830,25 @@ test('a route with no species lists offers a one-click prompt to add them', () =
   assert.match(payload.prompt, /Reactants:/);
   assert.match(payload.prompt, /systematic IUPAC name/);
   assert.ok(splitChatVisuals(fence).some((part) => part.kind === 'route-fix'), 'the interface can render it');
+});
+
+test('reaction precedent is normalized defensively and formats its counts', () => {
+  const precedent = normalizeReactionPrecedent({
+    reactions: [{ input: 'a>>b', key: 'k', count: 3 }, { input: '', count: 1 }, 'junk'],
+    products: [{ input: 'b', count: 5, keys: ['k1', 'k2'] }],
+    similar: [{ input: 'a>>b', neighbors: [{ key: 'k1', distance: 4, count: 2 }, { count: 1 }] }],
+  });
+  assert.ok(precedent);
+  assert.equal(precedent.reactions.length, 1, 'an empty input is dropped');
+  assert.equal(precedent.reactions[0].count, 3);
+  assert.equal(precedent.products[0].count, 5);
+  assert.equal(precedent.similar[0].neighbors.length, 1, 'a neighbor without a key is dropped');
+  const text = formatReactionPrecedents(precedent);
+  assert.match(text, /Known reactions \(Open Reaction Database\)/);
+  assert.match(text, /3 exact precedent\(s\) for `a>>b`/);
+  assert.match(text, /Product `b`: 5 recorded route\(s\) to it\./);
+  assert.match(text, /Similar to `a>>b`: 1 nearest known reaction\(s\), 1 with recorded precedent\./);
+
+  assert.equal(normalizeReactionPrecedent({}), null, 'an empty payload is not a precedent');
+  assert.equal(normalizeReactionPrecedent({ reactions: [] }), null, 'nor is a payload with nothing usable');
 });
