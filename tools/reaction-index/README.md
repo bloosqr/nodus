@@ -17,8 +17,15 @@ app consumes the built artifact through the `nodus:reactions` native capability 
 | `exact.tsv.zst` | exact precedent: canonical unmapped reaction hash → count + sample ids |
 | `templates.tsv.zst` | retro reaction-center SMARTS → `count`, per-extractor `rdchiral`/`fast` counts, sample ids |
 | `products.tsv.zst` | product → reactions that make it (reverse map) |
-| `reactions.faiss.zst` + `reaction-keys.txt.zst` | DRFP similarity search (binary HNSW, Hamming) |
-| `manifest.json` | source revision, licence, counts, sizes, sha256, template provenance tallies |
+| `reactions.faiss.zst` + `reaction-keys.txt.zst` | DRFP similarity search (exact binary flat index, Hamming) |
+| `reaction-smiles.tsv.zst` | exact hash → one representative `reactants>>products`, so a matched or similar reaction can be named and drawn |
+| `manifest.json` | format 3: source revision, licence, counts, sizes, sha256, template provenance tallies, fingerprint index kind |
+
+Reactions whose DRFP is empty — salt formations, recrystallisations, hydrates, where nothing changes
+structurally — keep their exact and product entries but are left out of the similarity index: ~4,900
+identical empty vectors were swamping nearest-neighbour results. The index is exact rather than HNSW:
+HNSW recall on these sparse, heavily duplicated fingerprints was poor (a reaction's own vector was often
+not returned), while a flat Hamming search is ~6 ms per query at this size.
 
 ## Template extraction (hybrid)
 Templates come only from atom-mapped sources (ORD `REACTION_CXSMILES`, type 6). Two extractors
@@ -47,6 +54,8 @@ Useful flags:
 - `--reuse-fp` — re-merge over the same checkpoints but re-record the existing faiss artifacts
   (exact keys are deterministic, so the similarity index stays valid); avoids the costly DRFP pass.
 - `--fresh` — delete checkpoints and rebuild from scratch.
+- Note: `--force-fast` always discards that dataset's checkpoints so it is rebuilt uniformly — leave it
+  off a `--reuse-fp` re-merge unless you mean to re-extract those row groups.
 - `--limit N` — first N row groups (smoke test).
 
 Checkpointed: each row group is written to `index/parts/` as it finishes, so a re-run skips

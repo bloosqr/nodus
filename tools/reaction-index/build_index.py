@@ -15,8 +15,17 @@ Artifacts (in --out):
   exact.tsv.zst          "<hash>\t<count>\t<sample ids>"
   templates.tsv.zst      "<count>\t<rdchiral>\t<fast>\t<sample ids>\t<retro_smarts>"
   products.tsv.zst       "<product_key>\t<count>\t<sample reaction hashes>"
-  reactions.faiss.zst    faiss binary HNSW over reaction DRFPs (Hamming)
+  reactions.faiss.zst    faiss binary flat (exact) index over reaction DRFPs (Hamming)
   reaction-keys.txt.zst  row -> exact hash, aligned with the faiss index
+  reaction-smiles.tsv.zst "<hash>\t<canonical reactants>><canonical products>" (one representative
+                         per exact hash, so a looked-up or similar reaction can be drawn)
+
+Reactions whose DRFP is empty (salt formations, recrystallisations, hydrates: no structural change
+between the sides) keep their exact/product entries but are left out of the similarity index. An
+empty vector is equidistant to every query of the same popcount, and ~5k identical ones swamp the
+nearest-neighbour results. The index is exact rather than HNSW: HNSW recall on these sparse,
+heavily duplicated fingerprints was poor (a reaction's own vector was often not returned), while
+brute-force Hamming search is ~6 ms per query at this size.
   manifest.json          source revision, licence, counts, sizes, sha256
 """
 
@@ -476,6 +485,8 @@ def main():
                         f'{",".join(template_samples.get(t, []))}\t{t}' for t in sorted(templates)))
     write_zst(os.path.join(args.out, 'products.tsv.zst'),
               '\n'.join(f'{k}\t{products[k]["n"]}\t{",".join(products[k]["k"])}' for k in sorted(products)))
+    write_zst(os.path.join(args.out, 'reaction-smiles.tsv.zst'),
+              '\n'.join(f'{k}\t{reaction_meta[k][0]}' for k in sorted(reaction_meta)))
 
     files_meta = {}
 
@@ -489,9 +500,10 @@ def main():
                 h.update(chunk)
         return h.hexdigest()
 
-    for name in ('exact.tsv.zst', 'templates.tsv.zst', 'products.tsv.zst'):
+    for name in ('exact.tsv.zst', 'templates.tsv.zst', 'products.tsv.zst', 'reaction-smiles.tsv.zst'):
         record(name, os.path.join(args.out, name))
 
+    fp_vectors = empty_fps = None
     if args.reuse_fp:
         for name in ('reactions.faiss.zst', 'reaction-keys.txt.zst'):
             path = os.path.join(args.out, name)
@@ -515,12 +527,16 @@ def main():
                     os.replace(progress_path + '.tmp', progress_path)
                     print(f'  fp batches {i+1}/{len(batches)}', flush=True)
         fps = {k: b for part in results for k, b in part}
-        keys = [k for k, _ in items]
+        empty = bytes(DRFP_BYTES)
+        empty_fps = sum(1 for k, _ in items if fps[k] == empty)
+        keys = [k for k, _ in items if fps[k] != empty]
+        fp_vectors = len(keys)
         import numpy as np
         import faiss
         matrix = np.frombuffer(b''.join(fps[k] for k in keys), dtype=np.uint8).reshape(len(keys), DRFP_BYTES)
-        index = faiss.IndexBinaryHNSW(DRFP_BITS, 32)
+        index = faiss.IndexBinaryFlat(DRFP_BITS)
         index.add(matrix)
+        print(f'faiss index: {empty_fps} reactions with an empty fingerprint left out', flush=True)
         fp_path = os.path.join(args.out, 'reactions.faiss.zst')
         with open(fp_path, 'wb') as fh:
             with cctx.stream_writer(fh) as w:
@@ -532,13 +548,14 @@ def main():
 
     manifest = {
         'format': 'nodus.reaction-index',
-        'version': 2,
+        'version': 3,
         'templatesColumns': ['count', 'rdchiral', 'fast', 'sampleIds', 'smarts'],
         'source': 'open-reaction-database/ord-data',
         'revision': args.revision,
         'licence': 'CC-BY-SA-4.0',
         'citation': 'Kearnes et al., JACS 2021, doi:10.1021/jacs.1c09820',
-        'fingerprint': {'kind': 'drfp', 'bits': DRFP_BITS, 'space': 'hamming'},
+        'fingerprint': {'kind': 'drfp', 'bits': DRFP_BITS, 'space': 'hamming', 'index': 'flat',
+                        'vectors': fp_vectors, 'emptyExcluded': empty_fps},
         'templateExtractor': {'thresholdAtoms': args.template_threshold,
                               'rdchiral': rdchiral_templates, 'fast': fast_templates,
                               'watchdogForcedFast': forced_fast, 'watchdogSkipped': timed_out,
