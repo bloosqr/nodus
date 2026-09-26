@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -664,6 +664,30 @@ test('reaction lines are derived from resolved species, never the model', () => 
   assert.deepEqual(buildRouteSteps([[{ role: 'product', byproduct: false, name: 'x', status: 'unresolved' }]]), ['']);
 });
 
+test('precedent queries leave byproducts out, as the Open Reaction Database records the main product', () => {
+  const labels = [
+    [
+      { role: 'reactant', byproduct: false, name: 'salicylic acid', smiles: 'O=C(O)c1ccccc1O' },
+      { role: 'reactant', byproduct: false, name: 'acetic anhydride', smiles: 'CC(=O)OC(C)=O' },
+      { role: 'agent', byproduct: false, name: 'sulfuric acid', smiles: 'OS(=O)(=O)O' },
+      { role: 'product', byproduct: false, name: 'aspirin', smiles: 'CC(=O)Oc1ccccc1C(=O)O' },
+      { role: 'product', byproduct: true, name: 'acetic acid', smiles: 'CC(=O)O' },
+    ],
+    // Every product marked a byproduct: keep them rather than lose the step.
+    [
+      { role: 'reactant', byproduct: false, name: 'a', smiles: 'CCO' },
+      { role: 'product', byproduct: true, name: 'b', smiles: 'CC=O' },
+    ],
+  ];
+  assert.deepEqual(buildPrecedentQueries(labels), [
+    { step: 0, query: 'O=C(O)c1ccccc1O.CC(=O)OC(C)=O>OS(=O)(=O)O>CC(=O)Oc1ccccc1C(=O)O' },
+    { step: 1, query: 'CCO>>CC=O' },
+  ]);
+  // An unusable step is left out without renumbering the steps after it.
+  const gap = [[{ role: 'product', byproduct: false, name: 'x', smiles: 'C' }], labels[1]];
+  assert.deepEqual(buildPrecedentQueries(gap), [{ step: 1, query: 'CCO>>CC=O' }]);
+});
+
 test('an ion shared by two salts is written once per side so the balance is unique', () => {
   const sulfate = 'S(=O)(=O)([O-])[O-]';
   const resolved = [[
@@ -882,6 +906,115 @@ test('a route with no species lists offers a one-click prompt to add them', () =
   assert.ok(splitChatVisuals(fence).some((part) => part.kind === 'route-fix'), 'the interface can render it');
 });
 
+const ORD_A = 'ord-72c311ce8dea41689de4d74d72468e40';
+const ORD_B = 'ord-67c6c6df753946089bb72c3d48ece67a';
+
+test('reaction precedent is normalized defensively', () => {
+  const precedent = normalizeReactionPrecedent({
+    reactions: [
+      { input: 'a>>b', key: 'k', count: 3, samples: [ORD_A, 'not-an-id', ORD_B], reaction: 'CC(=O)OC(C)=O.O=C(O)c1ccccc1O>>CC(=O)Oc1ccccc1C(=O)O' },
+      { input: '', count: 1 }, 'junk',
+      { input: 'c>>d', count: 1, form: 'rm -rf', reaction: 'rm -rf / >> x' },
+    ],
+    products: [{ input: 'b', count: 5, keys: ['k1', 'k2'] }],
+    similar: [{ input: 'a>>b', neighbors: [
+      { key: 'k1', distance: 4, count: 2, similarity: 0.82, reaction: 'CO>>C=O', svg: '<svg xmlns="http://www.w3.org/2000/svg"/>' },
+      { count: 1 },
+      { key: 'k2', distance: 9, count: 1, similarity: 7 },
+    ] }],
+  });
+  assert.ok(precedent);
+  assert.equal(precedent.reactions.length, 2, 'an empty input and a non-object are dropped');
+  assert.deepEqual(precedent.reactions[0].samples, [ORD_A, ORD_B], 'only Open Reaction Database ids survive');
+  assert.equal(precedent.reactions[0].reaction, 'CC(=O)OC(C)=O.O=C(O)c1ccccc1O>>CC(=O)Oc1ccccc1C(=O)O');
+  assert.equal(precedent.reactions[1].form, undefined, 'an unknown form is dropped');
+  assert.equal(precedent.reactions[1].reaction, undefined, 'a reaction that is not SMILES is dropped');
+  assert.equal(precedent.products[0].count, 5);
+  assert.equal(precedent.similar[0].neighbors.length, 2, 'a neighbor without a key is dropped');
+  assert.equal(precedent.similar[0].neighbors[0].similarity, 0.82);
+  assert.equal(precedent.similar[0].neighbors[1].similarity, undefined, 'a similarity outside 0..1 is dropped');
+  assert.ok(precedent.similar[0].neighbors[0].svg.startsWith('<svg'), 'a drawing is kept with its reaction');
+  const oddSvg = normalizeReactionPrecedent({ similar: [{ input: 'a>>b', neighbors: [
+    { key: 'k', distance: 1, count: 1, reaction: 'CO>>C=O', svg: '<script>alert(1)</script>' },
+    { key: 'k', distance: 1, count: 1, svg: '<svg/>' },
+  ] }] });
+  assert.equal(oddSvg.similar[0].neighbors[0].svg, undefined, 'a drawing that is not an svg is dropped');
+  assert.equal(oddSvg.similar[0].neighbors[1].svg, undefined, 'nor is a drawing without the reaction it shows');
+
+  assert.equal(normalizeReactionPrecedent({}), null, 'an empty payload is not a precedent');
+  assert.equal(normalizeReactionPrecedent({ reactions: [] }), null, 'nor is a payload with nothing usable');
+});
+
+test('similarity reads as a plain-language band', () => {
+  assert.equal(similarityBand(1), 'same bond changes, on different molecules');
+  assert.equal(similarityBand(0.998), 'same transformation, different substrate');
+  assert.equal(similarityBand(0.7), 'same transformation, different substrate');
+  assert.equal(similarityBand(0.69), 'shares some of the bond changes');
+  assert.equal(similarityBand(0.4), 'shares some of the bond changes');
+  assert.equal(similarityBand(0.39), 'loosely related');
+});
+
+test('only a step without an exact match gets its closest known reaction drawn', () => {
+  const drawn = { key: 'b', distance: 4, count: 1, reaction: 'CO>>C=O', svg: '<svg/>' };
+  const near = { input: 'x', neighbors: [{ key: 'a', distance: 3, count: 1, reaction: 'CC>>C=C' }, drawn] };
+  assert.equal(precedentDrawingFor({ input: 'x', count: 2, reaction: 'CCO>>CC=O' }, near), null, 'an exact match is the step itself');
+  assert.equal(precedentDrawingFor({ input: 'x', count: 0 }, near), drawn, 'the neighbour the package drew');
+  assert.equal(precedentDrawingFor({ input: 'x', count: 0 }, undefined), null);
+});
+
+test('the precedent section is titled by route step, names the target and explains similarity', () => {
+  const labels = [
+    [
+      { role: 'reactant', byproduct: false, name: 'phenol', smiles: 'Oc1ccccc1' },
+      { role: 'reactant', byproduct: false, name: 'carbon dioxide', smiles: 'O=C=O' },
+      { role: 'product', byproduct: false, name: '2-hydroxybenzoic acid', smiles: 'O=C(O)c1ccccc1O' },
+    ],
+    [
+      { role: 'reactant', byproduct: false, name: '2-hydroxybenzoic acid', smiles: 'O=C(O)c1ccccc1O' },
+      { role: 'reactant', byproduct: false, name: 'acetic anhydride', smiles: 'CC(=O)OC(C)=O' },
+      { role: 'agent', byproduct: false, name: 'sulfuric acid', smiles: 'OS(=O)(=O)O' },
+      { role: 'product', byproduct: false, name: '2-acetoxybenzoic acid', smiles: 'CC(=O)Oc1ccccc1C(=O)O' },
+      { role: 'product', byproduct: true, name: 'acetic acid', smiles: 'CC(=O)O' },
+    ],
+    [
+      { role: 'reactant', byproduct: false, name: '2-acetoxybenzoic acid', smiles: 'CC(=O)Oc1ccccc1C(=O)O' },
+      { role: 'product', byproduct: false, name: '2-acetoxybenzoic acid', smiles: 'CC(=O)Oc1ccccc1C(=O)O' },
+    ],
+  ];
+  const queries = buildPrecedentQueries(labels);
+  const precedent = normalizeReactionPrecedent({
+    reactions: [
+      { input: queries[0].query, count: 0 },
+      { input: queries[1].query, count: 4, samples: [ORD_A, ORD_B], reaction: 'CC(=O)OC(C)=O.O=C(O)c1ccccc1O>>CC(=O)Oc1ccccc1C(=O)O' },
+      { input: queries[2].query, count: 0, unchanged: true },
+    ],
+    products: [{ input: 'CC(=O)Oc1ccccc1C(=O)O', count: 23 }],
+    similar: [
+      { input: queries[0].query, neighbors: [{ key: 'n', distance: 12, count: 1, similarity: 0.625, reaction: 'CO>>C=O' }] },
+      { input: queries[1].query, neighbors: [{ key: 'm', distance: 0, count: 4, similarity: 1 }] },
+      { input: queries[2].query, neighbors: [], unchanged: true },
+    ],
+  });
+  const text = formatReactionPrecedents(precedent, {
+    queries, labels,
+    target: { smiles: 'CC(=O)Oc1ccccc1C(=O)O', name: '2-acetoxybenzoic acid' },
+    drawings: new Map([[0, '<drawing of step 1 neighbour>']]),
+  });
+  assert.match(text, /Target: \*\*2-acetoxybenzoic acid\*\* — `CC\(=O\)Oc1ccccc1C\(=O\)O` · 23 recorded route\(s\) to it in the database\./);
+  assert.match(text, /\*\*Step 1\*\* — phenol \+ carbon dioxide → 2-hydroxybenzoic acid\n`Oc1ccccc1\.O=C=O>>O=C\(O\)c1ccccc1O`/);
+  assert.match(text, /No exact precedent\. Closest known reaction: 63% similar — shares some of the bond changes\./);
+  assert.match(text, /\n\*\*Step 2\*\* — 2-hydroxybenzoic acid \+ acetic anhydride → 2-acetoxybenzoic acid \(sulfuric acid\)\n/, 'agents shown, the acetic acid byproduct left out');
+  assert.match(text, new RegExp(`✔ Exact match — 4 recorded precedent\\(s\\): \`${ORD_A}\`, \`${ORD_B}\`\\.`));
+  assert.match(text, /_The closest known reaction, as recorded in the database \(species as listed, not a balanced equation\):_\n\n<drawing of step 1 neighbour>/);
+  assert.match(text, /\*\*Step 3\*\* — [^\n]*\n`[^`]+`\n- Changes no structure \(a purification or salt step\), so it is not looked up\./);
+  assert.match(text, /_Similarity compares which bonds and groups change in a reaction/);
+
+  // Without a context the steps are numbered in query order and nothing is named.
+  const bare = formatReactionPrecedents(normalizeReactionPrecedent({ reactions: [{ input: 'CCO>>CC=O', count: 2 }] }));
+  assert.match(bare, /\*\*Step 1\*\*\n`CCO>>CC=O`\n- ✔ Exact match — 2 recorded precedent\(s\)\./);
+  assert.ok(!bare.includes('_Similarity compares'), 'no footnote when no similarity is shown');
+});
+
 test('replayed history keeps the app route reports for the latest answer only', () => {
   const answer = [
     '## Route', 'Step 1 prose.', '',
@@ -924,6 +1057,8 @@ test('an inorganic co-product listed as a Product becomes a byproduct, and the e
   assert.equal(classified.find((entry) => entry.name === 'water').byproduct, false, 'an agent is untouched');
   // Balancing reads roles only: the equation handed to the checker is byte-identical.
   assert.deepEqual(buildRouteSteps([classified]), buildRouteSteps([step]));
+  // The looked-up reaction drops it with the other byproducts.
+  assert.equal(buildPrecedentQueries([classified])[0].query, '[Na+].[O-]c1ccccc1.O=C=O.Cl>O>O=C(O)c1ccccc1O');
   // A step whose only product is inorganic keeps it: there is nothing else to call the product.
   const inorganic = [{ role: 'reactant', byproduct: false, name: 'x', smiles: 'CCO' }, { role: 'product', byproduct: false, name: 'water', smiles: 'O' }];
   assert.equal(classifyCoProducts(inorganic)[1].byproduct, false);
