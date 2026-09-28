@@ -35,8 +35,9 @@
 //   ... --allow-running                                       # --apply even with Nodus open
 //
 // --apply refuses while Nodus is running: the app's own writers (a scan's purge, the
-// Documentary Index queue) would race these repairs. Everything is one transaction per
-// vault, so a failure changes nothing.
+// Documentary Index queue) would race these repairs. It first writes a snapshot backup
+// next to the vault (<vault>.before-library-repair-<time>); everything is then one
+// transaction per vault, so a failure changes nothing.
 //
 // Exit code: 0 nothing left to repair, 1 repairable rows remain (dry run) or the
 // post-repair audit still finds errors, 2 no vault found / refused.
@@ -415,6 +416,12 @@ for (const vault of vaults) {
     continue;
   }
 
+  // A consistent snapshot next to the vault before the first write; restore by copying it back.
+  const backup = `${vault.path}.before-library-repair-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const source = new Database(vault.path, { readonly: true, fileMustExist: true });
+  await source.backup(backup);
+  source.close();
+  console.log(`  backup: ${backup}`);
   printRepair(repairVault(vault.path));
   if (runAudit(vault.path) !== 0) exitCode = 1;
 }
