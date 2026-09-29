@@ -1,0 +1,285 @@
+#!/usr/bin/env node
+// Sequentially processes a fixed list of books — full analysis (light → deep) for the
+// ones that have never been scanned at all, then a Documentary Index scan for every
+// book on the list — ONE AT A TIME. Never starts a new step until the previous one
+// has reached a terminal state (done or failed), so the DeepSeek API only ever sees
+// one book's worth of work in flight, matching what a person would do if they clicked
+// through these one by one instead of using "Process library" on all of them at once.
+//
+// Also avoids STARTING a new step during DeepSeek's peak pricing window (01:00-04:00
+// and 06:00-10:00 UTC, Monday-Friday — https://api-docs.deepseek.com/quick_start/pricing,
+// checked 2026-09-27) — off-peak is half price and is the overwhelming majority of the
+// week (all weekends, Chinese holidays, and most of each weekday). Work already running
+// when a peak window begins is left to finish naturally; nothing gets interrupted mid-
+// flight — that's exactly the "shutdown" collateral damage investigated earlier this
+// session, and this script exists partly to avoid repeating it.
+//
+// Keeps ONE Electron instance open for the ENTIRE run. Closing it between books would
+// pause/interrupt whatever's mid-flight, the same problem found earlier — so unlike
+// scripts/repair-analysis-drift.mjs (which opens briefly, does one bounded thing, and
+// closes), this script launches once and stays open until every book on the list has
+// reached a terminal state, using the same Playwright (`_electron`) technique for the
+// same reason (real settings, real safeStorage-encrypted API key).
+//
+// Usage:
+//   node scripts/scan-book-queue.mjs           # run the fixed BOOKS list below
+//   node scripts/scan-book-queue.mjs --dry-run # print the plan, launch nothing
+//
+// Safe to leave running unattended for many hours. Prints one line per state
+// transition; safe to tail.
+
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+
+if (!process.argv.includes('--electron-scan-book-queue')) {
+  const result = spawnSync(
+    path.join(repoRoot, 'node_modules/.bin/electron'),
+    [path.join(repoRoot, 'scripts/scan-book-queue.mjs'), '--electron-scan-book-queue', ...process.argv.slice(2)],
+    { cwd: repoRoot, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'inherit' }
+  );
+  process.exit(result.status ?? 1);
+}
+
+const args = process.argv.slice(2).filter((a) => a !== '--electron-scan-book-queue');
+const dryRun = args.includes('--dry-run');
+
+// The 12 books from the checklist, plus the duplicate library entry found under
+// "Macrocycles in Drug Discovery" — flagged, not silently deduped; see the printed
+// plan and the final report.
+const BOOKS = [
+  // needsFullAnalysis: light_status and deep_status were both 'none' as of this
+  // writing — never scanned at all, not even light.
+  { nodusId: '2ad84c69-0adf-4c87-926e-46a4d235112b', title: 'Organic Chemistry 7e Ed', needsFullAnalysis: true },
+  { nodusId: 'cdd29cec-cefb-4b1d-981c-dc1f0521a14f', title: 'Macrocyclic and Supramolecular Chemistry', needsFullAnalysis: true },
+  { nodusId: 'eaafaa64-fa37-40b3-97d6-849cb8ab3aee', title: 'Macrocycles in Drug Discovery', needsFullAnalysis: true },
+  { nodusId: '1c7e5b1d-a721-4546-aaf0-7775ac3bfff3', title: 'Macrocycles in Drug Discovery─Learning from the Past for the Future', needsFullAnalysis: true, note: 'possible duplicate of the entry above — not merged, both included' },
+  { nodusId: '527508cb-c1c7-4009-9bb5-9710ad349c53', title: 'Bioactive Macrocycles from Nature', needsFullAnalysis: true },
+  { nodusId: '356ef718-a4fb-4dd3-af25-59d5fd63a74c', title: 'Rational Drug Design: Methods and Protocols', needsFullAnalysis: true },
+  // Already has passages; Documentary Index just never ran.
+  { nodusId: null, title: 'Peptide-Based Drug Design - Methods and Protocols', needsFullAnalysis: false },
+  { nodusId: null, title: 'Peptide Libraries: Methods and Protocols', needsFullAnalysis: false },
+  { nodusId: null, title: 'Therapeutic Peptides: Methods and Protocols', needsFullAnalysis: false },
+  { nodusId: null, title: 'Peptide Drug Discovery and Development Translational Research in Academia and Industry', needsFullAnalysis: false },
+  { nodusId: null, title: 'Peptide and protein delivery', needsFullAnalysis: false },
+  { nodusId: null, title: 'Oral delivery of therapeutic peptides and proteins', needsFullAnalysis: false },
+  { nodusId: null, title: 'Approaching the Next Inflection in Peptide Therapeutics: Attaining Cell Permeability and Oral Bioavailability', needsFullAnalysis: false },
+];
+
+// Weekday-only peak windows, in UTC hours [start, end).
+const PEAK_WINDOWS_UTC = [
+  [1, 4],
+  [6, 10],
+];
+
+// Don't START a new step (light/deep/Documentary Index) if doing so would leave
+// less than this much runway before the next peak window begins — a long step
+// (a big textbook's deep scan, say) starting near the edge of a gap can easily
+// run past it and finish the job at peak rates anyway. Anything ALREADY running
+// when a peak window arrives is left alone regardless — see the module comment.
+const PEAK_START_BUFFER_MINUTES = 60;
+
+function isPeakUtcAt(date) {
+  const day = date.getUTCDay(); // 0=Sun ... 6=Sat
+  if (day === 0 || day === 6) return false;
+  const hour = date.getUTCHours();
+  return PEAK_WINDOWS_UTC.some(([start, end]) => hour >= start && hour < end);
+}
+
+function isPeakUtcNow() {
+  return isPeakUtcAt(new Date());
+}
+
+// The UTC Date of the next moment a peak window begins, searching forward hour
+// by hour (peak windows are only ever weekday-and-hour gated, so this always
+// terminates well within a week).
+function nextPeakStart(from) {
+  const probe = new Date(from);
+  probe.setUTCMinutes(0, 0, 0);
+  for (let i = 0; i < 24 * 8; i++) {
+    probe.setUTCHours(probe.getUTCHours() + 1);
+    if (isPeakUtcAt(probe)) return probe;
+  }
+  throw new Error('nextPeakStart: no peak window found within 8 days — PEAK_WINDOWS_UTC probably misconfigured');
+}
+
+function minutesUntil(target, from) {
+  return (target.getTime() - from.getTime()) / 60_000;
+}
+
+// True when it's unsafe to START a new step right now: either we're already
+// inside a peak window, or the next one starts too soon to trust a step to
+// clear it before pricing changes underneath it.
+function shouldHoldOffStarting(now = new Date()) {
+  if (isPeakUtcAt(now)) return true;
+  return minutesUntil(nextPeakStart(now), now) <= PEAK_START_BUFFER_MINUTES;
+}
+
+function log(msg) {
+  console.log(`[${new Date().toISOString()}] ${msg}`);
+}
+
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForOffPeak() {
+  if (!shouldHoldOffStarting()) return;
+  const reason = isPeakUtcNow()
+    ? 'inside a DeepSeek peak-pricing window (weekday 01:00-04:00 or 06:00-10:00 UTC)'
+    : `within ${PEAK_START_BUFFER_MINUTES}m of the next peak window starting`;
+  log(`${reason} — holding off starting anything new until it safely passes...`);
+  while (shouldHoldOffStarting()) {
+    await sleep(5 * 60_000);
+  }
+  log('clear of the peak window (and its lead-in buffer) — resuming.');
+}
+
+function resolveNodusId(db, book) {
+  if (book.nodusId) return book.nodusId;
+  const row = db.prepare('SELECT nodus_id FROM works WHERE title = ?').get(book.title);
+  if (!row) throw new Error(`work not found by exact title: ${book.title}`);
+  return row.nodus_id;
+}
+
+function statusOf(db, nodusId) {
+  const w = db.prepare('SELECT light_status, deep_status FROM works WHERE nodus_id = ?').get(nodusId);
+  const p = db.prepare("SELECT status FROM document_profile_state WHERE nodus_id = ?").get(nodusId);
+  return { light: w?.light_status, deep: w?.deep_status, profile: p?.status ?? 'never scanned' };
+}
+
+// Polls a status accessor until it returns a terminal value or the timeout elapses.
+// terminalValues are checked with strict equality; returns the terminal value seen,
+// or throws on timeout.
+async function pollUntil(db, label, get, terminalValues, { pollMs = 60_000, timeoutMs = 6 * 60 * 60_000 } = {}) {
+  const start = Date.now();
+  let lastLogged = null;
+  for (;;) {
+    const value = get(db);
+    if (value !== lastLogged) {
+      log(`  ${label}: ${value}`);
+      lastLogged = value;
+    }
+    if (terminalValues.includes(value)) return value;
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`${label} did not reach a terminal state within ${(timeoutMs / 3_600_000).toFixed(1)}h (stuck at "${value}")`);
+    }
+    await sleep(pollMs);
+  }
+}
+
+async function main() {
+  const Database = require('better-sqlite3');
+  const os = require('node:os');
+  const dbPath = path.join(os.homedir(), 'Library', 'Application Support', 'Nodus', 'nodus.sqlite');
+
+  console.log('=== Plan ===');
+  for (const book of BOOKS) {
+    console.log(`  ${book.needsFullAnalysis ? '[light+deep+DocIndex]' : '[DocIndex only]'} ${book.title}${book.note ? `  (${book.note})` : ''}`);
+  }
+  if (dryRun) {
+    console.log('\n--dry-run: not launching anything.');
+    return;
+  }
+
+  const { _electron: electron } = require(path.join(repoRoot, 'node_modules/playwright-core/index.js'));
+  const env = { ...process.env, NODUS_DISABLE_AUTO_UPDATE: '1' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  log('launching Nodus (one instance, kept open for the whole run)...');
+  const electronApp = await electron.launch({
+    executablePath: require(path.join(repoRoot, 'node_modules/electron')),
+    args: [repoRoot],
+    cwd: repoRoot,
+    env,
+    timeout: 10 * 60_000,
+  });
+  const results = [];
+  try {
+    const page = await electronApp.firstWindow({ timeout: 10 * 60_000 });
+    page.on('console', (msg) => console.log(`  [renderer:${msg.type()}] ${msg.text()}`));
+    page.on('pageerror', (err) => console.log('  [renderer:pageerror]', err.message));
+    page.setDefaultTimeout(30 * 60_000);
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForFunction(() => Boolean(document.getElementById('root')?.children.length));
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('Escape').catch(() => {});
+      const closeButton = page.locator('button[aria-label="Close" i], button[aria-label="Cerrar" i], [role="dialog"] button:has-text("×")').first();
+      if (await closeButton.isVisible().catch(() => false)) await closeButton.click().catch(() => {});
+      await page.waitForTimeout(500);
+    }
+
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      for (const book of BOOKS) {
+        const nodusId = resolveNodusId(db, book);
+        log(`=== ${book.title} ===`);
+        const before = statusOf(db, nodusId);
+        log(`  starting state: light=${before.light} deep=${before.deep} profile=${before.profile}`);
+
+        if (book.needsFullAnalysis) {
+          if (before.light !== 'done') {
+            await waitForOffPeak();
+            log('  enqueueing light scan...');
+            await page.evaluate((id) => window.nodus.rescan(id, 'light', null), nodusId);
+            await pollUntil(db, 'light_status', (d) => d.prepare('SELECT light_status FROM works WHERE nodus_id=?').get(nodusId).light_status, ['done', 'failed']);
+          }
+          if (before.deep !== 'done') {
+            await waitForOffPeak();
+            log('  enqueueing deep (ideas) scan...');
+            await page.evaluate((id) => window.nodus.rescan(id, 'deep', null), nodusId);
+            await pollUntil(db, 'deep_status', (d) => d.prepare('SELECT deep_status FROM works WHERE nodus_id=?').get(nodusId).deep_status, ['done', 'failed']);
+          }
+        }
+
+        const midState = statusOf(db, nodusId);
+        if (midState.deep === 'failed' || (book.needsFullAnalysis && midState.light === 'failed')) {
+          log('  full analysis failed — skipping Documentary Index for this book, moving on.');
+          results.push({ ...book, outcome: 'analysis_failed' });
+          continue;
+        }
+
+        if (before.profile === 'current') {
+          // Already current as of the start-of-loop snapshot — a restart re-entering
+          // this book (e.g. after a crash) must not re-run a finished Documentary
+          // Index pass. Re-check live rather than trust the snapshot, since light/deep
+          // may have just been (re)done above and could have flipped profile stale.
+          const liveProfile = statusOf(db, nodusId).profile;
+          if (liveProfile === 'current') {
+            log('  Documentary Index already current — skipping.');
+            results.push({ ...book, outcome: 'current' });
+            continue;
+          }
+        }
+
+        await waitForOffPeak();
+        log('  enqueueing Documentary Index scan...');
+        await page.evaluate((id) => window.nodus.enqueueDocumentProfile(id), nodusId);
+        const finalProfileStatus = await pollUntil(
+          db,
+          'document_profile_state',
+          (d) => (d.prepare('SELECT status FROM document_profile_state WHERE nodus_id=?').get(nodusId) ?? { status: 'unknown' }).status,
+          ['current', 'failed']
+        );
+        results.push({ ...book, outcome: finalProfileStatus });
+        log(`  done: ${finalProfileStatus}`);
+      }
+    } finally {
+      db.close();
+    }
+  } finally {
+    log('closing Nodus...');
+    await electronApp.close();
+  }
+
+  console.log('\n=== Final report ===');
+  for (const r of results) console.log(`  ${r.outcome === 'current' ? 'OK' : 'FAILED'.padEnd(2)}  ${r.title}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
