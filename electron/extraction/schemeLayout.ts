@@ -40,14 +40,33 @@ function size(item: LayoutItem): number {
   return Math.round(Math.abs(Number(item.transform[3])) || Number(item.height) || 0);
 }
 
-/** Characters per type size on a page; summed over sample pages it gives a book's body size. */
+/** Characters of prose per type size on a page: lines of six or more words, by their main
+ *  size. Summed over sample pages it gives a book's body size. */
 export function typeSizeWeights(items: LayoutItem[], into = new Map<number, number>()): Map<number, number> {
-  for (const item of items) if (item.str.trim()) into.set(size(item), (into.get(size(item)) ?? 0) + item.str.length);
+  const lines: Array<{ y: number; items: LayoutItem[] }> = [];
+  for (const item of items) {
+    if (!item.str.trim()) continue;
+    const y = item.transform[5];
+    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= Math.max(2, size(item) * 0.3));
+    if (line) line.items.push(item); else lines.push({ y, items: [item] });
+  }
+  for (const line of lines) {
+    const str = line.items.map((item) => item.str).join(' ');
+    if ((str.match(WORD) ?? []).length < 6) continue;
+    const bySize = new Map<number, number>();
+    for (const item of line.items) bySize.set(size(item), (bySize.get(size(item)) ?? 0) + item.str.length);
+    const main = [...bySize].sort((a, b) => b[1] - a[1])[0][0];
+    into.set(main, (into.get(main) ?? 0) + str.length);
+  }
   return into;
 }
 
+/** The body size: the largest size carrying at least 30% as much prose as the most used one.
+ *  Headings carry little prose; a book whose references or problems outweigh its body text
+ *  (in smaller type) still gets its body size. */
 export function bodySizeOf(weights: Map<number, number>): number {
-  return [...weights].sort((a, b) => b[1] - a[1])[0]?.[0] || 0;
+  const top = Math.max(0, ...weights.values());
+  return Math.max(0, ...[...weights].filter(([, weight]) => weight >= top * 0.3).map(([size]) => size));
 }
 
 /** `bodyHint` is the book's body size: a page that is mostly a table or a scheme has more small
