@@ -52,6 +52,10 @@ const dryRun = args.includes('--dry-run');
 // (their text is extracted without reaction schemes); `rescan` redoes light and deep analysis
 // even when done, as a book whose text changed needs.
 const planAt = args.indexOf('--plan');
+// --since <ISO>: resume a rescan campaign; a book whose deep scan finished after this time is
+// not rescanned again (its passages and Documentary Index are still completed if needed).
+const sinceAt = args.indexOf('--since');
+const CAMPAIGN_SINCE = sinceAt >= 0 ? args[sinceAt + 1] : null;
 const PLAN = planAt >= 0 ? JSON.parse(require('node:fs').readFileSync(args[planAt + 1], 'utf8')) : null;
 
 // The 12 books from the checklist, plus the duplicate library entry found under
@@ -81,9 +85,22 @@ const PEAK_WINDOWS_UTC = [
 // when a peak window arrives is left alone regardless — see the module comment.
 const PEAK_START_BUFFER_MINUTES = 60;
 
+// Chinese public holidays are off-peak all day (DeepSeek pricing page). Dates are Beijing
+// calendar days (UTC+8). NODUS_OFFPEAK_DATES="2026-10-01..2026-10-07,2027-02-16" replaces the
+// built-in list, which holds only holidays confirmed from the user's DeepSeek calendar.
+const HOLIDAYS_BEIJING = (process.env.NODUS_OFFPEAK_DATES ?? '2026-10-01..2026-10-07')
+  .split(',').map((entry) => entry.trim()).filter(Boolean)
+  .map((entry) => { const [from, to = from] = entry.split('..'); return [from, to]; });
+
+function beijingDate(date) {
+  return new Date(date.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+}
+
 function isPeakUtcAt(date) {
   const day = date.getUTCDay(); // 0=Sun ... 6=Sat
   if (day === 0 || day === 6) return false;
+  const local = beijingDate(date);
+  if (HOLIDAYS_BEIJING.some(([from, to]) => local >= from && local <= to)) return false;
   const hour = date.getUTCHours();
   return PEAK_WINDOWS_UTC.some(([start, end]) => hour >= start && hour < end);
 }
@@ -297,8 +314,11 @@ async function main() {
         log(`  starting state: light=${before.light} deep=${before.deep} profile=${before.profile}`);
 
         let since = '';
-        if (book.needsFullAnalysis || book.rescan) {
-          if (before.light !== 'done' || book.rescan) {
+        const deepAt = db.prepare('SELECT deep_at FROM works WHERE nodus_id=?').get(nodusId)?.deep_at ?? '';
+        const redo = book.rescan && !(CAMPAIGN_SINCE && deepAt >= CAMPAIGN_SINCE);
+        if (book.rescan && !redo) log(`  already rescanned in this campaign (deep ${deepAt}) — not redoing light/deep`);
+        if (book.needsFullAnalysis || redo) {
+          if (before.light !== 'done' || redo) {
             await waitForOffPeak();
             log('  enqueueing light scan...');
             since = new Date().toISOString();
@@ -306,7 +326,7 @@ async function main() {
             await pollUntil(db, 'light_status', (d) => finishedSince(d, nodusId, 'light', since), ['done', 'failed']);
           }
           report({ step: 1 });
-          if (before.deep !== 'done' || book.rescan) {
+          if (before.deep !== 'done' || redo) {
             await waitForOffPeak();
             log('  enqueueing deep (ideas) scan...');
             since = new Date().toISOString();
@@ -323,7 +343,7 @@ async function main() {
           continue;
         }
 
-        if (before.profile === 'current' && !book.rescan) {
+        if (before.profile === 'current' && !redo) {
           // Already current as of the start-of-loop snapshot — a restart re-entering
           // this book (e.g. after a crash) must not re-run a finished Documentary
           // Index pass. Re-check live rather than trust the snapshot, since light/deep
