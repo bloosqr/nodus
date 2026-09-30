@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pageSchemeLayout, type LayoutItem } from './schemeLayout';
+import { SCHEME_PLACEHOLDER } from '@shared/schemeText';
 
 // Single place to load the pdfjs legacy build (no DOM) and open a document.
 // pdfjs is an ESM-only package; dynamic import keeps it external to the main bundle.
@@ -43,9 +44,10 @@ export async function pageText(page: any): Promise<string> {
   return (await pageTextWithSchemes(page, false)).text;
 }
 
-/** The page text, and with `layout` the lines of it that are reaction schemes, figure labels
- *  or tables (see schemeLayout.ts). The text is exactly what pageText returns. */
-export async function pageTextWithSchemes(page: any, layout = true, bodyHint?: number): Promise<{ text: string; schemeLines: string[]; marginLines: string[] }> {
+/** The page text, and with `layout` the lines of it that are reaction schemes, figure labels or
+ *  tables and the margin lines (see schemeLayout.ts). `text` is exactly what pageText returns;
+ *  `declutteredText` has each run of scheme lines as one "[scheme]" and no margin lines. */
+export async function pageTextWithSchemes(page: any, layout = true, bodyHint?: number): Promise<{ text: string; declutteredText: string; schemeLines: string[]; marginLines: string[] }> {
   const content = await page.getTextContent();
   const items = content.items as any[];
   const flags = layout ? pageSchemeLayout(items.filter(isLayoutItem), bodyHint) : null;
@@ -103,7 +105,14 @@ export async function pageTextWithSchemes(page: any, layout = true, bodyHint?: n
     }
   });
   const of = (wanted: 'scheme' | 'margin') => flags ? joined.filter((_, index) => joinedKind[index] === wanted) : [];
-  return { text: joined.join('\n').trim(), schemeLines: of('scheme'), marginLines: of('margin') };
+  const decluttered: string[] = [];
+  joined.forEach((current, index) => {
+    const kind = flags ? joinedKind[index] : null;
+    if (kind === 'margin') return;
+    if (kind === 'scheme') { if (decluttered.at(-1) !== SCHEME_PLACEHOLDER) decluttered.push(SCHEME_PLACEHOLDER); return; }
+    decluttered.push(current);
+  });
+  return { text: joined.join('\n').trim(), declutteredText: decluttered.join('\n').trim(), schemeLines: of('scheme'), marginLines: of('margin') };
 }
 
 function isLayoutItem(item: any): item is LayoutItem {

@@ -26,6 +26,9 @@ export interface PageSchemeLayout {
   margin: boolean[];
 }
 
+/** Names the classifier's rules; bumped when they change, so decluttered text is re-extracted. */
+export const SCHEME_LAYOUT_CLASSIFIER = 'layout-2';
+
 const WORD = /[A-Za-z][a-z]{2,}/g;
 const FOOTNOTE_START = /^\d{1,4}\s+\S/;
 const REFERENCE = /[A-Z]\.\s|\(\d{4}\)|\bsee\b/;

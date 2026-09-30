@@ -47,6 +47,12 @@ if (!process.argv.includes('--electron-scan-book-queue')) {
 
 const args = process.argv.slice(2).filter((a) => a !== '--electron-scan-book-queue');
 const dryRun = args.includes('--dry-run');
+// --plan <file.json>: [{ zoteroKey | nodusId | title, title, rescan?: true, declutter?: [pdf paths] }]
+// instead of the BOOKS below. `declutter` adds the PDFs to <userData>/scheme-declutter.json
+// (their text is extracted without reaction schemes); `rescan` redoes light and deep analysis
+// even when done, as a book whose text changed needs.
+const planAt = args.indexOf('--plan');
+const PLAN = planAt >= 0 ? JSON.parse(require('node:fs').readFileSync(args[planAt + 1], 'utf8')) : null;
 
 // The 12 books from the checklist, plus the duplicate library entry found under
 // "Macrocycles in Drug Discovery" — flagged, not silently deduped; see the printed
@@ -169,6 +175,13 @@ async function pollUntil(db, label, get, terminalValues, { pollMs = 60_000, time
   }
 }
 
+/** A scan's status once it finished after `since` (a rescan starts from "done"). */
+function finishedSince(db, nodusId, kind, since) {
+  const row = db.prepare(`SELECT ${kind}_status AS status, ${kind}_at AS at FROM works WHERE nodus_id=?`).get(nodusId);
+  if (row.status === 'done' && !(row.at && row.at > since)) return 'queued';
+  return row.status;
+}
+
 async function passageStatus(page, nodusId) {
   const [work] = await page.evaluate((id) => window.nodus.getWorkPassageStatuses([id]), nodusId);
   return work?.status ?? 'unknown';
@@ -186,14 +199,29 @@ async function ensurePassages(page, nodusId) {
   if (status !== 'complete') throw new Error(`passages did not complete (${status})`);
 }
 
+function addToDeclutterList(books) {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const files = books.flatMap((book) => book.declutter ?? []).map((file) => path.resolve(file));
+  if (!files.length) return;
+  for (const file of files) if (!fs.existsSync(file)) throw new Error(`declutter file not found: ${file}`);
+  const listPath = path.join(os.homedir(), 'Library', 'Application Support', 'Nodus', 'scheme-declutter.json');
+  const current = fs.existsSync(listPath) ? JSON.parse(fs.readFileSync(listPath, 'utf8')).files ?? [] : [];
+  const merged = [...new Set([...current, ...files])];
+  if (!dryRun) fs.writeFileSync(listPath, JSON.stringify({ files: merged }, null, 2));
+  log(`declutter list: ${merged.length} file(s)${dryRun ? ' (dry run, not written)' : ''} → ${listPath}`);
+}
+
 async function main() {
   const Database = require('better-sqlite3');
   const os = require('node:os');
   const dbPath = path.join(os.homedir(), 'Library', 'Application Support', 'Nodus', 'nodus.sqlite');
 
+  if (PLAN) BOOKS.splice(0, BOOKS.length, ...PLAN);
   console.log('=== Plan ===');
+  addToDeclutterList(BOOKS);
   for (const book of BOOKS) {
-    console.log(`  ${book.needsFullAnalysis ? '[light+deep+DocIndex]' : '[DocIndex only]'} ${book.title}${book.note ? `  (${book.note})` : ''}`);
+    console.log(`  ${book.rescan ? '[RESCAN light+deep+passages+DocIndex]' : book.needsFullAnalysis ? '[light+deep+DocIndex]' : '[DocIndex only]'} ${book.title}${book.declutter ? ' [declutter]' : ''}${book.note ? `  (${book.note})` : ''}`);
   }
   if (dryRun) {
     console.log('\n--dry-run: not launching anything.');
@@ -242,18 +270,21 @@ async function main() {
         const before = statusOf(db, nodusId);
         log(`  starting state: light=${before.light} deep=${before.deep} profile=${before.profile}`);
 
-        if (book.needsFullAnalysis) {
-          if (before.light !== 'done') {
+        let since = '';
+        if (book.needsFullAnalysis || book.rescan) {
+          if (before.light !== 'done' || book.rescan) {
             await waitForOffPeak();
             log('  enqueueing light scan...');
+            since = new Date().toISOString();
             await page.evaluate((id) => window.nodus.rescan(id, 'light', null), nodusId);
-            await pollUntil(db, 'light_status', (d) => d.prepare('SELECT light_status FROM works WHERE nodus_id=?').get(nodusId).light_status, ['done', 'failed']);
+            await pollUntil(db, 'light_status', (d) => finishedSince(d, nodusId, 'light', since), ['done', 'failed']);
           }
-          if (before.deep !== 'done') {
+          if (before.deep !== 'done' || book.rescan) {
             await waitForOffPeak();
             log('  enqueueing deep (ideas) scan...');
+            since = new Date().toISOString();
             await page.evaluate((id) => window.nodus.rescan(id, 'deep', null), nodusId);
-            await pollUntil(db, 'deep_status', (d) => d.prepare('SELECT deep_status FROM works WHERE nodus_id=?').get(nodusId).deep_status, ['done', 'failed']);
+            await pollUntil(db, 'deep_status', (d) => finishedSince(d, nodusId, 'deep', since), ['done', 'failed']);
           }
         }
 
@@ -264,7 +295,7 @@ async function main() {
           continue;
         }
 
-        if (before.profile === 'current') {
+        if (before.profile === 'current' && !book.rescan) {
           // Already current as of the start-of-loop snapshot — a restart re-entering
           // this book (e.g. after a crash) must not re-run a finished Documentary
           // Index pass. Re-check live rather than trust the snapshot, since light/deep
