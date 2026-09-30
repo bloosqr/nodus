@@ -51,23 +51,15 @@ const dryRun = args.includes('--dry-run');
 // The 12 books from the checklist, plus the duplicate library entry found under
 // "Macrocycles in Drug Discovery" — flagged, not silently deduped; see the printed
 // plan and the final report.
+// 2026-09-30: the six synthesis books added to Zotero for route planning (never scanned). Found
+// by Zotero key after a catalogue-only sync. Not the McMurry solutions manual (a test set).
 const BOOKS = [
-  // needsFullAnalysis: light_status and deep_status were both 'none' as of this
-  // writing — never scanned at all, not even light.
-  { nodusId: '2ad84c69-0adf-4c87-926e-46a4d235112b', title: 'Organic Chemistry 7e Ed', needsFullAnalysis: true },
-  { nodusId: 'cdd29cec-cefb-4b1d-981c-dc1f0521a14f', title: 'Macrocyclic and Supramolecular Chemistry', needsFullAnalysis: true },
-  { nodusId: 'eaafaa64-fa37-40b3-97d6-849cb8ab3aee', title: 'Macrocycles in Drug Discovery', needsFullAnalysis: true },
-  { nodusId: '1c7e5b1d-a721-4546-aaf0-7775ac3bfff3', title: 'Macrocycles in Drug Discovery─Learning from the Past for the Future', needsFullAnalysis: true, note: 'possible duplicate of the entry above — not merged, both included' },
-  { nodusId: '527508cb-c1c7-4009-9bb5-9710ad349c53', title: 'Bioactive Macrocycles from Nature', needsFullAnalysis: true },
-  { nodusId: '356ef718-a4fb-4dd3-af25-59d5fd63a74c', title: 'Rational Drug Design: Methods and Protocols', needsFullAnalysis: true },
-  // Already has passages; Documentary Index just never ran.
-  { nodusId: null, title: 'Peptide-Based Drug Design - Methods and Protocols', needsFullAnalysis: false },
-  { nodusId: null, title: 'Peptide Libraries: Methods and Protocols', needsFullAnalysis: false },
-  { nodusId: null, title: 'Therapeutic Peptides: Methods and Protocols', needsFullAnalysis: false },
-  { nodusId: null, title: 'Peptide Drug Discovery and Development Translational Research in Academia and Industry', needsFullAnalysis: false },
-  { nodusId: null, title: 'Peptide and protein delivery', needsFullAnalysis: false },
-  { nodusId: null, title: 'Oral delivery of therapeutic peptides and proteins', needsFullAnalysis: false },
-  { nodusId: null, title: 'Approaching the Next Inflection in Peptide Therapeutics: Attaining Cell Permeability and Oral Bioavailability', needsFullAnalysis: false },
+  { zoteroKey: 'I6L63XQX', title: 'Organic Synthesis: The Disconnection Approach (Warren & Wyatt)', needsFullAnalysis: true },
+  { zoteroKey: 'I3J54QFV', title: 'Strategic Applications of Named Reactions in Organic Synthesis (Kürti & Czakó)', needsFullAnalysis: true },
+  { zoteroKey: 'Q5V62WM4', title: 'Organic Chemistry (Clayden, Greeves & Warren)', needsFullAnalysis: true },
+  { zoteroKey: 'JCLAQKLK', title: "Vogel's Textbook of Practical Organic Chemistry", needsFullAnalysis: true },
+  { zoteroKey: '79Q4VK95', title: "March's Advanced Organic Chemistry", needsFullAnalysis: true },
+  { zoteroKey: 'SE5TPCS4', title: "Greene's Protective Groups in Organic Synthesis", needsFullAnalysis: true },
 ];
 
 // Weekday-only peak windows, in UTC hours [start, end).
@@ -141,6 +133,11 @@ async function waitForOffPeak() {
 
 function resolveNodusId(db, book) {
   if (book.nodusId) return book.nodusId;
+  if (book.zoteroKey) {
+    const byKey = db.prepare('SELECT nodus_id FROM works WHERE zotero_key = ? AND archived = 0').get(book.zoteroKey);
+    if (!byKey) throw new Error(`work not found by Zotero key ${book.zoteroKey}: ${book.title}`);
+    return byKey.nodus_id;
+  }
   const row = db.prepare('SELECT nodus_id FROM works WHERE title = ?').get(book.title);
   if (!row) throw new Error(`work not found by exact title: ${book.title}`);
   return row.nodus_id;
@@ -212,7 +209,15 @@ async function main() {
       await page.waitForTimeout(500);
     }
 
+    // New books must be in the library first: a catalogue-only sync imports them without
+    // starting any analysis (this queue runs the analysis, one book at a time).
+    if (BOOKS.some((book) => book.zoteroKey)) {
+      log('syncing the Zotero catalogue (no analysis)...');
+      const entry = await page.evaluate(() => window.nodus.syncNow({ catalogOnly: true }));
+      log(`  sync: ${JSON.stringify(entry).slice(0, 300)}`);
+    }
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    for (const book of BOOKS) log(`  ${book.title} → ${resolveNodusId(db, book)}`);
     try {
       for (const book of BOOKS) {
         const nodusId = resolveNodusId(db, book);
