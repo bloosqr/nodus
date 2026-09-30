@@ -169,6 +169,23 @@ async function pollUntil(db, label, get, terminalValues, { pollMs = 60_000, time
   }
 }
 
+async function passageStatus(page, nodusId) {
+  const [work] = await page.evaluate((id) => window.nodus.getWorkPassageStatuses([id]), nodusId);
+  return work?.status ?? 'unknown';
+}
+
+async function ensurePassages(page, nodusId) {
+  // Let a passage run the deep scan started finish first.
+  for (let i = 0; i < 360 && (await page.evaluate(() => window.nodus.getPassageStatus())).running; i++) await sleep(10_000);
+  if ((await passageStatus(page, nodusId)) === 'complete') { log('  passages: complete'); return; }
+  log('  building passages (local embeddings)...');
+  await page.evaluate((id) => window.nodus.startPassageEmbedding([id]), nodusId);
+  for (let i = 0; i < 360 && (await page.evaluate(() => window.nodus.getPassageStatus())).running; i++) await sleep(10_000);
+  const status = await passageStatus(page, nodusId);
+  log(`  passages: ${status}`);
+  if (status !== 'complete') throw new Error(`passages did not complete (${status})`);
+}
+
 async function main() {
   const Database = require('better-sqlite3');
   const os = require('node:os');
@@ -259,6 +276,12 @@ async function main() {
             continue;
           }
         }
+
+        // The deep scan starts the book's passage embedding in the background. The Documentary
+        // Index prepares the same document, so starting it before the passages are complete
+        // makes the two supersede each other (2026-09-30: all six books failed that way, with
+        // no passages saved). Build the passages first, alone, and wait for them.
+        await ensurePassages(page, nodusId);
 
         await waitForOffPeak();
         log('  enqueueing Documentary Index scan...');
