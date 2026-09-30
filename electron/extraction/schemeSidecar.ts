@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { openPdf, pageTextWithSchemes } from './pdfjsLoader';
+import { cleanExtractedText, replaceNulCharacters } from './textCleanup';
 import { bodySizeOf, typeSizeWeights, type LayoutItem } from './schemeLayout';
 import type { PageLayoutLines } from '@shared/schemeText';
 
@@ -10,8 +12,13 @@ export interface SchemeLayoutFile {
   version: number;
   /** The book's body type size, from sample pages. */
   body: number;
-  /** Physical page number (as in `[[p. N]]`) → that page's scheme and margin lines. */
-  pages: Record<number, PageLayoutLines>;
+  /** Hash of a page's extracted text (pageTextHash) → that page's scheme and margin lines. */
+  pages: Record<string, PageLayoutLines>;
+}
+
+/** The key a page is filed under: its text exactly as extraction stores it, trimmed. */
+export function pageTextHash(text: string): string {
+  return createHash('sha1').update(text.trim()).digest('hex');
 }
 
 /** Reads a PDF's text layer once and records, per page, the lines that are schemes, figure
@@ -29,13 +36,15 @@ export async function buildSchemeLayout(filePath: string, signal?: AbortSignal):
       page.cleanup?.();
     }
     const body = bodySizeOf(weights);
-    const pages: Record<number, PageLayoutLines> = {};
+    const pages: Record<string, PageLayoutLines> = {};
     for (let p = 1; p <= total; p++) {
       signal?.throwIfAborted();
       const page = await pdf.getPage(p);
-      const { schemeLines, marginLines } = await pageTextWithSchemes(page, true, body || undefined);
+      const { text, schemeLines, marginLines } = await pageTextWithSchemes(page, true, body || undefined);
       page.cleanup?.();
-      if (schemeLines.length || marginLines.length) pages[p] = { scheme: schemeLines, margin: marginLines };
+      // The page as extractPdfStreaming stores it (combineSegments then clears NULs).
+      const stored = replaceNulCharacters(cleanExtractedText(text));
+      if (schemeLines.length || marginLines.length) pages[pageTextHash(stored)] = { scheme: schemeLines, margin: marginLines };
     }
     return { version: SCHEME_LAYOUT_VERSION, body, pages };
   } finally {
