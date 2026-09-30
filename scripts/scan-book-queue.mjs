@@ -121,6 +121,29 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// Progress for a side panel (NODUS_QUEUE_PROGRESS=<file.json>): one job, four steps per book
+// (light, deep, passages, Documentary Index). Other jobs in the file are left alone.
+const PROGRESS_FILE = process.env.NODUS_QUEUE_PROGRESS;
+const PROGRESS_TITLE = process.env.NODUS_QUEUE_TITLE || 'Book scans';
+const STEPS = ['light scan', 'deep scan (ideas)', 'passages', 'Documentary Index'];
+const progressState = { book: 0, step: 0, title: '', state: 'running', note: '' };
+function report(changes = {}) {
+  Object.assign(progressState, changes);
+  if (!PROGRESS_FILE) return;
+  const fs = require('node:fs');
+  const total = BOOKS.length * STEPS.length;
+  const done = Math.min(total, progressState.book * STEPS.length + progressState.step);
+  const detail = progressState.state === 'done' ? `finished · ${progressState.note}`
+    : `book ${Math.min(progressState.book + 1, BOOKS.length)}/${BOOKS.length} · ${progressState.title} · ${STEPS[progressState.step] ?? ''}${progressState.note ? ` · ${progressState.note}` : ''}`;
+  let jobs = [];
+  try { jobs = JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf8')).jobs ?? []; } catch { /* new file */ }
+  jobs = jobs.filter((job) => job.title !== PROGRESS_TITLE);
+  jobs.push({ title: PROGRESS_TITLE, done, total, detail, state: progressState.state, updated: new Date().toISOString() });
+  const tmp = `${PROGRESS_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ jobs }, null, 2));
+  fs.renameSync(tmp, PROGRESS_FILE);
+}
+
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -131,10 +154,12 @@ async function waitForOffPeak() {
     ? 'inside a DeepSeek peak-pricing window (weekday 01:00-04:00 or 06:00-10:00 UTC)'
     : `within ${PEAK_START_BUFFER_MINUTES}m of the next peak window starting`;
   log(`${reason} — holding off starting anything new until it safely passes...`);
+  report({ state: 'waiting', note: 'DeepSeek peak hours: waiting for off-peak' });
   while (shouldHoldOffStarting()) {
     await sleep(5 * 60_000);
   }
   log('clear of the peak window (and its lead-in buffer) — resuming.');
+  report({ state: 'running', note: '' });
 }
 
 function resolveNodusId(db, book) {
@@ -267,6 +292,7 @@ async function main() {
       for (const book of BOOKS) {
         const nodusId = resolveNodusId(db, book);
         log(`=== ${book.title} ===`);
+        report({ book: BOOKS.indexOf(book), step: 0, title: book.title.slice(0, 60), state: 'running', note: '' });
         const before = statusOf(db, nodusId);
         log(`  starting state: light=${before.light} deep=${before.deep} profile=${before.profile}`);
 
@@ -279,6 +305,7 @@ async function main() {
             await page.evaluate((id) => window.nodus.rescan(id, 'light', null), nodusId);
             await pollUntil(db, 'light_status', (d) => finishedSince(d, nodusId, 'light', since), ['done', 'failed']);
           }
+          report({ step: 1 });
           if (before.deep !== 'done' || book.rescan) {
             await waitForOffPeak();
             log('  enqueueing deep (ideas) scan...');
@@ -286,6 +313,7 @@ async function main() {
             await page.evaluate((id) => window.nodus.rescan(id, 'deep', null), nodusId);
             await pollUntil(db, 'deep_status', (d) => finishedSince(d, nodusId, 'deep', since), ['done', 'failed']);
           }
+          report({ step: 2 });
         }
 
         const midState = statusOf(db, nodusId);
@@ -312,7 +340,9 @@ async function main() {
         // Index prepares the same document, so starting it before the passages are complete
         // makes the two supersede each other (2026-09-30: all six books failed that way, with
         // no passages saved). Build the passages first, alone, and wait for them.
+        report({ step: 2 });
         await ensurePassages(page, nodusId);
+        report({ step: 3 });
 
         await waitForOffPeak();
         log('  enqueueing Documentary Index scan...');
@@ -325,6 +355,7 @@ async function main() {
         );
         results.push({ ...book, outcome: finalProfileStatus });
         log(`  done: ${finalProfileStatus}`);
+        report({ step: 4, note: finalProfileStatus === 'current' ? '' : `last: ${finalProfileStatus}` });
       }
     } finally {
       db.close();
@@ -336,9 +367,12 @@ async function main() {
 
   console.log('\n=== Final report ===');
   for (const r of results) console.log(`  ${r.outcome === 'current' ? 'OK' : 'FAILED'.padEnd(2)}  ${r.title}`);
+  const failed = results.filter((r) => r.outcome !== 'current').length;
+  report({ book: BOOKS.length, step: 0, state: failed ? 'failed' : 'done', note: `${results.length - failed} OK, ${failed} failed` });
 }
 
 main().catch((error) => {
   console.error(error);
+  try { report({ state: 'failed', note: String(error?.message ?? error).slice(0, 120) }); } catch { /* ignore */ }
   process.exit(1);
 });
