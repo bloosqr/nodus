@@ -30,6 +30,11 @@ const WORD = /[A-Za-z][a-z]{2,}/g;
 const FOOTNOTE_START = /^\d{1,4}\s+\S/;
 const REFERENCE = /[A-Z]\.\s|\(\d{4}\)|\bsee\b/;
 const VOLUME_YEAR = /\b\d{1,4}\s*\(\d{4}\)/;
+/** A token of a drawn structure: element symbols with counts, digits, bonds, charges. */
+const STRUCTURE_TOKEN = /^(?:[A-Z][a-z]?\d*|\d+|[+\-−–=≡→()]|\u2032)+$/;
+
+/** A caption names its figure; it is text a search should find, not part of the drawing. */
+const CAPTION = /^(?:fig(?:ure)?\.?|scheme|table|chart)\s*\d/i;
 
 function size(item: LayoutItem): number {
   return Math.round(Math.abs(Number(item.transform[3])) || Number(item.height) || 0);
@@ -60,43 +65,72 @@ export function pageSchemeLayout(items: LayoutItem[], bodyHint?: number): PageSc
   const left = Math.min(...[...starts].filter(([, count]) => count >= 3).map(([x]) => x));
   const right = Math.max(...text.filter(({ item }) => size(item) === body && item.transform[4] >= left - 2).map(({ item }) => item.transform[4] + item.width));
   const column = Number.isFinite(left) && Number.isFinite(right);
-  const inColumn = text.filter(({ item, index }) => {
-    const outside = column && (item.transform[4] + item.width < left - 8 || item.transform[4] > right + 8);
-    margin[index] = outside;
-    return !outside;
-  });
+  const outside = (item: LayoutItem) => column && (item.transform[4] + item.width < left - 8 || item.transform[4] > right + 8);
+  const words = (entries: typeof text) => (entries.map(({ item }) => item.str).join(' ').match(WORD) ?? []).length;
 
-  type Line = { y: number; members: typeof text; small: boolean; scheme: boolean };
+  type Line = { y: number; members: typeof text; small: boolean; scheme: boolean; longest: number; x: number; size: number };
   const lines: Line[] = [];
-  const sorted = [...inColumn].sort((a, b) => b.item.transform[5] - a.item.transform[5] || a.item.transform[4] - b.item.transform[4]);
+  const sorted = [...text].sort((a, b) => b.item.transform[5] - a.item.transform[5] || a.item.transform[4] - b.item.transform[4]);
   for (const entry of sorted) {
     const y = entry.item.transform[5];
     const line = lines.find((candidate) => Math.abs(candidate.y - y) <= body * 0.4);
-    if (line) line.members.push(entry); else lines.push({ y, members: [entry], small: false, scheme: false });
+    if (line) line.members.push(entry); else lines.push({ y, members: [entry], small: false, scheme: false, longest: 0, x: 0, size: 0 });
   }
   lines.sort((a, b) => b.y - a.y);
+  // Prose pieces of the line above: a short piece right under one, at its left edge, ends that
+  // paragraph and is neither margin nor scheme.
+  let proseAbove: Array<{ x: number; y: number }> = [];
+  const endsParagraph = (entries: typeof text) => {
+    const first = entries[0].item;
+    return proseAbove.some((above) => Math.abs(above.x - first.transform[4]) <= 6 && above.y - first.transform[5] > 0 && above.y - first.transform[5] <= size(first) * 1.8);
+  };
   for (const line of lines) {
     line.members.sort((a, b) => a.item.transform[4] - b.item.transform[4]);
-    const str = line.members.map(({ item }) => item.str).join(' ').replace(/\s+/g, ' ').trim();
-    const words = (str.match(WORD) ?? []).length;
-    let maxGap = 0;
-    for (let k = 1; k < line.members.length; k++) {
-      const previous = line.members[k - 1].item;
-      maxGap = Math.max(maxGap, line.members[k].item.transform[4] - (previous.transform[4] + previous.width));
+    // Pieces of the line between wide gaps: a scheme spreads short labels across the column;
+    // prose, even small prose in two columns (problems, sidebars, references), comes in long runs.
+    const pieces: Array<typeof text> = [[]];
+    for (let k = 0; k < line.members.length; k++) {
+      const previous = line.members[k - 1]?.item;
+      if (previous && line.members[k].item.transform[4] - (previous.transform[4] + previous.width) > body * 3) pieces.push([]);
+      pieces.at(-1)!.push(line.members[k]);
     }
+    // Margin: a short piece wholly outside the column (running head, chapter tab, page number).
+    // A sidebar of prose outside the column is text like any other.
+    const continuing = pieces.filter((entries) => entries.length && endsParagraph(entries));
+    proseAbove = pieces.filter((entries) => entries.length && (words(entries) >= 4 || CAPTION.test(entries.map(({ item }) => item.str).join(' ').trim()))).map((entries) => ({ x: entries[0].item.transform[4], y: entries[0].item.transform[5] }));
+    const kept = pieces.filter((entries) => {
+      const isMargin = entries.every(({ item }) => outside(item)) && words(entries) <= 4 && !continuing.includes(entries);
+      if (isMargin) for (const { index } of entries) margin[index] = true;
+      return !isMargin;
+    });
+    line.members = kept.flat();
+    if (!line.members.length) continue;
+    const str = line.members.map(({ item }) => item.str).join(' ').replace(/\s+/g, ' ').trim();
     const footnote = (FOOTNOTE_START.test(str) && REFERENCE.test(str)) || VOLUME_YEAR.test(str);
     line.small = line.members.every(({ item }) => size(item) < body * 0.92);
-    line.scheme = line.small && !footnote && (words <= 3 || maxGap > body * 3);
+    line.longest = Math.max(...kept.map(words));
+    line.x = line.members[0].item.transform[4];
+    line.size = Math.max(...line.members.map(({ item }) => size(item)));
+    // A row of structure fragments ("OH O O N O") is a drawing at any type size.
+    const tokens = str.split(' ');
+    const structureRow = tokens.length >= 4 && tokens.every((token) => STRUCTURE_TOKEN.test(token)) && !tokens.every((token) => /^\d+$/.test(token));
+    line.scheme = (structureRow || (line.small && !footnote && !CAPTION.test(str) && line.longest <= 3)) && !kept.some((entries) => continuing.includes(entries));
   }
-  // A small row between two scheme rows (subscripts) is part of the scheme.
-  for (let k = 1; k < lines.length - 1; k++) {
-    if (!lines[k].scheme && lines[k].small && lines[k - 1].scheme && lines[k + 1].scheme) lines[k].scheme = true;
+  const content = lines.filter((line) => line.members.length);
+  // A small row of labels between two scheme rows ("anti favored for R = Me") is part of the
+  // scheme; a row of prose there (a caption, a problem, a reference) is not.
+  for (let k = 1; k < content.length - 1; k++) {
+    const line = content[k];
+    if (!line.scheme && line.small && line.longest <= 5 && content[k - 1].scheme && content[k + 1].scheme) line.scheme = true;
   }
-  // A lone one- or two-fragment small row among prose is a superscript (a citation number,
-  // a charge), not a scheme.
-  for (let k = 0; k < lines.length; k++) {
-    if (lines[k].scheme && !lines[k - 1]?.scheme && !lines[k + 1]?.scheme && lines[k].members.length <= 2) lines[k].scheme = false;
+  for (let k = 0; k < content.length; k++) {
+    const line = content[k];
+    if (!line.scheme) continue;
+    const above = content[k - 1];
+    // A lone one- or two-fragment small row among prose is a superscript (a citation number,
+    // a charge), not a scheme.
+    if (!above?.scheme && !content[k + 1]?.scheme && line.members.length <= 2) line.scheme = false;
   }
-  for (const line of lines) if (line.scheme) for (const { index } of line.members) scheme[index] = true;
+  for (const line of content) if (line.scheme) for (const { index } of line.members) scheme[index] = true;
   return { body, scheme, margin };
 }

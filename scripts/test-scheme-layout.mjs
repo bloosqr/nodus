@@ -65,3 +65,36 @@ test('a page of prose only has no scheme; an empty page is empty', () => {
   assert.deepEqual(pageSchemeLayout(plain).scheme, [false, false, false]);
   assert.deepEqual(pageSchemeLayout([]), { body: 0, scheme: [], margin: [] });
 });
+
+test('a sidebar of small prose outside the column, and its last short line, stay text', () => {
+  const side = (y, str, x = 20, width = 180) => item(str, x, y, 9, width);
+  const sidebarPage = [
+    prose(600, 'the body column carries the main text of the chapter in ten point type here'),
+    prose(588, 'and continues for several lines so that the column edge can be measured well'),
+    prose(576, 'before the page ends with another ordinary line of body text in the column'),
+    side(600, 'Fermentation of lactose produces several'), side(589, 'by-products, including the familiar'), side(578, 'lactic acid.', 20, 40),
+    item('CHAPTER 2', 20, 700, 7, 30),
+  ];
+  const layout = pageSchemeLayout(sidebarPage);
+  assert.deepEqual(sidebarPage.filter((_, index) => layout.scheme[index]).map((entry) => entry.str), [], 'no sidebar line is a scheme');
+  assert.deepEqual(sidebarPage.filter((_, index) => layout.margin[index]).map((entry) => entry.str), ['CHAPTER 2'], 'only the short tab is margin');
+});
+
+test('a figure caption in small type stays text', () => {
+  const captioned = [...page, item('FIGURE 8.4 The notion of', 111, 500, 8, 110), item('pseudoatoms.', 111, 490, 8, 50)];
+  const layout = pageSchemeLayout(captioned);
+  assert.ok(!layout.scheme[captioned.length - 2] && !layout.scheme[captioned.length - 1]);
+});
+
+test('a row of structure fragments at body size is a scheme; an equation or a number row is not', () => {
+  const rows = [
+    prose(600, 'ordinary prose in the column that runs the full width of it and more'),
+    prose(588, 'more prose that also runs the full width of the column as prose does'),
+    prose(576, 'and a third line of prose so that the column can be measured properly'),
+    item('OH', 150, 540, 10), item('O', 200, 540, 10), item('O', 240, 540, 10), item('N', 280, 540, 10), item('O', 320, 540, 10),
+    item('ΔG = ΔH − TΔS', 150, 520, 10, 120),
+    item('1 2 3 4 5', 150, 500, 10, 80),
+  ];
+  const layout = pageSchemeLayout(rows);
+  assert.deepEqual(rows.filter((_, index) => layout.scheme[index]).map((entry) => entry.str), ['OH', 'O', 'O', 'N', 'O']);
+});
