@@ -26,7 +26,10 @@ export interface PageSchemeLayout {
   margin: boolean[];
 }
 
-/** Names the classifier's rules; bumped when they change, so decluttered text is re-extracted. */
+/** Names the classifier's rules; bumped when they change, so decluttered text is re-extracted.
+ *  Decluttered text is re-derived from the PDF whenever its extraction cache entry is gone, so
+ *  changing these rules changes the text of every decluttered work at its next extraction and
+ *  leaves its analysis out of date — like any extractor change. Change them with a rescan plan. */
 export const SCHEME_LAYOUT_CLASSIFIER = 'layout-2';
 
 const WORD = /[A-Za-z][a-z]{2,}/g;
