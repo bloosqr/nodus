@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
+import { getDb } from '../db/database';
 import { bodySizeOf, typeSizeWeights, SCHEME_LAYOUT_CLASSIFIER, type LayoutItem } from './schemeLayout';
 
 /**
  * Opt-in scheme decluttering at extraction: PDFs listed in <userData>/scheme-declutter.json
  * ({ "files": ["/abs/path.pdf", …] }) are extracted with each run of reaction-scheme, figure
  * and table lines as one "[scheme]" and without margin lines (running heads, tabs). Only
- * listed files: changing a book's text makes its analysis out of date, so a book is listed
- * when it is going to be rescanned in full. scripts/declutter-books.mjs maintains the list.
+ * listed files: changing a book's text makes its analysis out of date. A file is listed when
+ * its work is first extracted and nothing has used its text yet (`declutterNewDocuments`), or
+ * when a book is going to be rescanned in full (scripts/scan-book-queue.mjs --plan).
  */
 
 export const DECLUTTER_LIST = 'scheme-declutter.json';
@@ -34,6 +36,27 @@ export function declutterEnabledFor(filePath: string): boolean {
     }
   }
   return cache.files.has(path.resolve(filePath));
+}
+
+/** Adds a file to the list, so every later extraction of it is decluttered too. */
+export function addToDeclutterList(filePath: string): void {
+  const listPath = declutterListPath();
+  let files: string[] = [];
+  try { files = (JSON.parse(fs.readFileSync(listPath, 'utf8')) as { files?: string[] }).files ?? []; } catch { /* a new list */ }
+  const resolved = path.resolve(filePath);
+  if (files.includes(resolved)) return;
+  const tmp = `${listPath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ files: [...files, resolved] }, null, 2));
+  fs.renameSync(tmp, listPath);
+  cache = null;
+}
+
+/** Whether nothing yet depends on a work's full text: it was never resolved and never deep
+ *  analysed (a light scan reads only the title and abstract). Decluttering it changes nothing
+ *  that exists. Unknown works count as used. */
+export function workTextUnused(zoteroKey: string): boolean {
+  const row = getDb().prepare('SELECT resolved_text_hash, deep_hash FROM works WHERE zotero_key = ?').get(zoteroKey) as { resolved_text_hash: string | null; deep_hash: string | null } | undefined;
+  return !!row && !row.resolved_text_hash && !row.deep_hash;
 }
 
 /** The extraction cache key for a decluttered file: its own entry, so the plain and the

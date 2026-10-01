@@ -14,7 +14,8 @@ import type {
 } from '@shared/types';
 import { itemChildren, itemAsAttachment, getFulltext, attachmentFilePath, ZoteroAttachment, ZoteroRequestError } from '../zotero/zoteroClient';
 import { openPdf, pageText, pageTextWithSchemes } from './pdfjsLoader';
-import { declutterCacheKey, declutterEnabledFor, pdfBodySize } from './schemeDeclutter';
+import { addToDeclutterList, declutterCacheKey, declutterEnabledFor, pdfBodySize, workTextUnused } from './schemeDeclutter';
+import { getSettings } from '../db/settingsRepo';
 import { analyzePdf } from './pdfAnalyzer';
 import { ocrPdfPages, ocrImageFile } from './ocr';
 import { csvFileToText, xlsxFileToText } from './tabular';
@@ -603,12 +604,15 @@ export function extractEpub(filePath: string): string {
 
 export async function extractFromPath(
   filePath: string,
-  opts: { ocr?: OcrOptions; onProgress?: OnExtractProgress; perf?: PerfContext; signal?: AbortSignal } = {}
+  opts: { ocr?: OcrOptions; onProgress?: OnExtractProgress; perf?: PerfContext; signal?: AbortSignal; declutterIfNew?: boolean } = {}
 ): Promise<ExtractedDoc> {
   opts.signal?.throwIfAborted();
   const ext = path.extname(filePath).toLowerCase();
   const ocr = opts.ocr ?? { enabled: false, languages: 'spa+eng', maxPages: 300 };
   const stat = fs.statSync(filePath);
+  // A new work's PDF joins the declutter list before its first extraction, so this and every
+  // later extraction of it give the same text (schemeDeclutter.ts).
+  if (ext === '.pdf' && opts.declutterIfNew && !declutterEnabledFor(filePath)) addToDeclutterList(filePath);
   const declutter = ext === '.pdf' && declutterEnabledFor(filePath);
   const cacheKey = { filePath: declutter ? declutterCacheKey(filePath) : filePath, fileSize: stat.size, fileMtimeMs: stat.mtimeMs, ocr };
   const cacheLookupDone = startPerf('extraction cache lookup', opts.perf, { file: path.basename(filePath) });
@@ -704,6 +708,8 @@ export function isTextAttachment(att: ZoteroAttachment): boolean {
 
 export interface ResolveOptions {
   allowExternalRetrieval?: boolean;
+  /** Set by resolveWorkText: the work's text is unused, so its PDFs may be decluttered. */
+  declutterIfNew?: boolean;
   unpaywallEmail: string;
   preferZoteroFulltext: boolean;
   ocr: OcrOptions;
@@ -807,7 +813,7 @@ async function readTextAttachments(
     }
     if (filePath && fs.existsSync(filePath)) {
       try {
-        localDoc = await extractFromPath(filePath, { ocr: opts.ocr, onProgress: opts.onProgress, perf: opts.perf, signal: opts.signal });
+        localDoc = await extractFromPath(filePath, { ocr: opts.ocr, onProgress: opts.onProgress, perf: opts.perf, signal: opts.signal, declutterIfNew: opts.declutterIfNew });
       } catch (error) {
         console.error(`[resolveWorkText] Error extracting from ${filePath}:`, error);
       }
@@ -871,6 +877,8 @@ async function readTextAttachments(
  *   3) Curated Library copy, then Unpaywall open-access PDF (by DOI)
  *   4) Abstract only / none
  */
+const isNodusLibraryKey = (key: string) => key.startsWith('nodus-library:');
+
 export async function resolveWorkText(
   userId: string,
   zoteroKey: string,
@@ -884,6 +892,8 @@ export async function resolveWorkText(
   // Fall back to the standard Zotero storage location when the user left it blank,
   // so deep scans can still find local PDFs instead of degrading to abstract-only.
   const effectiveStorage = storagePath || defaultZoteroStorage();
+  // A work whose full text nothing uses yet is extracted decluttered (declutterNewDocuments).
+  const declutterNew = !isNodusLibraryKey(zoteroKey) && getSettings().declutterNewDocuments !== false && workTextUnused(zoteroKey);
   const isAttachmentItem = (itemType ?? '').toLowerCase() === 'attachment';
   const isNodusLibraryItem = zoteroKey.startsWith('nodus-library:');
 
@@ -919,7 +929,7 @@ export async function resolveWorkText(
     }
     if (textAttachments.length > 0) hadTextAttachment = true;
 
-    const result = await readTextAttachments(textAttachments, userId, effectiveStorage, opts);
+    const result = await readTextAttachments(textAttachments, userId, effectiveStorage, { ...opts, declutterIfNew: declutterNew });
     if (result.doc) return { ...result.doc, hadTextAttachment: true };
     if (result.scanNote) scanNote = result.scanNote;
     if (result.blockReason) blockReason = result.blockReason;
