@@ -2280,6 +2280,10 @@ export interface AppSettings {
    *  extracted with reaction schemes, figure labels and tables as "[scheme]" and without running
    *  heads. The choice sticks per file, so later extractions of it give the same text. */
   declutterNewDocuments: boolean;
+  /** Chemistry Studio uses the user's imported vendor stock lists (scripts/import-stock.mjs):
+   *  route search stops at stocked precursors, disconnections and reports mark what can be
+   *  bought, and the report says when the target itself is for sale. Off: stock is ignored. */
+  chemistryUseStockLists: boolean;
   // Nodus Toolkit (Convert). No DB schema; plain JSON settings.
   /** Tesseract languages the Toolkit's OCR operations use, e.g. "spa+eng". */
   toolkitOcrLanguages: string;
