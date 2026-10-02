@@ -87,7 +87,11 @@ function scan(request: WorkerRequest): unknown[] {
 
 parentPort?.on('message', (request: WorkerRequest) => {
   try {
-    parentPort?.postMessage({ id: request.id, ok: true, rows: scan(request) });
+    const started = Date.now();
+    const rows = scan(request);
+    const ms = Date.now() - started;
+    if (ms >= 300) console.info(`${new Date().toISOString()} [vectorScanWorker] ${request.scan.table} scan ${(ms / 1000).toFixed(2)}s · ${rows.length} rows · ${request.scan.params.length} params, longest ${Math.max(0, ...request.scan.params.map((value) => (typeof value === 'string' ? value.length : 0)))} chars`);
+    parentPort?.postMessage({ id: request.id, ok: true, rows });
   } catch (error) {
     parentPort?.postMessage({
       id: request.id,

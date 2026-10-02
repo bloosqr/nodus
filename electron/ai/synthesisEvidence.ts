@@ -292,6 +292,7 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
 export async function gatherSynthesisEvidence(question: string, options: EvidenceOptions = {}): Promise<SynthesisEvidence | null> {
   const target = findRequestedTarget(question);
   if (!target) return null;
+  const evidenceStarted = Date.now();
   const startingMaterials = findStartingSmiles(question, target);
   // The route search runs beside the rest of the evidence (it has its own time budget).
   const routes = searchedRoutes(target, startingMaterials, options);
@@ -313,7 +314,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
   const candidates = await routes;
   const available = await availability;
   // One line per request, so a run's log shows which evidence reached the model.
-  console.info(`[synthesisEvidence] target ${target} · ORD disconnections ${disconnections.reduce((n, d) => n + d.proposals.length, 0)} · passages ${passages.length} · textbook preparations ${preparations.length} · candidate routes ${candidates.length} · target purchasable ${available ? 'yes' : 'no/unknown'} · stock ${chemistryStockDirectory() ? 'on' : 'off'}`);
+  console.info(`${new Date().toISOString()} [synthesisEvidence] ${((Date.now() - evidenceStarted) / 1000).toFixed(1)}s · target ${target} · ORD disconnections ${disconnections.reduce((n, d) => n + d.proposals.length, 0)} · passages ${passages.length} · textbook preparations ${preparations.length} · candidate routes ${candidates.length} · target purchasable ${available ? 'yes' : 'no/unknown'} · stock ${chemistryStockDirectory() ? 'on' : 'off'}`);
   return {
     target, startingMaterials, disconnections, passages,
     ...(available ? { targetAvailability: available } : {}),

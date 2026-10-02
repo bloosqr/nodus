@@ -843,9 +843,11 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
   const activities = new Map<string, ReturnType<typeof startResearchActivity>>();
   const result = await new Promise<{ passages: ReturnType<DocumentaryStore['lexicalSearch']>; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }>((resolve, reject) => {
     let settled = false;
+    const retrievalStarted = Date.now();
     const finish = (error: Error | null, value?: { passages: ReturnType<DocumentaryStore['lexicalSearch']>; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }) => {
       if (settled) return;
       settled = true;
+      console.info(`${new Date().toISOString()} [documentary] retrieval ${read?.kind ?? 'search'} ${((Date.now() - retrievalStarted) / 1000).toFixed(1)}s · ${keys.length} lexical / ${vectorKeys.length} vector keys · ${value?.passages.length ?? 0} passages${error ? ` · ${error.message}` : ''}`);
       clearTimeout(deadline);
       finishSearch(error ? 'failed' : 'completed', value?.passages.length);
       for (const finishActivity of activities.values()) finishActivity(error ? 'failed' : 'completed');

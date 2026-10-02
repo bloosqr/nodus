@@ -863,20 +863,28 @@ export async function appendRouteReportAndDrawings(
   if (!provider) return finalAnswer;
   const compile = compileProvider();
   const { runner, dispose } = chemistryRunner(options);
+  // How long each part of the report takes, one line per answer (route reports run several
+  // chemistry tools; this says which one an answer waited on).
+  const started = Date.now();
+  const timings: string[] = [];
+  const timed = <T,>(label: string, promise: Promise<T>): Promise<T> => {
+    const t0 = Date.now();
+    return promise.finally(() => timings.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}s`));
+  };
   try {
-    const checked = await invokeRoute(runner, provider, steps, racemic, options.target, labels);
+    const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels));
     const audit = checked ? implyRacemicTarget(checked, options.target) : checked;
     if (!audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit')}\n`;
     // The index lookup runs alongside the review and the drawings; it is skipped entirely
     // when the package has no such tool or the index has not been downloaded.
     const queries = buildPrecedentQueries(labels);
-    const precedentPromise = lookupReactionPrecedent(runner, queries.map((query) => query.query), options);
+    const precedentPromise = timed('ORD precedent', lookupReactionPrecedent(runner, queries.map((query) => query.query), options));
     // One model review looks for plan problems the checker cannot see (prose vs names, a
     // product that is a different compound, a step that cannot work, a redundant step). It is
     // blocking: a finding marks the route not verified. An unreadable reply never blocks. It
     // runs while the drawings compile, so the reviewer and the drawings overlap.
-    const reviewPromise = requestRouteReview(options.question ?? '', labels, audit, options, stepProse);
-    const drawings = compile ? await drawRouteSteps(runner, compile, steps, conditions, audit, options) : '';
+    const reviewPromise = timed('review', requestRouteReview(options.question ?? '', labels, audit, options, stepProse));
+    const drawings = compile ? await timed('drawings', drawRouteSteps(runner, compile, steps, conditions, audit, options)) : '';
     // Paint the deterministic report and drawings before the reviewer returns. The transport
     // replaces the provisional stream with this returned answer, so the route only waits on
     // the reviewer when the reviewer is the last thing outstanding.
@@ -884,9 +892,9 @@ export async function appendRouteReportAndDrawings(
     // The lookup already carries its drawings; this only formats. Best-effort throughout. The
     // step support (textbook passage per reaction class, ORD alternatives for a failed or
     // unprecedented step) needs the lookup's classes, so it follows it, still beside the review.
-    const supportPromise = precedentPromise
+    const supportPromise = timed('step support', precedentPromise
       .then((result) => (result ? buildStepSupport(runner, result.precedent, queries, labels, audit, options) : new Map<number, StepSupport>()))
-      .catch(() => new Map<number, StepSupport>());
+      .catch(() => new Map<number, StepSupport>()));
     const precedentSection = Promise.all([precedentPromise, supportPromise]).then(([result, support]) => {
       if (!result) return '';
       const target = options.target ? { smiles: options.target, name: targetName(labels, audit, options.target) } : null;
@@ -894,15 +902,15 @@ export async function appendRouteReportAndDrawings(
       return formatReactionPrecedents(result.precedent, { queries, labels, target, drawings, support });
     }).catch(() => '');
     // The same steps in the reaction schemes of the user's own textbooks, cited by book and page.
-    const textbookSection = lookupTextbookPrecedent(runner, queries.map((query) => query.query), options).then((precedent) => {
+    const textbookSection = timed('textbook precedent', lookupTextbookPrecedent(runner, queries.map((query) => query.query), options).then((precedent) => {
       if (!precedent) return '';
       const target = options.target ? { smiles: options.target, name: targetName(labels, audit, options.target) } : null;
       return formatTextbookPrecedents(precedent, (ids) => textbookCitations(ids), { queries, target });
-    }).catch(() => '');
+    }).catch(() => ''));
     // Groups a step's reagents would attack (an ester through LiAlH4, a free OH beside a Grignard).
-    const compatibilityPromise = checkStepCompatibility(runner, labels, conditions).catch(() => [] as StepCompatibility[]);
+    const compatibilityPromise = timed('compatibility', checkStepCompatibility(runner, labels, conditions).catch(() => [] as StepCompatibility[]));
     // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
-    const stockPromise = startingMaterialStockLine(runner, labels).catch(() => '');
+    const stockPromise = timed('stock', startingMaterialStockLine(runner, labels).catch(() => ''));
     const review = await reviewPromise;
     const report = formatRouteAudit(audit, labels, review);
     const precedentText = await precedentSection;
@@ -921,6 +929,7 @@ export async function appendRouteReportAndDrawings(
     const sources = await evidenceSources(modelAnswer, steps.length, precedentPromise, queries, support);
     const stockLine = await stockPromise;
     const textbookText = await textbookSection;
+    console.info(`${new Date().toISOString()} [routeReport] ${((Date.now() - started) / 1000).toFixed(1)}s · ${timings.join(' · ')}`);
     return `${finalAnswer.trimEnd()}\n\n${report}\n${stockLine ? `${stockLine}\n\n` : ''}${drawings}${precedentText}${textbookText}${compatibilityText}${sources}${fix ? `\n${fix}\n` : ''}`;
   } catch (error) {
     if (options.signal?.aborted) return finalAnswer;
