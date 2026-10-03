@@ -8,6 +8,8 @@ import {
   classifyCoProducts,
   countRouteSteps,
   stepDeclaresRacemic,
+  stepDeclaresRearrangement,
+  stepDeclaresRadical,
   findAnswerSpecies,
   findSmilesCandidates,
   findStepConditions,
@@ -214,7 +216,7 @@ async function stereoEnumerationAvailable(provider: CapabilityProvider): Promise
   try { return Boolean(await reactionIndexService().localDirectory()); } catch { return false; }
 }
 
-async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][]): Promise<RouteAudit | null> {
+async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][], declared: { rearrangement?: boolean[]; radical?: boolean[] } = {}): Promise<RouteAudit | null> {
   // A package that predates `target`/`labels` ignores them, and the audit simply has no
   // target entry or name check. The schema probe keeps a 2.3.0 package from rejecting an
   // input it never declared.
@@ -222,6 +224,10 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
   const input = {
     steps,
     ...(racemic ? { racemic } : {}),
+    // Declared rearrangements and radical steps, per step from their own prose: only to a package
+    // whose route tool reads them (the skeleton check), so an older one is never sent them.
+    ...(declared.rearrangement?.some(Boolean) && routeAccepts(provider, 'rearrangement') ? { rearrangement: declared.rearrangement } : {}),
+    ...(declared.radical?.some(Boolean) && routeAccepts(provider, 'radical') ? { radical: declared.radical } : {}),
     ...(target ? { target } : {}),
     // A long protected-peptide name is still sent, cut to the schema's 1,000 characters: one
     // overlong name must not make the package reject the whole route.
@@ -859,6 +865,9 @@ export async function appendRouteReportAndDrawings(
   // Racemic is decided per step, from that step's own prose, as the rules ask: a sentence
   // elsewhere ("benzocaine is achiral", a note on the target) no longer excuses every step.
   const racemic = stepDeclaresRacemic(modelAnswer, steps.length);
+  // A step that names a rearrangement or a radical step is reported, not refused, when its bond
+  // changes need one; read the same way, from the step's own section.
+  const declared = { rearrangement: stepDeclaresRearrangement(modelAnswer, steps.length), radical: stepDeclaresRadical(modelAnswer, steps.length) };
   const provider = routeProvider();
   if (!provider) return finalAnswer;
   const compile = compileProvider();
@@ -872,7 +881,7 @@ export async function appendRouteReportAndDrawings(
     return promise.finally(() => timings.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}s`));
   };
   try {
-    const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels));
+    const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels, declared));
     const audit = checked ? implyRacemicTarget(checked, options.target) : checked;
     if (!audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit')}\n`;
     // The index lookup runs alongside the review and the drawings; it is skipped entirely
