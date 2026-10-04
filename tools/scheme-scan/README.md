@@ -19,6 +19,7 @@ templates.py export --reagents                  include atom-contributing reagen
 templates.py merge <fallback work directory>    select usable reagent/fallback mappings after validation
 templates.py audit                              current atom-map errors and chemistry review flags
 templates.py extract                            RDChiral retro templates; R atoms -> [*] unless R is in the reaction centre or leaves
+templates.py merge|extract --strict                mechanism review flags exclude a template too (default: only invalid atom maps)
 build_index.py [--out DIR] [--templates FILE]    records and validated templates -> known-reactions index
 gaps.py --templates FILE [--json REPORT]        structural coverage of the 86 model reaction types
 gaps.py --index DIR [--json REPORT]             template and exact-record coverage of an existing index
