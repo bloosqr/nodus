@@ -8,6 +8,7 @@
 import { correctionTargetPlanRule, ROUTE_LABEL_LINES, ROUTE_SPECIES_RULES } from './routeRules';
 import { similarityBand } from './reactionSimilarity';
 import { conditionsText, normalizeReactionConditions, type ReactionConditions } from './reactionConditions';
+import { auditNote, normalizeAuditFlags, recordLabel, RECORD_ID } from './recordAudit';
 
 export { similarityBand };
 
@@ -187,6 +188,8 @@ export interface ReactionPrecedentEntry {
   classes?: string[];
   /** For a matched reaction, what up to two of its recorded samples were run with. */
   conditions?: ReactionConditions[];
+  /** The bond-edit audit's flags on this record (kept cited; see recordAudit). */
+  auditFlags?: string[];
 }
 
 export interface ReactionPrecedentNeighbor {
@@ -201,6 +204,8 @@ export interface ReactionPrecedentNeighbor {
   /** For the closest reaction of an unmatched step: its recorded sample ids and their conditions. */
   samples?: string[];
   conditions?: ReactionConditions[];
+  /** The bond-edit audit's flags on this record (kept cited; see recordAudit). */
+  auditFlags?: string[];
 }
 
 export interface ReactionPrecedentSimilar {
@@ -1409,7 +1414,8 @@ const PRECEDENT_FORM_NOTE: Record<string, string> = {
   'organic-products': 'counting only the organic products',
 };
 
-const ORD_ID = /^ord-[0-9a-f]{32}$/;
+// ORD records and Lowe's USPTO patent records (recordAudit).
+const ORD_ID = RECORD_ID;
 /** A drawn recorded reaction is tens of kilobytes; anything far larger is not one. */
 const MAX_PRECEDENT_SVG = 256 * 1024;
 
@@ -1437,8 +1443,14 @@ function normalizePrecedentEntry(entry: unknown, idPattern: RegExp = ORD_ID): Re
     ...(samples.length ? { samples } : {}),
     ...(reaction ? { reaction } : {}),
     ...(Array.isArray(value.classes) ? { classes: stringArray(value.classes).map((name) => name.slice(0, 120)).slice(0, 3) } : {}),
+    ...withAudit(value.auditFlags),
     ...withConditions(value.conditions, idPattern),
   };
+}
+
+function withAudit(value: unknown): { auditFlags?: string[] } {
+  const flags = normalizeAuditFlags(value);
+  return flags.length ? { auditFlags: flags } : {};
 }
 
 function withConditions(value: unknown, idPattern: RegExp): { conditions?: ReactionConditions[] } {
@@ -1460,6 +1472,7 @@ function normalizePrecedentNeighbor(item: unknown, idPattern: RegExp = ORD_ID): 
     ...(reaction ? { reaction } : {}),
     ...(svg && reaction ? { svg } : {}),
     ...(Array.isArray(neighbor.samples) ? { samples: stringArray(neighbor.samples).filter((id) => idPattern.test(id)).slice(0, 3) } : {}),
+    ...withAudit(neighbor.auditFlags),
     ...withConditions(neighbor.conditions, idPattern),
   };
 }
@@ -1541,8 +1554,9 @@ export function formatReactionPrecedents(precedent: ReactionPrecedent, context?:
     }
     if (entry.count > 0) {
       const notes = (entry.form ?? '').split('+').map((part) => PRECEDENT_FORM_NOTE[part]).filter(Boolean);
-      const ids = entry.samples?.length ? `: ${entry.samples.map((id) => `\`${id}\``).join(', ')}` : '';
+      const ids = entry.samples?.length ? `: ${entry.samples.map(recordLabel).join(', ')}` : '';
       lines.push(`- ✔ Exact match — ${entry.count} recorded precedent(s)${notes.length ? ` (${notes.join(', ')})` : ''}${ids}.`);
+      if (entry.auditFlags?.length) lines.push(`  - ${auditNote(entry.auditFlags)}`);
       lines.push(...conditionLines(entry.conditions, 'Run with'));
     } else {
       const item = similarByInput.get(entry.input);
@@ -1552,6 +1566,7 @@ export function formatReactionPrecedents(precedent: ReactionPrecedent, context?:
       } else if (closest.similarity !== undefined) {
         usedSimilarity = true;
         lines.push(`- Not recorded in this snapshot. Closest recorded reaction: ${Math.round(closest.similarity * 100)}% similar — ${similarityBand(closest.similarity)}.`);
+        if (closest.auditFlags?.length) lines.push(`  - ${auditNote(closest.auditFlags)}`);
         lines.push(...conditionLines(closest.conditions, 'The closest reaction was run with'));
       } else {
         lines.push(`- Not recorded in this snapshot. Closest recorded reaction is ${closest.distance} fingerprint bit(s) away.`);
