@@ -1389,18 +1389,23 @@ function normalizeRouteLink(entry: unknown, index: number): RouteLinkAudit | nul
   };
 }
 
+/** The most route steps the package checks (chemistry-studio MAX_STEPS): a solid-phase peptide
+ *  synthesis runs to dozens. An audit cut shorter than the route it answers is refused as
+ *  misaligned, so this must not be below the package's own limit. */
+const MAX_ROUTE_STEPS = 96;
+
 /** Accepts only a route audit the capability can actually have produced. */
 export function normalizeRouteAudit(data: unknown): RouteAudit | null {
   const value = asRecord(data);
   if (!value || !Array.isArray(value.steps) || !value.steps.length) return null;
   const steps = value.steps.map((entry, index) => normalizeRouteStep(entry, index))
-    .filter((entry): entry is RouteStepAudit => entry !== null).slice(0, 16);
+    .filter((entry): entry is RouteStepAudit => entry !== null).slice(0, MAX_ROUTE_STEPS);
   if (!steps.length) return null;
   const links = (Array.isArray(value.links) ? value.links : []).map((entry, index) => normalizeRouteLink(entry, index))
-    .filter((entry): entry is RouteLinkAudit => entry !== null).slice(0, 15);
+    .filter((entry): entry is RouteLinkAudit => entry !== null).slice(0, MAX_ROUTE_STEPS - 1);
   const blocked = stringArray(value.blocked).map((entry) => entry.slice(0, 300)).slice(0, 32);
   const isolated = Array.isArray(value.isolated)
-    ? value.isolated.filter((entry): entry is number => Number.isInteger(entry) && entry >= 0 && entry < 16).slice(0, 16)
+    ? value.isolated.filter((entry): entry is number => Number.isInteger(entry) && entry >= 0 && entry < MAX_ROUTE_STEPS).slice(0, MAX_ROUTE_STEPS)
     : undefined;
   const target = normalizeRouteTarget(value.target);
   return { steps, links, continuous: boolOr(value.continuous, blocked.length === 0), blocked, ...(isolated ? { isolated } : {}), ...(target ? { target } : {}) };

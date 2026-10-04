@@ -165,6 +165,19 @@ test('a malformed route audit degrades to no audit instead of junk', () => {
   assert.equal(normalizeRouteAudit({ steps: [{}] }), null);
 });
 
+test('a long route audit keeps every step (a solid-phase peptide synthesis runs past 16)', () => {
+  // The package checks up to 96 steps; an audit cut shorter than the route is refused as misaligned,
+  // which once left every route over 16 steps unchecked.
+  const step = (index) => ({ index, reaction: 'CCO>>CC=O', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
+    reactants: [{ canonicalSmiles: 'CCO', formula: 'C2H6O', heavyAtoms: 3 }], agents: [], products: [{ canonicalSmiles: 'CC=O', formula: 'C2H4O', heavyAtoms: 3 }] });
+  const link = (from) => ({ from, to: from + 1, ok: true, reason: 'carried', carried: [{ canonicalSmiles: 'CC=O', formula: 'C2H4O', heavyAtoms: 3 }], skeletonOnly: [] });
+  const audit = normalizeRouteAudit({ continuous: true, blocked: [], steps: Array.from({ length: 26 }, (_, i) => step(i)), links: Array.from({ length: 25 }, (_, i) => link(i)), isolated: [20] });
+  assert.equal(audit.steps.length, 26);
+  assert.deepEqual(audit.steps.map((s) => s.index), Array.from({ length: 26 }, (_, i) => i));
+  assert.equal(audit.links.length, 25);
+  assert.deepEqual(audit.isolated, [20]);
+});
+
 test('a route audit is normalized defensively and formatted deterministically', () => {
   const audit = normalizeRouteAudit({
     continuous: false,
