@@ -455,6 +455,9 @@ def main():
                     help="chemistry-studio plugin directory: audit every recorded reaction with the app's own "
                          'bond-edit gate (skeleton_audit.mjs); without it, citations fall back to the map audit')
     ap.add_argument('--gate-shards', type=int, default=max(1, (os.cpu_count() or 4) - 2))
+    ap.add_argument('--extra-map-audit', metavar='JSON',
+                    help='{key: [flags]} from re-mapping reactions neither the gate nor their own atom map could '
+                         'decide (an ambiguous or missing map): used as the map audit for exactly those')
     ap.add_argument('--gate-flags', choices=('exclude', 'tag'), default='exclude',
                     help="what a gate flag does to a recorded reaction: leave it out, or keep it cited and list its flags "
                          "in audit-flags.tsv.zst (a record has no prose, so a real rearrangement cannot be declared and "
@@ -680,6 +683,7 @@ def main():
     # the gate cannot compare the sides (a carbon by-product left out), the map audit decides; a
     # reaction neither can read stays in, counted as unaudited.
     gate = run_skeleton_gate(args, reaction_meta) if args.skeleton_gate else {}
+    extra_audit = json.load(open(args.extra_map_audit)) if args.extra_map_audit else {}
     verdict_by = Counter()
     excluded_rows, tagged_rows = [], []
     for key in list(reaction_meta):
@@ -689,6 +693,9 @@ def main():
         map_flags = map_audit.get(key)
         if map_flags and all(f == 'duplicate atom maps' or f.startswith('audit error') for f in map_flags):
             map_flags = None
+        map_by = 'map'
+        if map_flags is None and key in extra_audit:
+            map_flags, map_by = extra_audit[key], 'remap'
         # Every product already among the reactants, unchanged: a salt written as its ions, a
         # mixture or formulation — no bond changes, so nothing to cite as a way to make it.
         r_side, _, p_side = reaction_meta[key][0].partition('>>')
@@ -697,12 +704,14 @@ def main():
         elif g and g['verdict'] in ('clean', 'excluded'):
             flags, by = g['flags'], 'gate'
         elif map_flags is not None:
-            flags, by = map_flags, 'map'
+            flags, by = map_flags, map_by
         else:
             verdict_by['unaudited'] += 1
             continue
-        if flags and by == 'gate' and args.gate_flags == 'tag':
-            verdict_by['tagged (gate)'] += 1
+        # A re-map flag mixes real chemistry and broken records like a gate flag (a reagent used twice but
+        # listed once scrambles the map), so it follows --gate-flags; a record's own map flags exclude.
+        if flags and by in ('gate', 'remap') and args.gate_flags == 'tag':
+            verdict_by[f'tagged ({by})'] += 1
             tagged_rows.append(f'{key}\t{by}\t{",".join(flags)}')
             continue
         verdict_by[f'{"excluded" if flags else "clean"} ({by})'] += 1
