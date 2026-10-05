@@ -7,6 +7,10 @@ import {
   buildRouteSteps,
   classifyCoProducts,
   countRouteSteps,
+  isBareSmilesName,
+  isolatedSteps,
+  stepDeclaresRearrangement,
+  stepDeclaresRadical,
   stepDeclaresRacemic,
   findAnswerSpecies,
   findSmilesCandidates,
@@ -203,6 +207,17 @@ function routeAcceptsLabels(provider: CapabilityProvider): boolean {
   return Boolean(schema?.properties && 'labels' in schema.properties);
 }
 
+/** The longest species label the installed package declares it will accept. A species given as
+ *  its own structure carries that structure as its label, and cutting one corrupts the molecule
+ *  it is displayed under, so follow the schema rather than a figure fixed here: an older package
+ *  keeps its shorter limit, a newer one is used to the full. */
+function routeLabelNameLimit(provider: CapabilityProvider): number {
+  const schema = provider.tools.find((tool) => tool.id === ROUTE_TOOL)?.inputSchema as
+    { properties?: { labels?: { items?: { items?: { properties?: { name?: { maxLength?: unknown } } } } } } } | undefined;
+  const declared = schema?.properties?.labels?.items?.items?.properties?.name?.maxLength;
+  return typeof declared === 'number' && declared > 0 ? declared : 1000;
+}
+
 function routeAccepts(provider: CapabilityProvider, property: string): boolean {
   const schema = provider.tools.find((tool) => tool.id === ROUTE_TOOL)?.inputSchema as { properties?: Record<string, unknown> } | undefined;
   return Boolean(schema?.properties && property in schema.properties);
@@ -216,18 +231,25 @@ async function stereoEnumerationAvailable(provider: CapabilityProvider): Promise
   try { return Boolean(await reactionIndexService().localDirectory()); } catch { return false; }
 }
 
-async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][]): Promise<RouteAudit | null> {
+async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][], declared: { rearrangement?: boolean[]; radical?: boolean[] } = {}): Promise<RouteAudit | null> {
   // A package that predates `target`/`labels` ignores them, and the audit simply has no
   // target entry or name check. The schema probe keeps a 2.3.0 package from rejecting an
   // input it never declared.
   const named = labels && labels.some((entries) => entries.length);
+  const labelLimit = named ? routeLabelNameLimit(provider) : 0;
   const input = {
     steps,
     ...(racemic ? { racemic } : {}),
+    // What the step's own prose declares, per step. Sent only to a package whose route tool
+    // reads them, so an older one never sees an input its schema would reject. Without this the
+    // package's skeleton check has no way to tell a declared rearrangement from an unexplained
+    // one, and refuses both.
+    ...(declared.rearrangement?.some(Boolean) && routeAccepts(provider, 'rearrangement') ? { rearrangement: declared.rearrangement } : {}),
+    ...(declared.radical?.some(Boolean) && routeAccepts(provider, 'radical') ? { radical: declared.radical } : {}),
     ...(target ? { target } : {}),
-    // A long protected-peptide name is still sent, cut to the schema's 1,000 characters: one
+    // A long species name is still sent, cut to whatever the package's schema allows: one
     // overlong name must not make the package reject the whole route.
-    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, 1000) }))) } : {}),
+    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, labelLimit) }))) } : {}),
     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
   };
   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
@@ -329,7 +351,7 @@ interface SpeciesResolution {
   status: 'resolved' | 'ambiguous' | 'unresolved';
   smiles?: string;
   formula?: string;
-  source?: 'pubchem' | 'opsin';
+  source?: 'pubchem' | 'opsin' | 'builtin';
   feedback?: string;
 }
 
@@ -373,7 +395,7 @@ function normalizeSpeciesResolution(entry: unknown): SpeciesResolution | null {
     status,
     ...(typeof value.smiles === 'string' && value.smiles ? { smiles: value.smiles.slice(0, 2000) } : {}),
     ...(typeof value.formula === 'string' ? { formula: value.formula.slice(0, 200) } : {}),
-    ...(value.source === 'pubchem' || value.source === 'opsin' ? { source: value.source } : {}),
+    ...(value.source === 'pubchem' || value.source === 'opsin' || value.source === 'builtin' ? { source: value.source } : {}),
     ...(typeof value.feedback === 'string' && value.feedback ? { feedback: value.feedback.slice(0, 400) } : {}),
   };
 }
@@ -554,6 +576,19 @@ export async function resolveNamedRoute(
         await resolveAll([...renamed.values()]);
       }
     }
+
+    // A species written as a bare SMILES where a name belongs — the contract asks for a name, or
+    // a name with the structure in backticks, and under load the model gives the structure alone.
+    // The reference services then report "no exact match for this name" for a molecule that is
+    // perfectly well defined, and the whole step is discarded over the formatting. The structure
+    // is what the route is checked against, so take it: only for a name that has already failed
+    // to resolve (a real systematic name resolves and never reaches here), and through the same
+    // declared-structure path, so it is named back from PubChem below where possible and
+    // disclosed as author-supplied where not. Some species have no resolvable name at all — a
+    // protected intermediate, or one on a solid support — so this is a normal case, not an edge one.
+    speciesByStep = speciesByStep.map((step) => step.map((entry) => (!entry.declaredSmiles
+      && resolutions.get(entry.name)?.status !== 'resolved' && isBareSmilesName(entry.name)
+      ? { ...entry, declaredSmiles: entry.name.trim() } : entry)));
 
     // A species the model could only give as a structure: try to read a name back from PubChem,
     // so the route uses a real name where one exists. An unnamed structure keeps the author's
@@ -867,12 +902,15 @@ export async function appendRouteReportAndDrawings(
   // Racemic is decided per step, from that step's own prose, as the rules ask: a sentence
   // elsewhere ("benzocaine is achiral", a note on the target) no longer excuses every step.
   const racemic = stepDeclaresRacemic(modelAnswer, steps.length);
+  // A step that names a rearrangement or a radical step is reported, not refused, when its bond
+  // changes need one; read from that step's own section, like the racemic declaration above.
+  const declared = { rearrangement: stepDeclaresRearrangement(modelAnswer, steps.length), radical: stepDeclaresRadical(modelAnswer, steps.length) };
   const provider = routeProvider();
   if (!provider) return finalAnswer;
   const compile = compileProvider();
   const { runner, dispose } = chemistryRunner(options);
   try {
-    const checked = await invokeRoute(runner, provider, steps, racemic, options.target, labels);
+    const checked = await invokeRoute(runner, provider, steps, racemic, options.target, labels, declared);
     const audit = checked ? implyRacemicTarget(checked, options.target) : checked;
     if (!audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit')}\n`;
     // The index lookup runs alongside the review and the drawings; it is skipped entirely
@@ -884,7 +922,23 @@ export async function appendRouteReportAndDrawings(
     // blocking: a finding marks the route not verified. An unreadable reply never blocks. It
     // runs while the drawings compile, so the reviewer and the drawings overlap.
     const reviewPromise = requestRouteReview(options.question ?? '', labels, audit, options, stepProse);
-    const drawings = compile ? await drawRouteSteps(runner, compile, steps, conditions, audit, options) : '';
+    // Nothing is drawn until every step passes. A route with a failing step is about to be
+    // rewritten and each picture made for it is discarded with it: measured on one long route,
+    // ~200,000 characters of SVG per turn, three turns running, none of it ever read, while the
+    // package's runtime budget was being exhausted elsewhere in the same turn. The report, the
+    // precedent text and the review are unaffected — those are what a correction is written
+    // from, and they cost nothing to render.
+    // Nothing is drawn while any step still fails, and the report says so rather than leaving a
+    // gap: a route with a failing step is about to be rewritten, and every picture made for it is
+    // discarded with it. Measured on one long route, ~200,000 characters of SVG per turn, three
+    // turns running, none of it ever read, while the package's runtime budget was being exhausted
+    // elsewhere in the same turn. Route-level refusals count too — a route whose steps do not
+    // join up is equally about to change.
+    const routeIsRight = audit.steps.every((step) => !routeStepFailure(step))
+      && !isolatedSteps(audit).length && audit.target?.reason !== 'not-formed';
+    const drawings = !compile ? ''
+      : routeIsRight ? await drawRouteSteps(runner, compile, steps, conditions, audit, options)
+      : 'Not drawn: the route has a step that does not pass yet. The structures are drawn once every step passes.';
     // Paint the deterministic report and drawings before the reviewer returns. The transport
     // replaces the provisional stream with this returned answer, so the route only waits on
     // the reviewer when the reviewer is the last thing outstanding.
@@ -895,10 +949,11 @@ export async function appendRouteReportAndDrawings(
     const supportPromise = precedentPromise
       .then((result) => (result ? buildStepSupport(runner, result.precedent, queries, labels, audit, options) : new Map<number, StepSupport>()))
       .catch(() => new Map<number, StepSupport>());
+    // Pictures of the recorded reactions wait for the same gate: they are the largest of the lot.
     const precedentSection = Promise.all([precedentPromise, supportPromise]).then(([result, support]) => {
       if (!result) return '';
       const target = options.target ? { smiles: options.target, name: targetName(labels, audit, options.target) } : null;
-      const drawings = precedentDrawings(runner, result.provider, result.precedent, queries);
+      const drawings = routeIsRight ? precedentDrawings(runner, result.provider, result.precedent, queries) : undefined;
       return formatReactionPrecedents(result.precedent, { queries, labels, target, drawings, support });
     }).catch(() => '');
     // The same steps in the reaction schemes of the user's own textbooks, cited by book and page.

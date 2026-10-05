@@ -743,7 +743,10 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     2
   );
 
-  return { system, user, stats, maxTokens, local, citationRequired: buildCitationOutputContract(contextJson) != null };
+  // A skill (chemistry route/synthesis) is a construction task, not a corpus-grounded literature
+  // answer: the citation contract above is already null when a skill is active, so the enforcement
+  // flag must match — otherwise the route gets citation retries/refusals it was never told to satisfy.
+  return { system, user, stats, maxTokens, local, citationRequired: skills.length ? false : (buildCitationOutputContract(contextJson) != null) };
 }
 
 /** Canonical Spanish exports retained for Nodi's shared citation contract. */
