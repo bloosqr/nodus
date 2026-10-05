@@ -673,8 +673,12 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
       evidenceTokens: Math.max(256, Math.min(retrieval.evidenceTokens, Math.floor(contextBudget / LOCAL_CHARS_PER_TOKEN))) }, signal);
     run.layers = researchContextLayers(request.selection, true);
     run.budget.decisionTokenLimit = RESEARCH_CHAT_AGENT_DECISION_BYTES;
+    // The window is in tokens, so what the prompt already occupies has to be reserved in tokens
+    // too: adding its BYTE length overstated it by roughly the bytes-per-token ratio, and on a
+    // route turn — whose system prompt is some 33,000 bytes of route rules — the reservation came
+    // out larger than the whole window, leaving a zero evidence allowance and no retrieval at all.
     if (window) run.budget.constrainToWindow(window, Math.max(Math.ceil(window * 0.75),
-      new TextEncoder().encode(system + JSON.stringify(messages)).length + maxTokens + 4096));
+      Math.ceil(new TextEncoder().encode(system + JSON.stringify(messages)).length / LOCAL_CHARS_PER_TOKEN) + maxTokens + 4096));
     const depth = webDepth(retrieval);
     run.web = new ResearchWebGrant(request.webSearch ?? getSettings().researchWebSearch ?? 'auto', depth, retrievalQuestion, signal, request.model,
       Math.min(WEB_RESEARCH_LIMITS[depth].evidenceBytes, Math.max(0, Math.floor(contextBudget / 3))));
@@ -696,8 +700,21 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     const snapshot = run.snapshotFromEvidence({ kind: 'research_question', objective: question, language: promptLanguage });
     finishGraph?.('completed', snapshot.themes.length + snapshot.gaps.length + snapshot.contradictions.length);
     const nothingConsulted = !run.layers.ideas && !run.layers.documents && !webPassages.length;
+    // Works that actually took part: those a passage came from, those a search matched and those
+    // the catalogue lookup found. `snapshotFromEvidence` ranks the whole authorized scope by one
+    // boolean — whether a work yielded evidence — and returns the first `candidates` of it, so a
+    // turn that retrieved little still listed ~60 works with no summary and score 0. In a large
+    // library that tail is arbitrary: one route request was sent 60 works running to Plutarch,
+    // Thucydides and a Holocene temperature reconstruction — 30,000 characters of titles, one of
+    // them on topic. research_scope already names the sources that took part and
+    // counts the rest, so the tail told the model nothing it could use.
+    const contributed = new Set<string>(snapshot.passages.map(passage => passage.nodus_id));
+    for (const documentId of [...run.matchedDocuments, ...run.catalogHits.keys(), ...run.readDocuments]) {
+      const document = run.scope.documents.find(item => item.id === documentId);
+      if (document) contributed.add(document.workId ?? document.id);
+    }
     context = { generated_at: snapshot.generatedAt, note: prompt.context.note,
-      obras: nothingConsulted ? [] : snapshot.works,
+      obras: nothingConsulted ? [] : snapshot.works.filter(work => work.reason !== 'authorized-source' || contributed.has(work.id)),
       ideas_generadas: request.selection.ideas ? snapshot.ideas.map(idea => ({ ...idea, citation: `nodus://idea/${encodeURIComponent(idea.id)}` })) : [],
       temas_principales: request.selection.themes ? snapshot.themes : [],
       contradicciones: request.selection.contradictions && !chemistryRoute ? snapshot.contradictions : [],

@@ -3,6 +3,10 @@ import { validateRetrievalSettings, type RetrievalSettings } from './researchCor
 /** A run-owned budget, passed to every probe and section, never reset per query.
  * UTF-8 bytes conservatively bound tokenizer output without guessing a language's
  * characters/token ratio. The presets are initial operating limits, not calibrated. */
+/** The least evidence allowance a turn keeps, matching the floors its callers already apply when
+ *  they size a budget. Small enough to fit any window that can hold a prompt at all. */
+export const MIN_EVIDENCE_TOKENS = 256;
+
 export class ResearchRetrievalBudget {
   readonly settings: RetrievalSettings;
   usedEvidenceTokens = 0;
@@ -16,8 +20,12 @@ export class ResearchRetrievalBudget {
   constructor(settings: RetrievalSettings, public evidenceTokenLimit = settings.evidenceTokens, public decisionTokenLimit = settings.evidenceTokens) {
     this.settings = validateRetrievalSettings(settings);
   }
+  /** Fit the evidence allowance into what the window leaves, but never to nothing: at zero,
+   *  `nextRound` compares 0 >= 0 and no retrieval round can ever start, so the turn answers with
+   *  no corpus evidence at all and says only that it found none. A floor makes a tight window
+   *  degrade retrieval instead of disabling it, as the callers' own floors already do. */
   constrainToWindow(window: number, reservedTokens: number): void {
-    const limit = Math.max(0, Math.floor(window - reservedTokens));
+    const limit = Math.max(MIN_EVIDENCE_TOKENS, Math.floor(window - reservedTokens));
     if (limit < this.evidenceTokenLimit) { this.evidenceTokenLimit = limit; this.partial = true; }
   }
   reserveDecision(system: string, user: string, output: number): boolean {

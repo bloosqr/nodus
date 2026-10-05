@@ -160,7 +160,7 @@ function ensureZoteroTitleMarkupColumn(db: Database.Database): void {
 
 // Versioned, append-only migrations. Never edit an existing migration's SQL once
 // shipped — add a new one. The current schema version is the highest applied.
-export const SCHEMA_VERSION = 197;
+export const SCHEMA_VERSION = 200;
 
 export const migrations: Migration[] = [
   {
@@ -9574,6 +9574,41 @@ export const migrations: Migration[] = [
       run_id       TEXT NOT NULL,
       artifacts_json TEXT NOT NULL,
       created_at   TEXT NOT NULL
+    );
+  ` },
+  // 198 and 199 are upstream's, copied here verbatim because this branch had not merged them yet
+  // and so numbered its own work over the top of them. They are idempotent (addColumnIfMissing),
+  // but the automatic repair skips them — backfillMissingCreateOnly takes only CREATE-only bodies
+  // with no `after` hook — so a database whose user_version had already passed 198 would never
+  // get these columns. Keeping them at their upstream numbers means a later merge agrees.
+  { version: 198, up: 'SELECT 1;', after: (db) => {
+    // Earlier branch builds can have all or part of these additive columns under
+    // a different version. Complete the schema without replacing saved documents.
+    for (const table of ['study_docs', 'study_doc_versions', 'note_versions']) {
+      addColumnIfMissing(db, table, 'native_document_json', 'TEXT');
+      addColumnIfMissing(db, table, 'native_schema_version', 'INTEGER NOT NULL DEFAULT 1');
+    }
+    addColumnIfMissing(db, 'study_docs', 'editor_revision', 'INTEGER NOT NULL DEFAULT 0');
+    for (const table of ['study_annotations', 'note_annotations']) addColumnIfMissing(db, table, 'anchor_json', 'TEXT');
+  } },
+  { version: 199, up: 'SELECT 1;', after: (db) => {
+    for (const table of ['study_docs', 'study_doc_versions', 'note_versions']) addColumnIfMissing(db, table, 'academic_metadata_json', 'TEXT');
+  } },
+  // Citation receipts of a research scope, one row each, instead of a map inside that scope's
+  // `scope_json`. A scope row also carries a manifest of every authorized document — some 8.6 MB
+  // on a 14,000-work library — so appending a 2 KB receipt there rewrote the whole row, and the
+  // count needed to police it parsed the whole row. That cost is why the store had a hard
+  // lifetime limit, and reaching it refused every passage found afterwards, silently, starving
+  // later runs of corpus evidence (2026-10-04). A row per receipt costs the receipt, so the limit
+  // is gone. Receipts written before this keep resolving from `scope_json`; nothing is moved,
+  // which keeps this body pure-CREATE and therefore safe to replay.
+  { version: 200, up: /* sql */ `
+    CREATE TABLE IF NOT EXISTS research_scope_receipts (
+      scope_id     TEXT NOT NULL,
+      key          TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      PRIMARY KEY (scope_id, key)
     );
   ` },
 ];
