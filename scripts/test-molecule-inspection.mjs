@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, stepDeclaresRearrangement, stepDeclaresRadical, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -163,6 +163,19 @@ test('a malformed route audit degrades to no audit instead of junk', () => {
   assert.equal(normalizeRouteAudit(null), null);
   assert.equal(normalizeRouteAudit({ steps: [] }), null);
   assert.equal(normalizeRouteAudit({ steps: [{}] }), null);
+});
+
+test('a long route audit keeps every step (a solid-phase peptide synthesis runs past 16)', () => {
+  // The package checks up to 96 steps; an audit cut shorter than the route is refused as misaligned,
+  // which once left every route over 16 steps unchecked.
+  const step = (index) => ({ index, reaction: 'CCO>>CC=O', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
+    reactants: [{ canonicalSmiles: 'CCO', formula: 'C2H6O', heavyAtoms: 3 }], agents: [], products: [{ canonicalSmiles: 'CC=O', formula: 'C2H4O', heavyAtoms: 3 }] });
+  const link = (from) => ({ from, to: from + 1, ok: true, reason: 'carried', carried: [{ canonicalSmiles: 'CC=O', formula: 'C2H4O', heavyAtoms: 3 }], skeletonOnly: [] });
+  const audit = normalizeRouteAudit({ continuous: true, blocked: [], steps: Array.from({ length: 26 }, (_, i) => step(i)), links: Array.from({ length: 25 }, (_, i) => link(i)), isolated: [20] });
+  assert.equal(audit.steps.length, 26);
+  assert.deepEqual(audit.steps.map((s) => s.index), Array.from({ length: 26 }, (_, i) => i));
+  assert.equal(audit.links.length, 25);
+  assert.deepEqual(audit.isolated, [20]);
 });
 
 test('a route audit is normalized defensively and formatted deterministically', () => {
@@ -1526,4 +1539,98 @@ test('open stereocentres that cannot reach the target pass, and say so', () => {
   // Without the flag the same step still fails.
   const strict = normalizeRouteAudit({ ...audit, steps: [{ ...audit.steps[0], stereoNotRequired: false }] });
   assert.match(routeStepFailure(strict.steps[0]) ?? '', /2 unspecified stereocentre/);
+});
+
+test('a step whose bond changes cannot happen is FAIL, and the fix prompt carries the checker\'s sentence', () => {
+  const problem = 'a new C–Br bond forms at a carbon nothing activates — no leaving group, metal, heteroatom or multiple bond on it, and not next to a carbonyl, alkene or arene — so the product does not follow from the reactants as written. Check which carbon reacts (the regiochemistry: an enol or enolate reacts only at the α-carbon)';
+  const audit = normalizeRouteAudit({
+    continuous: false, blocked: [`Step 1: ${problem}.`],
+    steps: [{
+      index: 0, reaction: 'a>>b', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
+      skeleton: { change: 'none', formed: 0, cleaved: 0, ringSizes: [], migration: false, unactivated: 0, unactivatedHetero: 2, heteroElements: ['Br'] },
+      skeletonProblem: problem, reactants: [], agents: [], products: [],
+    }],
+    links: [],
+  });
+  assert.equal(audit.steps[0].skeleton.unactivatedHetero, 2);
+  const text = formatRouteAudit(audit);
+  assert.match(text, /\*\*Route check failed\*\* — [^.]*makes or breaks a bond its reactants cannot \(step 1\)/);
+  assert.match(text, /- Step 1 FAIL — balanced\. a new C–Br bond forms at a carbon nothing activates/);
+  assert.equal(routeStepFailure(audit.steps[0]), problem);
+  const labels = [[{ role: 'product', byproduct: false, name: '2,3,4-tribromocyclopentan-1-one', smiles: 'O=C1CC(Br)C(Br)C1Br' }]];
+  const chips = routeFixChips(formatNamedRouteFixPrompts(labels, audit));
+  assert.match(chips[0].prompt, /- Step 1: a new C–Br bond forms at a carbon nothing activates/);
+  const stepChip = chips.find(chip => chip.label === 'Fix step 1');
+  assert.ok(stepChip, 'the step gets its own fix chip');
+  assert.match(stepChip.prompt, /the regiochemistry: an enol or enolate reacts only at the α-carbon/);
+});
+
+test('a passing step states the bonds it forms, so the reviewer reads the checker\'s facts', () => {
+  const audit = normalizeRouteAudit({
+    continuous: true, blocked: [],
+    steps: [
+      { index: 0, reaction: 'a>>b', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+        skeleton: { change: 'formed', formed: 1, cleaved: 0, ringSizes: [6], migration: false, unactivated: 0, unactivatedHetero: 0, heteroElements: [] }, bonds: { 'C–C': 1, 'C–O': -1 } },
+      { index: 1, reaction: 'b>>c', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+        skeleton: { change: 'formed+cleaved', formed: 1, cleaved: 1, ringSizes: [], migration: true, reorganised: false, unactivated: 1, unactivatedHetero: 0, heteroElements: [] }, rearrangement: true },
+      { index: 2, reaction: 'c>>d', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+        skeleton: { change: 'none', formed: 0, cleaved: 0, ringSizes: [], migration: false, unactivated: 0, unactivatedHetero: 0, heteroElements: [] } },
+      { index: 3, reaction: 'd>>e', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+        skeleton: { change: 'none', formed: 0, cleaved: 0, ringSizes: [], migration: false, unactivated: 0, unactivatedHetero: 0, heteroElements: [] }, bonds: { 'N–O': 1, 'O–O': -1 } },
+    ],
+    links: [],
+  });
+  const text = formatRouteAudit(audit);
+  assert.match(text, /- Step 1 OK — balanced\. Bonds made \(\+\) and broken \(−\): \+1 C–C \(closing a 6-membered ring\), −1 C–O\./);
+  assert.match(text, /- Step 2 OK — balanced\. Bonds made \(\+\) and broken \(−\): \+1 C–C, −1 C–C — a 1,2-shift; declared a rearrangement\./);
+  assert.doesNotMatch(text, /- Step 3 OK — balanced\. Bonds made/);
+  // Every bond type, not only those at carbon: an N-oxidation by a peroxide.
+  assert.match(text, /- Step 4 OK — balanced\. Bonds made \(\+\) and broken \(−\): \+1 N–O, −1 O–O\./);
+});
+
+test('rearrangement and radical declarations are read per step, and a negated mention is not one', () => {
+  const answer = [
+    '**Step 1 — Acid-catalysed isomerisation of α-pinene to camphene.** The pinane skeleton reorganises.',
+    'Reactants: (1R,5R)-2,6,6-trimethylbicyclo[3.1.1]hept-2-ene',
+    'Products: camphene',
+    '',
+    '**Step 2 — Hydroboration–oxidation.** Boron adds to the less substituted carbon; no rearrangement occurs.',
+    'Reactants: camphene; borane',
+    '',
+    'Products: bornan-2-ol',
+    '',
+    '**Step 3 — Wagner–Meerwein shift to isobornyl acetate.**',
+    'Reactants: camphene; acetic acid',
+    'Products: isobornyl acetate',
+    '',
+    '**Step 4 — Allylic bromination with NBS under light.**',
+    'Reactants: cyclohexene; N-bromosuccinimide',
+    'Products: 3-bromocyclohexene',
+    '',
+    '**Step 5 — Bromination of the ketone.** This is not a radical reaction.',
+    'Reactants: cyclopentanone; bromine',
+    'Products: radical-free 2-bromocyclopentanone',
+  ].join('\n');
+  assert.deepEqual(stepDeclaresRearrangement(answer, 5), [true, false, true, false, false]);
+  assert.deepEqual(stepDeclaresRadical(answer, 5), [false, false, false, true, false]);
+});
+
+test('step prose stays aligned when bold lead-in steps and full-line step headings are mixed', () => {
+  const answer = [
+    '**Step 1 — Acid-catalysed isomerisation of α-pinene to camphene.** The pinane skeleton reorganises.',
+    'Reactants: (1R,5R)-2,6,6-trimethylbicyclo[3.1.1]hept-2-ene',
+    'Products: camphene',
+    '',
+    '**Step 2 — Hydroboration–oxidation.** Boron adds to the less substituted carbon.',
+    'Reactants: camphene; borane',
+    'Products: bornan-2-ol',
+    '',
+    '**Step 3 — Wagner–Meerwein shift to isobornyl acetate.**',
+    'Reactants: camphene; acetic acid',
+    'Products: isobornyl acetate',
+  ].join('\n');
+  const prose = findStepProse(answer, 3);
+  assert.match(prose[0], /isomerisation of α-pinene/);
+  assert.match(prose[1], /Hydroboration/);
+  assert.match(prose[2], /Wagner–Meerwein/);
 });

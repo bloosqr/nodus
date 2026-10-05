@@ -465,6 +465,8 @@ function nodusLocalMaxTokens(model: ModelRef, opts: CallOpts, requestedMax: numb
   return Math.min(requestedMax, available);
 }
 
+import { withTranscript as __withTranscript, transcriptFetch as __transcriptFetch } from './transcript';
+
 export interface CallOpts {
   /** Backend academic corpus requests only; include all final prompt/output bytes. */
   corpusContext?: boolean;
@@ -1888,7 +1890,7 @@ export async function completeText(opts: CallOpts, model?: ModelRef | null): Pro
   const codexReasoning = opts.reasoning === undefined || opts.useConfiguredCodexReasoning
     ? configuredCodexReasoning(resolved)
     : undefined;
-  return deanonymizeResult(await rawComplete(resolved, withPromptContext(opts), false, reasoning, codexReasoning));
+  return __withTranscript(resolved, opts, async () => deanonymizeResult(await rawComplete(resolved, withPromptContext(opts), false, reasoning, codexReasoning)));
 }
 
 /**
@@ -1914,7 +1916,7 @@ export async function completeTextStream(
   const codexReasoning = opts.reasoning === undefined || opts.useConfiguredCodexReasoning
     ? configuredCodexReasoning(resolved)
     : undefined;
-  return rawCompleteStream(resolved, withPromptContext(opts), onDelta, reasoning, signal, codexReasoning);
+  return __withTranscript(resolved, opts, () => rawCompleteStream(resolved, withPromptContext(opts), onDelta, reasoning, signal, codexReasoning));
 }
 
 /**
@@ -2098,7 +2100,8 @@ async function rawCompleteStreamTransport(
 
   if (model.provider === 'anthropic') {
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const client = new Anthropic({ apiKey: key });
+    const __fetch = __transcriptFetch(key);
+    const client = new Anthropic(__fetch ? { apiKey: key, fetch: __fetch } : { apiKey: key });
     // `message_delta` is the final event and the only one carrying `stop_reason`; the thinking
     // token breakdown rides along with it. Kept outside `streamOnce` so a replay (temperature or
     // thinking recovery) overwrites rather than inherits the previous attempt's outcome.
@@ -2108,7 +2111,7 @@ async function rawCompleteStreamTransport(
     let textDeltas = 0;
     let thinkingDeltas = 0;
     const streamOnce = (adaptive = false) => scheduleProviderRequest(model, scheduleOpts, key, 'anthropic', async () => {
-      const stream = await (client.messages.create as any)({
+      const __wireBody = {
         model: model.model,
         max_tokens: opts.maxTokens ?? 8000,
         ...requestSamplingBody(model, opts, reasoning),
@@ -2116,7 +2119,8 @@ async function rawCompleteStreamTransport(
         system: opts.system,
         stream: true,
         messages: [{ role: 'user', content: opts.images?.length ? anthropicVisionContent(opts.user, opts.images) : opts.user }],
-      }, { signal });
+      };
+      const stream = await (client.messages.create as any)(__wireBody, { signal });
       for await (const event of stream as AsyncIterable<any>) {
         if (event?.type === 'message_delta') {
           if (event.delta?.stop_reason) stopReason = event.delta.stop_reason;

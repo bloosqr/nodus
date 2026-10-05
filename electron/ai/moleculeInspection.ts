@@ -8,6 +8,8 @@ import {
   classifyCoProducts,
   countRouteSteps,
   stepDeclaresRacemic,
+  stepDeclaresRearrangement,
+  stepDeclaresRadical,
   findAnswerSpecies,
   findSmilesCandidates,
   findStepConditions,
@@ -214,7 +216,7 @@ async function stereoEnumerationAvailable(provider: CapabilityProvider): Promise
   try { return Boolean(await reactionIndexService().localDirectory()); } catch { return false; }
 }
 
-async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][]): Promise<RouteAudit | null> {
+async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][], declared: { rearrangement?: boolean[]; radical?: boolean[] } = {}): Promise<RouteAudit | null> {
   // A package that predates `target`/`labels` ignores them, and the audit simply has no
   // target entry or name check. The schema probe keeps a 2.3.0 package from rejecting an
   // input it never declared.
@@ -222,6 +224,10 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
   const input = {
     steps,
     ...(racemic ? { racemic } : {}),
+    // Declared rearrangements and radical steps, per step from their own prose: only to a package
+    // whose route tool reads them (the skeleton check), so an older one is never sent them.
+    ...(declared.rearrangement?.some(Boolean) && routeAccepts(provider, 'rearrangement') ? { rearrangement: declared.rearrangement } : {}),
+    ...(declared.radical?.some(Boolean) && routeAccepts(provider, 'radical') ? { radical: declared.radical } : {}),
     ...(target ? { target } : {}),
     // A long protected-peptide name is still sent, cut to the schema's 1,000 characters: one
     // overlong name must not make the package reject the whole route.
@@ -323,7 +329,7 @@ interface SpeciesResolution {
   status: 'resolved' | 'ambiguous' | 'unresolved';
   smiles?: string;
   formula?: string;
-  source?: 'pubchem' | 'opsin';
+  source?: 'pubchem' | 'opsin' | 'builtin';
   feedback?: string;
 }
 
@@ -367,7 +373,7 @@ function normalizeSpeciesResolution(entry: unknown): SpeciesResolution | null {
     status,
     ...(typeof value.smiles === 'string' && value.smiles ? { smiles: value.smiles.slice(0, 2000) } : {}),
     ...(typeof value.formula === 'string' ? { formula: value.formula.slice(0, 200) } : {}),
-    ...(value.source === 'pubchem' || value.source === 'opsin' ? { source: value.source } : {}),
+    ...(value.source === 'pubchem' || value.source === 'opsin' || value.source === 'builtin' ? { source: value.source } : {}),
     ...(typeof value.feedback === 'string' && value.feedback ? { feedback: value.feedback.slice(0, 400) } : {}),
   };
 }
@@ -859,6 +865,9 @@ export async function appendRouteReportAndDrawings(
   // Racemic is decided per step, from that step's own prose, as the rules ask: a sentence
   // elsewhere ("benzocaine is achiral", a note on the target) no longer excuses every step.
   const racemic = stepDeclaresRacemic(modelAnswer, steps.length);
+  // A step that names a rearrangement or a radical step is reported, not refused, when its bond
+  // changes need one; read the same way, from the step's own section.
+  const declared = { rearrangement: stepDeclaresRearrangement(modelAnswer, steps.length), radical: stepDeclaresRadical(modelAnswer, steps.length) };
   const provider = routeProvider();
   if (!provider) return finalAnswer;
   const compile = compileProvider();
@@ -872,7 +881,7 @@ export async function appendRouteReportAndDrawings(
     return promise.finally(() => timings.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}s`));
   };
   try {
-    const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels));
+    const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels, declared));
     const audit = checked ? implyRacemicTarget(checked, options.target) : checked;
     if (!audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit')}\n`;
     // The index lookup runs alongside the review and the drawings; it is skipped entirely

@@ -8,6 +8,7 @@
 import { correctionTargetPlanRule, ROUTE_LABEL_LINES, ROUTE_SPECIES_RULES } from './routeRules';
 import { similarityBand } from './reactionSimilarity';
 import { conditionsText, normalizeReactionConditions, type ReactionConditions } from './reactionConditions';
+import { auditNote, normalizeAuditFlags, recordLabel, RECORD_ID } from './recordAudit';
 
 export { similarityBand };
 
@@ -114,6 +115,30 @@ export interface RouteStepAudit {
   stereoNotRequired?: boolean;
   /** The equation balances only by assembling a product from more than one substrate. */
   assemblyProblem?: string;
+  /** The bonds at carbon this balanced step forms and breaks, read as a graph edit by the
+   *  capability. Facts for the report and the reviewer, whether or not the step was refused. */
+  skeleton?: RouteSkeletonFacts;
+  /** Net bonds the step makes (+) and breaks (−) by element pair, every bond type. */
+  bonds?: Record<string, number>;
+  /** The request declared this step a rearrangement, or a radical / C–H functionalisation. */
+  rearrangement?: boolean;
+  radical?: boolean;
+  /** A bond edit at carbon the step cannot explain: an undeclared 1,2-shift, or a new C–C or
+   *  C–heteroatom bond at a carbon nothing activates. */
+  skeletonProblem?: string;
+}
+
+export interface RouteSkeletonFacts {
+  change: 'none' | 'formed' | 'cleaved' | 'formed+cleaved' | 'unchecked';
+  formed: number;
+  cleaved: number;
+  ringSizes: number[];
+  migration: boolean;
+  /** A C–C bond broken while its two carbons stay joined in the product (not a 1,2-shift). */
+  reorganised: boolean;
+  unactivated: number;
+  unactivatedHetero: number;
+  heteroElements: string[];
 }
 
 export interface RouteLinkAudit {
@@ -163,6 +188,8 @@ export interface ReactionPrecedentEntry {
   classes?: string[];
   /** For a matched reaction, what up to two of its recorded samples were run with. */
   conditions?: ReactionConditions[];
+  /** The bond-edit audit's flags on this record (kept cited; see recordAudit). */
+  auditFlags?: string[];
 }
 
 export interface ReactionPrecedentNeighbor {
@@ -177,6 +204,8 @@ export interface ReactionPrecedentNeighbor {
   /** For the closest reaction of an unmatched step: its recorded sample ids and their conditions. */
   samples?: string[];
   conditions?: ReactionConditions[];
+  /** The bond-edit audit's flags on this record (kept cited; see recordAudit). */
+  auditFlags?: string[];
 }
 
 export interface ReactionPrecedentSimilar {
@@ -736,7 +765,14 @@ function sectionHeadings(text: string): SectionHeading[] {
   let offset = 0;
   for (const line of text.split(/\r?\n/)) {
     const match = HASH_HEADING.exec(line) ?? BOLD_HEADING.exec(line);
-    const title = (match?.[1] ?? '').trim();
+    let title = (match?.[1] ?? '').trim();
+    // A step opened by a bold lead-in with its prose on the same line ("**Step 1 — Isomerisation.**
+    // The pinane skeleton…") is a step heading too. Without it, an answer mixing that style with
+    // full-line headings lost the lead-in steps, and every later step's prose moved up a place.
+    if (!title) {
+      const lead = BOLD_LEAD_IN.exec(line)?.[1]?.trim() ?? '';
+      if (lead && STEP_TITLE.test(lead)) title = lead;
+    }
     if (title) out.push({ offset, step: STEP_TITLE.test(title) });
     offset += line.length + 1;
   }
@@ -782,7 +818,7 @@ export interface ResolvedSpecies extends NamedSpecies {
   status: 'resolved' | 'fallback' | 'unresolved';
   smiles?: string;
   formula?: string;
-  source?: 'pubchem' | 'opsin' | 'declared';
+  source?: 'pubchem' | 'opsin' | 'declared' | 'builtin';
   feedback?: string;
 }
 
@@ -1174,12 +1210,48 @@ export function declaresRacemic(text: string): boolean {
  *  characters, and four correct steps failed four turns each. The labelled species lines are
  *  left out, so a name never counts as a declaration. */
 export function stepDeclaresRacemic(answer: string, count: number): boolean[] {
+  return stepDeclares(answer, count, declaresRacemic);
+}
+
+/** Each step's own section (labelled species lines left out, so a name never counts) tested
+ *  with `declares`, falling back to the step's prose. */
+function stepDeclares(answer: string, count: number, declares: (text: string) => boolean, proseOnlyWithoutBlock = false): boolean[] {
   const blocks = findStepBlocks(answer, count);
   const prose = findStepProse(answer, count);
   return Array.from({ length: count }, (_, index) => {
     const block = (blocks[index] ?? '').split(/\r?\n/).filter((line) => !/^\s*(?:[-*]\s*)?(?:`{1,2}|\*\*|__)?\s*(?:reactants|products|by[-\s]?products|agents)\s*[:：]/i.test(line)).join('\n');
-    return declaresRacemic(block) || declaresRacemic(prose[index] ?? '');
+    if (declares(block)) return true;
+    // The prose list can fall out of step with the numbering when header styles are mixed, so a
+    // declaration that clears a refusal reads it only where the numbered section is missing.
+    return proseOnlyWithoutBlock && block.trim() ? false : declares(prose[index] ?? '');
   });
+}
+
+// Named on the verified-route corpus: every legitimate rearrangement there was declared with one
+// of these, and "isomerisation" / "the skeleton reorganises" are how pinene → camphene is put.
+const REARRANGEMENT_PATTERN = /rearrange|\bmigrat|\bisomeri[sz]|\breorgani[sz]|\bskeletal\s+(?:change|shift)|\b1,2-(?:alkyl\s+|hydride\s+|methyl\s+|aryl\s+)?shift|\bwagner|\bmeerwein|\bpinacol|\bbenzilic|\bfavorskii|\bwolff\b|\barndt|\bcope\b|\bclaisen\s+rearr|\bsemipinacol|\btiffeneau|\bdemjanov|\bring\s+(?:expansion|contraction)|\bschleyer|\bmetathesis/gi;
+const RADICAL_PATTERN = /\bradical|\bphotochem|\bhν|\bhv\b|\bNBS\b|N-bromosuccinimide|\bperoxide\s+initiat|\bAIBN\b|\bC[–-]H\s+(?:activation|functionali[sz]ation|insertion|oxidation)|\bhofmann[–-]l[öo]ffler/gi;
+// "No rearrangement occurs", "without a 1,2-shift": a negated mention is not a declaration.
+const NEGATED = /\b(?:no|not|without|nor|never|neither|avoids?|avoiding|rather\s+than|instead\s+of|free\s+of)\b[^.;:]{0,30}$/i;
+
+function declaresUnnegated(pattern: RegExp, text: string): boolean {
+  for (const match of text.matchAll(pattern)) {
+    if (!NEGATED.test(text.slice(Math.max(0, match.index! - 40), match.index))) return true;
+  }
+  return false;
+}
+
+/** Per step: whether its own section names a skeletal rearrangement. The route audit then
+ *  reports a 1,2-shift or a bond at an unactivated carbon on that step instead of refusing it.
+ *  Model prose, not a verification. */
+export function stepDeclaresRearrangement(answer: string, count: number): boolean[] {
+  return stepDeclares(answer, count, (text) => declaresUnnegated(REARRANGEMENT_PATTERN, text), true);
+}
+
+/** Per step: whether its own section names a radical or C–H functionalisation, which explains a
+ *  new bond at a carbon nothing else activates (bromination with NBS or light). */
+export function stepDeclaresRadical(answer: string, count: number): boolean[] {
+  return stepDeclares(answer, count, (text) => declaresUnnegated(RADICAL_PATTERN, text), true);
 }
 
 function stringArray(value: unknown): string[] {
@@ -1245,6 +1317,40 @@ function normalizeRouteStep(entry: unknown, index: number): RouteStepAudit | nul
     ...(value.racemic === true ? { racemic: true } : {}),
     ...(value.stereoNotRequired === true ? { stereoNotRequired: true } : {}),
     ...(typeof value.assemblyProblem === 'string' && value.assemblyProblem ? { assemblyProblem: value.assemblyProblem.slice(0, 400) } : {}),
+    ...(normalizeSkeleton(value.skeleton) ? { skeleton: normalizeSkeleton(value.skeleton)! } : {}),
+    ...(normalizeBonds(value.bonds) ? { bonds: normalizeBonds(value.bonds)! } : {}),
+    ...(value.rearrangement === true ? { rearrangement: true } : {}),
+    ...(value.radical === true ? { radical: true } : {}),
+    // Kept whole, like the checker's other messages: it ends with what to do.
+    ...(typeof value.skeletonProblem === 'string' && value.skeletonProblem ? { skeletonProblem: value.skeletonProblem.slice(0, 1000) } : {}),
+  };
+}
+
+const SKELETON_CHANGES = new Set(['none', 'formed', 'cleaved', 'formed+cleaved', 'unchecked']);
+
+function normalizeBonds(entry: unknown): Record<string, number> | null {
+  const value = asRecord(entry);
+  if (!value) return null;
+  const out = Object.entries(value)
+    .filter((pair): pair is [string, number] => /^[A-Z][a-z]?–[A-Z][a-z]?$/.test(pair[0]) && typeof pair[1] === 'number' && Number.isFinite(pair[1]) && pair[1] !== 0)
+    .slice(0, 16);
+  return out.length ? Object.fromEntries(out) : null;
+}
+
+function normalizeSkeleton(entry: unknown): RouteSkeletonFacts | null {
+  const value = asRecord(entry);
+  if (!value || typeof value.change !== 'string' || !SKELETON_CHANGES.has(value.change)) return null;
+  const count = (key: string) => Math.max(0, Math.min(99, Math.round(numberOr(value[key], 0))));
+  return {
+    change: value.change as RouteSkeletonFacts['change'],
+    formed: count('formed'),
+    cleaved: count('cleaved'),
+    ringSizes: (Array.isArray(value.ringSizes) ? value.ringSizes : []).filter((size): size is number => typeof size === 'number' && size >= 3 && size <= 99).slice(0, 8),
+    migration: value.migration === true,
+    reorganised: value.reorganised === true,
+    unactivated: count('unactivated'),
+    unactivatedHetero: count('unactivatedHetero'),
+    heteroElements: stringArray(value.heteroElements).filter((element) => /^[A-Z][a-z]?$/.test(element)).slice(0, 8),
   };
 }
 
@@ -1283,18 +1389,23 @@ function normalizeRouteLink(entry: unknown, index: number): RouteLinkAudit | nul
   };
 }
 
+/** The most route steps the package checks (chemistry-studio MAX_STEPS): a solid-phase peptide
+ *  synthesis runs to dozens. An audit cut shorter than the route it answers is refused as
+ *  misaligned, so this must not be below the package's own limit. */
+const MAX_ROUTE_STEPS = 96;
+
 /** Accepts only a route audit the capability can actually have produced. */
 export function normalizeRouteAudit(data: unknown): RouteAudit | null {
   const value = asRecord(data);
   if (!value || !Array.isArray(value.steps) || !value.steps.length) return null;
   const steps = value.steps.map((entry, index) => normalizeRouteStep(entry, index))
-    .filter((entry): entry is RouteStepAudit => entry !== null).slice(0, 16);
+    .filter((entry): entry is RouteStepAudit => entry !== null).slice(0, MAX_ROUTE_STEPS);
   if (!steps.length) return null;
   const links = (Array.isArray(value.links) ? value.links : []).map((entry, index) => normalizeRouteLink(entry, index))
-    .filter((entry): entry is RouteLinkAudit => entry !== null).slice(0, 15);
+    .filter((entry): entry is RouteLinkAudit => entry !== null).slice(0, MAX_ROUTE_STEPS - 1);
   const blocked = stringArray(value.blocked).map((entry) => entry.slice(0, 300)).slice(0, 32);
   const isolated = Array.isArray(value.isolated)
-    ? value.isolated.filter((entry): entry is number => Number.isInteger(entry) && entry >= 0 && entry < 16).slice(0, 16)
+    ? value.isolated.filter((entry): entry is number => Number.isInteger(entry) && entry >= 0 && entry < MAX_ROUTE_STEPS).slice(0, MAX_ROUTE_STEPS)
     : undefined;
   const target = normalizeRouteTarget(value.target);
   return { steps, links, continuous: boolOr(value.continuous, blocked.length === 0), blocked, ...(isolated ? { isolated } : {}), ...(target ? { target } : {}) };
@@ -1308,7 +1419,8 @@ const PRECEDENT_FORM_NOTE: Record<string, string> = {
   'organic-products': 'counting only the organic products',
 };
 
-const ORD_ID = /^ord-[0-9a-f]{32}$/;
+// ORD records and Lowe's USPTO patent records (recordAudit).
+const ORD_ID = RECORD_ID;
 /** A drawn recorded reaction is tens of kilobytes; anything far larger is not one. */
 const MAX_PRECEDENT_SVG = 256 * 1024;
 
@@ -1336,8 +1448,14 @@ function normalizePrecedentEntry(entry: unknown, idPattern: RegExp = ORD_ID): Re
     ...(samples.length ? { samples } : {}),
     ...(reaction ? { reaction } : {}),
     ...(Array.isArray(value.classes) ? { classes: stringArray(value.classes).map((name) => name.slice(0, 120)).slice(0, 3) } : {}),
+    ...withAudit(value.auditFlags),
     ...withConditions(value.conditions, idPattern),
   };
+}
+
+function withAudit(value: unknown): { auditFlags?: string[] } {
+  const flags = normalizeAuditFlags(value);
+  return flags.length ? { auditFlags: flags } : {};
 }
 
 function withConditions(value: unknown, idPattern: RegExp): { conditions?: ReactionConditions[] } {
@@ -1359,6 +1477,7 @@ function normalizePrecedentNeighbor(item: unknown, idPattern: RegExp = ORD_ID): 
     ...(reaction ? { reaction } : {}),
     ...(svg && reaction ? { svg } : {}),
     ...(Array.isArray(neighbor.samples) ? { samples: stringArray(neighbor.samples).filter((id) => idPattern.test(id)).slice(0, 3) } : {}),
+    ...withAudit(neighbor.auditFlags),
     ...withConditions(neighbor.conditions, idPattern),
   };
 }
@@ -1440,8 +1559,9 @@ export function formatReactionPrecedents(precedent: ReactionPrecedent, context?:
     }
     if (entry.count > 0) {
       const notes = (entry.form ?? '').split('+').map((part) => PRECEDENT_FORM_NOTE[part]).filter(Boolean);
-      const ids = entry.samples?.length ? `: ${entry.samples.map((id) => `\`${id}\``).join(', ')}` : '';
+      const ids = entry.samples?.length ? `: ${entry.samples.map(recordLabel).join(', ')}` : '';
       lines.push(`- ✔ Exact match — ${entry.count} recorded precedent(s)${notes.length ? ` (${notes.join(', ')})` : ''}${ids}.`);
+      if (entry.auditFlags?.length) lines.push(`  - ${auditNote(entry.auditFlags)}`);
       lines.push(...conditionLines(entry.conditions, 'Run with'));
     } else {
       const item = similarByInput.get(entry.input);
@@ -1451,6 +1571,7 @@ export function formatReactionPrecedents(precedent: ReactionPrecedent, context?:
       } else if (closest.similarity !== undefined) {
         usedSimilarity = true;
         lines.push(`- Not recorded in this snapshot. Closest recorded reaction: ${Math.round(closest.similarity * 100)}% similar — ${similarityBand(closest.similarity)}.`);
+        if (closest.auditFlags?.length) lines.push(`  - ${auditNote(closest.auditFlags)}`);
         lines.push(...conditionLines(closest.conditions, 'The closest reaction was run with'));
       } else {
         lines.push(`- Not recorded in this snapshot. Closest recorded reaction is ${closest.distance} fingerprint bit(s) away.`);
@@ -1728,11 +1849,13 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
   const failing = (step: RouteStepAudit): boolean => routeStepFailure(step) !== null;
   const failedSteps = audit.steps.filter(failing).map((step) => step.index + 1);
   const assembled = audit.steps.filter((step) => Boolean(step.assemblyProblem)).map((step) => step.index + 1);
+  const skeletal = audit.steps.filter((step) => Boolean(step.skeletonProblem)).map((step) => step.index + 1);
   const isolated = isolatedSteps(audit);
   const reviewProblems = blockingReviewProblems(review);
   const reasons: string[] = [];
   if (failedSteps.length) reasons.push(`${failedSteps.length} of ${audit.steps.length} step(s) do not pass (${failedSteps.map((index) => `step ${index}`).join(', ')})`);
   if (assembled.length) reasons.push(`${assembled.length === 1 ? 'a step' : 'steps'} cannot be assembled from a single substrate molecule (${assembled.map((index) => `step ${index}`).join(', ')})`);
+  if (skeletal.length) reasons.push(`${skeletal.length === 1 ? 'a step makes or breaks a bond' : 'steps make or break bonds'} its reactants cannot (${skeletal.map((index) => `step ${index}`).join(', ')})`);
   if (isolated.length) reasons.push(`${isolated.length} step(s) are disconnected from the rest of the route`);
   if (audit.target?.reason === 'not-formed') reasons.push('no step forms the requested target');
   else if (audit.target?.reason === 'stereo-mismatch') reasons.push('the target is formed only with the wrong stereochemistry');
@@ -1750,7 +1873,8 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const moot = !racemic && step.stereoNotRequired === true && step.unspecifiedStereocentres > 0;
     const nameFailure = (step.nameProblems?.length ?? 0) > 0;
     const assemblyFailure = Boolean(step.assemblyProblem);
-    const verdict = !nameFailure && !assemblyFailure && step.balanced && (step.unspecifiedStereocentres === 0 || racemic || moot) ? 'OK' : 'FAIL';
+    const skeletonFailure = Boolean(step.skeletonProblem);
+    const verdict = !nameFailure && !assemblyFailure && !skeletonFailure && step.balanced && (step.unspecifiedStereocentres === 0 || racemic || moot) ? 'OK' : 'FAIL';
     const stereo = step.unspecifiedStereocentres
       ? racemic
         ? ', declared racemic (stereochemistry not controlled)'
@@ -1770,11 +1894,12 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
       ? ` Note: the carbon compounds balance only with large coefficients (up to ${largest}); the step passes, but check that its products and byproducts are the intended ones.`
       : '';
     const assemblyNote = assemblyFailure ? ` ${step.assemblyProblem}.` : '';
+    const skeletonNote = skeletonFailure ? ` ${step.skeletonProblem}.` : skeletonFacts(step);
     const agents = step.agents.length ? ` [agents: ${sideTrace(step.agents, names)}]` : '';
     const stepLabels = labels[step.index] ?? [];
     const reactantSide = groupedSideTrace(step.reactants, stepLabels.filter((entry) => entry.role === 'reactant'), names, step.balanced === true, step.products);
     const productSide = groupedSideTrace(step.products, stepLabels.filter((entry) => entry.role === 'product'), names, step.balanced === true, step.reactants);
-    lines.push(`- ${label} ${verdict} — ${balance}${stereo}.${nameNote}${largeNote}${assemblyNote} ${reactantSide}${agents} → ${productSide}`);
+    lines.push(`- ${label} ${verdict} — ${balance}${stereo}.${nameNote}${largeNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
   }
   if (audit.links.length) {
     lines.push('', 'Intermediate continuity:', '');
@@ -1905,6 +2030,27 @@ export function implyRacemicTarget(audit: RouteAudit, requestedTarget: string | 
   return audit;
 }
 
+/** The bonds a passing step makes and breaks, stated so a reader — and the route reviewer, who
+ *  reads this block — has the checker's facts rather than its own reading of the SMILES. Empty
+ *  when no bond between heavy atoms changes. */
+function skeletonFacts(step: RouteStepAudit): string {
+  const facts = step.skeleton;
+  const bonds = step.bonds ?? {};
+  const signed = (net: number) => `${net > 0 ? '+' : '−'}${Number.isInteger(Math.abs(net)) ? Math.abs(net) : Math.abs(net).toFixed(2)}`;
+  const parts: string[] = [];
+  // C–C from the carbon mapping (which bonds, which ring), not the ledger's net count: a step
+  // that breaks one C–C and forms another nets to zero but is not "no change".
+  if (facts && facts.change !== 'unchecked') {
+    if (facts.formed) parts.push(`+${facts.formed} C–C${facts.ringSizes.length ? ` (closing a ${facts.ringSizes.join('-, ')}-membered ring)` : ''}`);
+    if (facts.cleaved) parts.push(`−${facts.cleaved} C–C`);
+  } else if (bonds['C–C']) parts.push(`${signed(bonds['C–C'])} C–C`);
+  for (const [pair, net] of Object.entries(bonds)) if (pair !== 'C–C') parts.push(`${signed(net)} ${pair}`);
+  if (!parts.length) return '';
+  const shift = facts?.migration ? ' — a 1,2-shift' : facts?.reorganised ? ' — the skeleton is reorganised' : '';
+  const declared = step.rearrangement ? '; declared a rearrangement' : step.radical ? '; declared a radical or C–H functionalisation' : '';
+  return ` Bonds made (+) and broken (−): ${parts.join(', ')}${shift}${declared}.`;
+}
+
 export function routeStepFailure(step: RouteStepAudit): string | null {
   if (step.nameProblems?.length) return step.nameProblems.join('; ');
   if (!step.ok) return step.error ?? 'could not be parsed';
@@ -1913,6 +2059,9 @@ export function routeStepFailure(step: RouteStepAudit): string | null {
   // assembles a product from more than one substrate. The report already shows this, so the
   // one-click prompts must name it too, or they point at a different step than the checker did.
   if (step.assemblyProblem) return step.assemblyProblem;
+  // Likewise a balanced step whose bond changes the reactants cannot make: a ring closed onto a
+  // carbon nothing activates, a bromine beyond the α-carbon, an undeclared 1,2-shift.
+  if (step.skeletonProblem) return step.skeletonProblem;
   if (step.unspecifiedStereocentres > 0 && step.racemic !== true && step.stereoNotRequired !== true) {
     // Say where the open centres are, so a model that already named something knows which name.
     const open = step.products.filter((entry) => entry.unspecifiedStereocentres > 0).map((entry) => `${entry.name ? `“${entry.name}”` : `\`${entry.canonicalSmiles}\``} (${entry.unspecifiedStereocentres})`);
