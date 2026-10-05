@@ -112,6 +112,21 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(extracted), 1)
         self.assertTrue(round_trip(next(iter(extracted)), m['mapped']))
 
+    def test_strict_mode_excludes_mechanism_flags_unless_declared(self):
+        # An undeclared 1,2-shift is advisory by default (test above) but gives no template in strict mode.
+        source = row(PINACOL, conditions='H2SO4, heat')
+        self.put(source, PINACOL, .772)
+        with patch.object(t, 'STRICT', True):
+            t.extract()
+        self.assertEqual(json.loads(Path(t.OUT).read_text()), {})
+        # A scheme that names the rearrangement is not flagged, so it keeps its template in strict mode.
+        declared = row(PINACOL, conditions='pinacol rearrangement, H2SO4')
+        self.put(declared, PINACOL, .772)
+        self.assertNotIn('1,2-shift', t.audit_reaction(PINACOL, 'pinacol rearrangement, H2SO4')[1])
+        with patch.object(t, 'STRICT', True):
+            t.extract()
+        self.assertEqual(len(json.loads(Path(t.OUT).read_text())), 1)
+
     def test_zero_and_unmatched_product_maps_are_hard_errors(self):
         hard, _, detail = t.audit_reaction(BROMINATION_OLD, 'Br2')
         self.assertIn('unmapped product atoms', hard)

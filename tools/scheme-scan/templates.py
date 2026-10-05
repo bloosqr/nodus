@@ -7,6 +7,14 @@
   <rxnmapper python> templates.py map      atom-map them (RXNMapper; checkpointed in mapped.jsonl)
   templates.py extract           RDChiral retro templates -> templates/templates.json (read by build_index.py)
 
+  --strict (merge, extract; or SCHEME_TEMPLATES_STRICT=1): a mapping with a mechanism flag — a bond at
+  an unactivated carbon, an undeclared 1,2-shift or skeletal reorganisation, stereocentres from achiral
+  inputs — gives no template either. By default those flags are advisory (reported by audit) and only
+  an invalid atom map is excluded. A template is its atom map: in a large, text-mined source, a flagged
+  map is more often a mapping or transcription error than an unnamed rearrangement, and the template
+  it gives proposes that error as a disconnection. A scheme whose conditions name the rearrangement or
+  radical step is not flagged, so it keeps its template either way.
+
 Sources: generic records (R, Ar, X... drawn as [*]) and verified real reactions (confirmed, repaired).
 A generic scheme is mapped as a model reaction with every R as CH3. After extraction, every template
 atom that came from an R (found by aligning the generic structure onto the mapped one) becomes [*],
@@ -29,6 +37,9 @@ TO_MAP, MAPPED, OUT = (os.path.join(WORK, n) for n in ('to-map.jsonl', 'mapped.j
 MAX_TOKENS = 500         # RXNMapper's encoder takes 512 tokens; a reaction over it loses reagents first
 MAX_ATOMS = 220          # a backstop before tokenising
 MIN_CONFIDENCE = 0.5     # atom maps below this are left out
+# --strict: mechanism flags exclude a template too (see the module docstring).
+STRICT = os.environ.get('SCHEME_TEMPLATES_STRICT') == '1'
+MECHANISM_FLAGS = frozenset({'unactivated C–C', 'unactivated C–X', '1,2-shift', 'reorganised skeleton', 'stereo from achiral inputs'})
 
 
 def input_hash(row):
@@ -376,9 +387,11 @@ def checked_template(mapping, row):
         return None, 'missing mapping'
     if mapping['confidence'] < confidence_floor(mapping, row):
         return None, 'low confidence'
-    hard, _, _ = audit_record(mapping, row)
+    hard, soft, _ = audit_record(mapping, row)
     if hard:
         return None, 'audit excluded'
+    if STRICT and MECHANISM_FLAGS.intersection(soft):
+        return None, 'mechanism flag (strict)'
     reactants, _, products = mapping['mapped'].partition('>>')
     # RDChiral 1.1.0 renumbers maps during canonicalization. Preserve the source map
     # numbers until R atoms have become wildcards, using a local function namespace;
@@ -476,6 +489,9 @@ def extract():
 
 
 if __name__ == '__main__':
+    if '--strict' in sys.argv:
+        STRICT = True
+        sys.argv.remove('--strict')
     if sys.argv[1] == 'export':
         export(with_reagents='--reagents' in sys.argv)
     else:
