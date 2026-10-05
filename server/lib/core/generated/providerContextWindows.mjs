@@ -15,13 +15,17 @@ var DOCUMENTED = {
     "deepseek-v4-pro": 1e6
   },
   // https://platform.claude.com/docs/en/models/overview
-  // Legacy Opus/Sonnet 4.6 and Opus/Sonnet 5: their individual overview pages.
+  // Legacy Opus 4.6-4.8, Sonnet 4.6 and Opus/Sonnet 5: their individual overview pages. Without
+  // an entry a model falls back to the unknown default of 32,768, which on a 1M model reserved
+  // more than the window for the prompt alone and left no evidence allowance.
   anthropic: {
     "claude-fable-5-1": 1e6,
     "claude-opus-5-5": 1e6,
     "claude-sonnet-5-5": 1e6,
     "claude-opus-5": 1e6,
     "claude-sonnet-5": 1e6,
+    "claude-opus-4-8": 1e6,
+    "claude-opus-4-7": 1e6,
     "claude-opus-4-6": 1e6,
     "claude-sonnet-4-6": 1e6,
     "claude-haiku-4-5": 2e5,
