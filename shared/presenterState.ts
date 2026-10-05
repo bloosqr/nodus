@@ -50,7 +50,7 @@ export interface PresenterRuntimeState {
   timerRunning: boolean;
   /** Active annotation tool, or null. */
   toolMode: ToolName | null;
-  /** Draw colour. */
+  /** Shared drawing and laser-pointer colour. */
   toolColor: string;
   /** Per-tool size (flashlight/draw radius or width, pointer/zoom diameter). */
   toolSizes: ToolSizes;
@@ -75,6 +75,8 @@ export type PresenterAction =
   | { type: 'setToolColor'; color: string }
   | { type: 'setZoomFactor'; factor: number }
   | { type: 'videoToggle' }
+  // Windows/Linux control the presentation player's volume, without changing other apps.
+  | { type: 'videoVolume'; volume: number }
   // Streamed updates — the reducer leaves state untouched; windows act on them.
   | { type: 'toolData'; data: ToolData }
   | { type: 'clearDraw' }

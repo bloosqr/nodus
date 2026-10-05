@@ -1,6 +1,6 @@
 {
   "name": "nodus-server",
-  "version": "5.7.3",
+  "version": "5.8.0",
   "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
@@ -15,6 +15,7 @@
     "better-sqlite3": "^12.11.1",
     "esbuild": "^0.28.2",
     "pdf-lib": "^1.17.1",
-    "subset-font": "^2.7.0"
+    "subset-font": "^2.7.0",
+    "playwright-core": "1.61.1"
   }
 }

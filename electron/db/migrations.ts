@@ -9576,11 +9576,6 @@ export const migrations: Migration[] = [
       created_at   TEXT NOT NULL
     );
   ` },
-  // 198 and 199 are upstream's, copied here verbatim because this branch had not merged them yet
-  // and so numbered its own work over the top of them. They are idempotent (addColumnIfMissing),
-  // but the automatic repair skips them — backfillMissingCreateOnly takes only CREATE-only bodies
-  // with no `after` hook — so a database whose user_version had already passed 198 would never
-  // get these columns. Keeping them at their upstream numbers means a later merge agrees.
   { version: 198, up: 'SELECT 1;', after: (db) => {
     // Earlier branch builds can have all or part of these additive columns under
     // a different version. Complete the schema without replacing saved documents.

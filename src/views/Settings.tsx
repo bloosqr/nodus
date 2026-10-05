@@ -148,7 +148,7 @@ const ZOTERO_FREE_VAULT_TYPES = new Set<VaultType>(['testimonios', 'prosopograph
 
 const ABOUT_ACTION_BUTTON_CLASS = 'btn btn-ghost w-full min-h-9 shrink-0 justify-center border border-neutral-300 dark:border-neutral-700 sm:h-9 sm:w-auto sm:min-w-56 sm:whitespace-nowrap';
 const ABOUT_CARD_CLASS = 'rounded-xl border border-neutral-200 bg-neutral-50 p-5 dark:border-neutral-800 dark:bg-neutral-900/50';
-const NODUS_REPOSITORY_URL = 'https://github.com/Drakonis96/nodus';
+const NODUS_REPOSITORY_URL = 'https://github.com/jorgepb96/nodus';
 const NODUS_SERVER_GUIDE_URL = `${NODUS_REPOSITORY_URL}/blob/main/server/README.md`;
 const NODUS_PRIVACY_URL = `${NODUS_REPOSITORY_URL}/blob/main/PRIVACY.md`;
 const NODUS_VERSION_SOURCE_URL = `${NODUS_REPOSITORY_URL}/tree/v${__APP_VERSION__}`;
@@ -990,7 +990,7 @@ export function Settings({
     visibleSettingsSection('integrations', 'Nodus Research Connector', 'chrome navegador browser extension conector captura metadatos colecciones etiquetas pdf doi isbn'),
     visibleSettingsSection('data', 'Backup / copia de seguridad', 'datos demo exportar importar copia backup cifrada contraseña'),
     visibleSettingsSection('models', 'Modelos de IA', 'basico avanzado modelo general extraccion sintesis tutor resumen fusion embeddings transcripcion voz imagen quimica chemistry stock mcule proveedores comprar'),
-    visibleSettingsSection('extraction', 'Extracción de texto PDFs grandes', 'pdf texto zotero ocr tesseract paginas idiomas'),
+    visibleSettingsSection('extraction', 'Extracción de texto PDFs grandes', 'pdf texto zotero ocr tesseract paginas idiomas esquemas figuras'),
     activeVault?.type === 'academic' && visibleSettingsSection('data', 'Salud del grafo', GRAPH_HEALTH_KEYWORDS),
     visibleSettingsSection('data', 'Zona de peligro', 'reinicializar grafo borrar ideas temas conexiones autores huecos'),
     visibleSettingsSection('about', 'Acerca de Nodus Research', 'proyecto independiente codigo abierto open source gratuito privacidad privacy rgpd gdpr datos alumnado licencia roadmap hoja de ruta futuro redes sociales social reddit youtube comunidad'),
@@ -3505,6 +3505,16 @@ export function Settings({
             <p className="text-xs text-neutral-500">
               {t('El OCR es local pero descarga los datos de idioma de Tesseract la primera vez. Desactivado por defecto.')}
             </p>
+            <Row
+              label={t('Simplificar esquemas y figuras en PDFs nuevos')}
+              hint={t('Las etiquetas sueltas de esquemas de reacción, figuras y tablas se sustituyen por «[scheme]» y se quitan los encabezados de página. Solo se aplica a obras cuyo texto aún no se ha usado; la elección se conserva para cada obra.')}
+            >
+              <input
+                type="checkbox"
+                checked={settings.declutterNewDocuments !== false}
+                onChange={(e) => patch({ declutterNewDocuments: e.target.checked })}
+              />
+            </Row>
           </Section>
       )}
 
@@ -4051,7 +4061,7 @@ const VAULT_MODEL_FIELDS: Record<VaultModelKey, string> = {
   chatModel: 'Chat con el corpus',
   deepResearchModel: 'Deep Research',
   immersionModel: 'Inmersión',
-  writingModel: 'Espacio de trabajo',
+  writingModel: 'Nodus Scriptor',
   argumentMapModel: 'Mapa argumental',
   authorModel: 'Autores y biografías',
   dictionaryModel: 'Diccionario',
@@ -4064,7 +4074,7 @@ const VAULT_MODEL_HINTS: Record<VaultModelKey, string> = {
   chatModel: 'Responde preguntas sobre el corpus y cita la evidencia utilizada.',
   deepResearchModel: 'Planifica y redacta informes extensos a partir de fuentes y relaciones.',
   immersionModel: 'Genera sesiones guiadas de lectura y trabajo con las fuentes.',
-  writingModel: 'Revisa, amplía y transforma borradores en el Espacio de trabajo.',
+  writingModel: 'Redacta, organiza y revisa artículos, tesis, notas y documentos.',
   argumentMapModel: 'Construye mapas de tesis, razones, objeciones y evidencias.',
   authorModel: 'Sintetiza perfiles de autor y redacta biografías basadas en el corpus.',
   dictionaryModel: 'Genera y actualiza definiciones del Diccionario desde la evidencia.',

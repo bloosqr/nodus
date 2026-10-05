@@ -30,6 +30,15 @@ def audit_reaction(mapped, conditions, ignore=frozenset()):
         return ['duplicate atom maps'], [], {}  # one number on two atoms: the mapping is ambiguous
     r_atom = {a.GetAtomMapNum(): a for a in rm.GetAtoms() if a.GetAtomMapNum()}
     p_atom = {a.GetAtomMapNum(): a for a in pm.GetAtoms() if a.GetAtomMapNum()}
+    # A map number joining two different elements, or a product heavy atom with no reactant atom
+    # behind it, means the mapping itself is wrong; nothing read from its edits can be trusted.
+    if any(r_atom[n].GetAtomicNum() != a.GetAtomicNum() or r_atom[n].GetIsotope() != a.GetIsotope()
+           for n, a in p_atom.items() if n in r_atom):
+        return ['element mismatch'], [], {}
+    unmapped = sum(1 for a in pm.GetAtoms() if a.GetAtomicNum() > 1
+                   and (not a.GetAtomMapNum() or a.GetAtomMapNum() not in r_atom))
+    if unmapped:
+        return ['unmapped product atoms'], [], {'unmapped': unmapped}
     def edges(mol):
         return {frozenset((b.GetBeginAtom().GetAtomMapNum(), b.GetEndAtom().GetAtomMapNum())) for b in mol.GetBonds()
                 if b.GetBeginAtom().GetAtomMapNum() and b.GetEndAtom().GetAtomMapNum()}
@@ -64,9 +73,6 @@ def audit_reaction(mapped, conditions, ignore=frozenset()):
             path = Chem.GetShortestPath(pm, p_atom[a].GetIdx(), p_atom[b].GetIdx())
             if path:
                 hard.append('reorganised skeleton'); break
-    unmapped = sum(1 for a in pm.GetAtoms() if not a.GetAtomMapNum() and a.GetAtomicNum() > 1)
-    if unmapped:
-        soft.append('unmapped product atoms'); details['unmapped'] = unmapped
     centres = lambda mol: [c for c in Chem.FindMolChiralCenters(mol, useLegacyImplementation=False) if c[1] in ('R', 'S')]
     # A defined E/Z double bond is a stereo source too: a stereospecific addition to it (epoxidation,
     # dihydroxylation) sets the product's relative configuration.

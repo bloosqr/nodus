@@ -68,6 +68,7 @@ import { DICTIONARY_TRANSLATIONS } from './i18n.dictionary';
 import { DEEP_RESEARCH_VERSION_TRANSLATIONS } from './i18n.deepResearchVersions';
 import { DOCUMENT_UNDERSTANDING_TRANSLATIONS } from './i18n.documentUnderstanding';
 import { STALE_MODEL_TRANSLATIONS } from './i18n.staleModels';
+import { SCHEME_DECLUTTER_TRANSLATIONS } from './i18n.schemeDeclutter';
 import { CHEMISTRY_STOCK_TRANSLATIONS } from './i18n.chemistryStock';
 import { DEEP_RESEARCH_QUALITY_TRANSLATIONS } from './i18n.deepResearchQuality';
 import { TEXT_PROVENANCE_TRANSLATIONS } from './i18n.textProvenance';
@@ -128,6 +129,7 @@ export const TR: Record<string, string> = {
   ...DEEP_RESEARCH_VERSION_TRANSLATIONS.tr,
   ...DOCUMENT_UNDERSTANDING_TRANSLATIONS.tr,
   ...STALE_MODEL_TRANSLATIONS.tr,
+  ...SCHEME_DECLUTTER_TRANSLATIONS.tr,
   ...CHEMISTRY_STOCK_TRANSLATIONS.tr,
   ...DEEP_RESEARCH_QUALITY_TRANSLATIONS.tr,
   ...TEXT_PROVENANCE_TRANSLATIONS.tr,
@@ -8622,4 +8624,33 @@ export const TR: Record<string, string> = {
   "Sent": "Gönderildi",
   ...CONCILIUM_TRANSLATIONS['tr'],
   ...DRIFT_TRANSLATIONS['tr'],
+  // PDF Presenter — editorial workspace
+  "Organiza tus diapositivas. Comparte tus ideas.": "Slaytlarınızı düzenleyin. Fikirlerinizi paylaşın.",
+  "Buscar por número o notas…": "Numara veya notlara göre ara…",
+
+  // PDF Presenter folder navigation.
+  "Editar carpeta": "Klasörü düzenle",
+  "Carpeta principal": "Üst klasör",
+  "Biblioteca principal": "Ana kitaplık",
+  "Color personalizado": "Özel renk",
+  "Ruta de carpetas": "Klasör yolu",
+  "Opciones de la carpeta {name}": "{name} klasörünün seçenekleri",
+  "No se pudo eliminar la carpeta.": "Klasör silinemedi.",
+  "Se eliminará la carpeta «{name}» y sus subcarpetas ({n}).": "“{name}” klasörü ve alt klasörleri ({n}) silinecek.",
+  "¿Qué quieres hacer con sus {n} presentaciones?": "İçindeki {n} sunumla ne yapmak istersiniz?",
+  "Conservar presentaciones": "Sunumları koru",
+  "Moverlas a la biblioteca principal, con sus notas y vídeos.": "Notları ve videolarıyla birlikte ana kitaplığa taşı.",
+  "Eliminar también las presentaciones": "Sunumları da sil",
+  "Se eliminarán sus copias de la biblioteca. Los archivos originales se conservarán.": "Kitaplıktaki kopyaları silinecek. Orijinal dosyalar korunacak.",
+  "Eliminar carpeta y presentaciones": "Klasörü ve sunumları sil",
+  "Ciencia": "Bilim",
+  "Arte": "Sanat",
+  "Favoritos": "Favoriler",
+  "Conexión móvil": "Mobil bağlantı",
+  "Navegador web": "Web tarayıcısı",
+  "App iPhone–iPad": "iPhone–iPad uygulaması",
+  "Escanea desde Nodus Presenter. Mantén Wi-Fi encendido en el Mac y el móvil; no necesitas el router de la sala.": "Nodus Presenter ile tarayın. Mac ve mobil cihazda Wi-Fi açık kalsın; salonun yönlendiricisi gerekli değildir.",
+  "El enlace nativo no está disponible. Requiere macOS y permiso de red local.": "Yerel uygulama bağlantısı kullanılamıyor. macOS ve yerel ağ izni gerekir.",
+  "Escanea desde Nodus Presenter. Conecta el ordenador y el móvil a la misma red local.": "Nodus Presenter ile tarayın. Bilgisayarı ve telefonu aynı yerel ağa bağlayın.",
+  "El enlace de la app no está disponible. Comprueba la conexión de red e inicia de nuevo la presentación.": "Uygulama bağlantısı kullanılamıyor. Ağ bağlantısını kontrol edip sunumu yeniden başlatın.",
 };

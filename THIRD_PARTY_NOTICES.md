@@ -1,6 +1,6 @@
 # Nodus third-party notices
 
-Nodus 5.7.3 is free software distributed exclusively under the GNU Affero
+Nodus 5.8.0 is free software distributed exclusively under the GNU Affero
 General Public License v3.0 (`AGPL-3.0-only`). Versions through 3.2.7 remain
 available under MIT. Nodus includes or interoperates with the components and
 data described below. Those components keep their own licenses and their
@@ -15,6 +15,18 @@ resources with:
 - the Electron and Chromium license collections;
 - the GNU GPL/LGPL and Creative Commons license texts; and
 - instructions and source references for replacing/rebuilding LGPL components.
+
+## BlockNote editorial editor
+
+Nodus uses the unmodified base packages `@blocknote/core`, `@blocknote/react`
+and `@blocknote/ariakit`, each pinned to 0.55.0, by TypeCell and the BlockNote
+contributors. Source: <https://github.com/TypeCellOS/BlockNote/tree/v0.55.0>.
+These packages are licensed under Mozilla Public License 2.0 (MPL-2.0).
+Their complete license is distributed in `legal/generated/MPL-2.0.txt` and in
+the generated production dependency inventory. Nodus's editor schema, user
+interface, storage adapters, AI and voice integration are Nodus source files.
+No BlockNote XL packages are used. Upstream licensing details:
+<https://github.com/TypeCellOS/BlockNote/blob/v0.55.0/LICENSE.txt>.
 
 ## Managed Zotero MCP and private CPython
 
@@ -250,7 +262,7 @@ endorsed by any of them.
 
 Nodus can download unmodified citation styles from the official CSL styles repository
 and bundles a small set of CSL styles and locale files supplied through
-`@citation-js/plugin-csl`. Chicago author-date, MLA, and IEEE are bundled as
+`@citation-js/plugin-csl`. Chicago author-date, Chicago notes-bibliography, MLA, and IEEE are bundled as
 unmodified compressed files from official Style Repository revision
 `d17b5135c5b38f9ffadd0c3ec257f6892ba07f6e`. The style data originates from the
 Citation Style Language project and is licensed under Creative Commons
@@ -386,3 +398,7 @@ and Legalize are not endorsed by the BOE. The original document's update and
 reuse metadata are preserved. Other mandatory source attributions, including
 SAIJ, IMPO, Lovdata, Crown/database rights and Korean KOGL type 1, appear in the
 country register and alongside applicable results.
+
+## Academic delivery: Paged.js, MathJax and fflate
+
+Nodus Scriptor uses Paged.js (`pagedjs` 0.4.3, MIT, Fred Chasen and contributors, https://github.com/pagedjs/pagedjs) for local pagination; MathJax (`@mathjax/src` 4.1.3, Apache-2.0, MathJax Consortium, https://github.com/mathjax/MathJax-src) and its New Computer Modern font package for mathematical SVG; `fflate` 0.8.2 (MIT, Arjun Barrett, https://github.com/101arrowz/fflate) for LaTeX packages; and `@xmldom/xmldom` 0.9.12 (MIT, xmldom contributors, https://github.com/xmldom/xmldom) for converting mathematical markup to native Word equations. Full package license texts and font notices are included in the generated dependency notices. The browser used by Nodus Server is Chromium; its upstream notices are distributed with the operating-system package.

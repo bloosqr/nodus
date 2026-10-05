@@ -1734,6 +1734,8 @@ export interface ModelInfo {
   group?: string;
   /** For OpenRouter: true when the model is a reasoning model (slower for scans). */
   reasoning?: boolean;
+  /** The provider explicitly requires reasoning; opt-out values are invalid. */
+  reasoningMandatory?: boolean;
   /** Codex App Server: exact effort choices advertised for this model. */
   supportedReasoningEfforts?: Array<{
     reasoningEffort: CodexReasoningEffort;
@@ -2278,7 +2280,8 @@ export interface AppSettings {
   ocrMaxPages: number;
   /** PDFs of works whose text has never been used (no resolved text, no deep analysis) are
    *  extracted with reaction schemes, figure labels and tables as "[scheme]" and without running
-   *  heads. The choice sticks per file, so later extractions of it give the same text. */
+   *  heads. The choice sticks per work and attachment in its vault, so later extractions
+   *  of it give the same text without affecting other works that share the PDF. */
   declutterNewDocuments: boolean;
   /** Chemistry Studio uses the user's imported vendor stock lists (scripts/import-stock.mjs):
    *  route search stops at stocked precursors, disconnections and reports mark what can be
@@ -2398,6 +2401,8 @@ export interface AppSettings {
    * `sidebarHidden` and this flips true, so their choice is respected thereafter.
    */
   sidebarCustomized: boolean;
+  /** Release migration that enables Nodus Scriptor once, before later manual choices. */
+  scriptorSidebarVersion: number;
   /** Toolkit destinations explicitly pinned as independent sidebar shortcuts. */
   toolkitPinnedPages: ToolkitToolPage[];
   /** Default wooden frame design for the genealogy tree (per-person overrides win). */
@@ -6363,6 +6368,7 @@ export interface NoteFolder {
 }
 
 export interface Note {
+  editorRevision?: number;
   id: string;
   folderId: string | null;
   title: string;
@@ -9413,6 +9419,7 @@ export interface NodusApi extends StudyFocusApi, ProsopographyApi, TestimoniesAp
   renameVault(id: string, name: string): Promise<VaultSummary>;
   setVaultType(id: string, type: VaultType): Promise<VaultSummary>;
   switchVault(id: string, options?: VaultSwitchOptions): Promise<VaultSwitchResult>;
+  onBeforeEditorLeave(callback: () => Promise<boolean>): () => void;
   duplicateVault(id: string, name: string, options?: VaultSwitchOptions): Promise<VaultDuplicateResult>;
   deleteVault(id: string, deleteFiles?: boolean): Promise<void>;
   resetVault(id: string): Promise<VaultSummary>;

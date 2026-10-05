@@ -1,4 +1,5 @@
 import { initializeChatSkillDefaults } from './chatSkills';
+import { flushWindowEditors, installEditorCloseGuard } from './editorFlush';
 import { claimIsolatedProfile } from './qa/isolatedProfile';
 import { initializePluginStore } from './skillPlugins';
 import { initializeCapabilityPluginStore } from './capabilities/pluginStoreV2';
@@ -61,7 +62,7 @@ import { stopAllWhisperCpp } from './stt/whisperCpp';
 import { recoverLegacyApiKeys } from './secrets/legacySecretRecovery';
 import { hasBackupPassword } from './secrets/secretStore';
 import type { UpdateCheckResponse, UpdateProgressEvent } from '@shared/types';
-import { TUTORIAL_VIDEO_EMBED_ORIGIN } from '@shared/tutorialVideos';
+import { installMediaRequestHeaders } from './mediaRequestHeaders';
 import { killChatGptSubscriptionServer } from './ai/codexSubscription';
 import { killGitHubCopilotSubscriptionServer } from './ai/githubCopilotSubscription';
 import { killNodusLocalServerSync } from './ai/nodusLocalAi';
@@ -574,6 +575,7 @@ function createWindow(): void {
     },
   });
   protectMainWindowNavigation(mainWindow);
+  installEditorCloseGuard(mainWindow, () => quitting);
 
   // Right-clicking any text field in Nodus — the browser's address bar above all
   // — offers Cut, Copy and Paste. Views that draw their own HTML context menu
@@ -1033,34 +1035,10 @@ app.whenReady().then(async () => {
     .trim();
   session.defaultSession.setUserAgent(cleanUa);
   // Same embeds, second obstacle: a packaged renderer is served from file://, so the
-  // frame request carries no http(s) referer and YouTube answers with its "error 153 —
-  // video player configuration error" card instead of the video. Only in packaged
-  // builds; from the dev server it works, which is exactly how this ships broken.
-  // Naming Nodus's own site as the embedding page is enough, and it is where these
-  // tutorials are published. Scoped to the one host Nodus ever frames.
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: [`${TUTORIAL_VIDEO_EMBED_ORIGIN}/*`] },
-    (details, callback) => {
-      callback({ requestHeaders: { ...details.requestHeaders, Referer: 'https://nodusresearch.com/' } });
-    },
-  );
-  // Third obstacle, the maps: OpenStreetMap's volunteer tile servers refuse a client
-  // they cannot identify, and the sanitized User-Agent above is exactly the shape their
-  // policy blocks, so every map in the app answered with "Access blocked" tiles. Naming
-  // Nodus, with a page to complain to, is what they ask for; scoped to the tile hosts,
-  // so nothing else sees a different agent or referer than it does today.
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: ['*://*.tile.openstreetmap.org/*'] },
-    (details, callback) => {
-      callback({
-        requestHeaders: {
-          ...details.requestHeaders,
-          'User-Agent': `Nodus/${app.getVersion()} (+https://nodusresearch.com)`,
-          Referer: 'https://nodusresearch.com/',
-        },
-      });
-    },
-  );
+  // frame request carries no http(s) referer and YouTube answers with error 153.
+  // OpenStreetMap also needs an identified client. A single scoped listener keeps
+  // both rules active: registering another listener would replace the first one.
+  installMediaRequestHeaders(session.defaultSession.webRequest, app.getVersion());
   // Nodus Toolkit OCR caches its Tesseract language traineddata here (the one
   // opt-in network call), so downloads persist across sessions in userData.
   if (!process.env.NODUS_TESSDATA_CACHE) {
@@ -1301,7 +1279,20 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let editorQuitApproved = false;
+let editorQuitPending = false;
+app.on('before-quit', event => {
+  if (!editorQuitApproved && mainWindow && !mainWindow.isDestroyed()) {
+    event.preventDefault();
+    if (!editorQuitPending) {
+      editorQuitPending = true;
+      void flushWindowEditors(mainWindow).then(saved => {
+        editorQuitPending = false;
+        if (saved) { editorQuitApproved = true; app.quit(); }
+      });
+    }
+    return;
+  }
   quitting = true;
   stopDocumentaryPreparation();
   void stopResearchZotero();

@@ -3,6 +3,7 @@
 // window (@shared/presenterState). Local input is applied AND relayed to main;
 // actions relayed back from the presenter are applied without re-broadcasting.
 import { createRoot } from 'react-dom/client';
+import { installTooltipLayer } from '../tooltipLayer';
 import { setActiveLang } from '../i18n';
 import { normalizeUiLanguage } from '@shared/uiLanguage';
 import type React from 'react';
@@ -32,6 +33,7 @@ function AudienceApp() {
   const toolsSlideChangedRef = useRef<() => void>(() => {});
   const videosRef = useRef<Record<string, PresenterVideo>>({});
   const ytCtlRef = useRef<YouTubeOverlayController | null>(null);
+  const videoVolumeRef = useRef<number | null>(null);
   const [barVisible, setBarVisible] = useState(false);
   const barHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -39,7 +41,10 @@ function AudienceApp() {
     const yt = ytCtlRef.current;
     if (!yt) return;
     const v = videosRef.current[String(slide)];
-    if (v) yt.show(v);
+    if (v) {
+      yt.show(v);
+      if (videoVolumeRef.current !== null) yt.setVolume(videoVolumeRef.current);
+    }
     else yt.hide();
   };
 
@@ -62,6 +67,9 @@ function AudienceApp() {
       else ytCtlRef.current?.pause();
     } else if (action.type === 'videoSeek') {
       ytCtlRef.current?.seek(action.time);
+    } else if (action.type === 'videoVolume') {
+      videoVolumeRef.current = action.volume;
+      ytCtlRef.current?.setVolume(action.volume);
     }
   };
   const dispatchRef = useRef(dispatch);
@@ -226,13 +234,14 @@ function AudienceApp() {
     >
       <div
         ref={wrapperRef}
+        className="shrink-0"
         style={
           zoom.scale > 1
             ? { transform: `scale(${zoom.scale})`, transformOrigin: `${zoom.originX}% ${zoom.originY}%` }
             : undefined
         }
       >
-        <canvas ref={canvasRef} className="block" />
+        <canvas ref={canvasRef} className="block max-w-none" />
       </div>
       {ui.blackScreen && <div className="fixed inset-0 z-10 bg-black" />}
       {!ready && <div className="fixed inset-0 z-20 bg-black" />}
@@ -240,7 +249,7 @@ function AudienceApp() {
       {/* Auto-hiding toolbar */}
       <div
         className={`fixed bottom-4 left-1/2 z-30 -translate-x-1/2 transition-opacity ${
-          barVisible || ui.toolMode ? 'opacity-100' : 'pointer-events-none opacity-0'
+          !ui.blackScreen && (barVisible || ui.toolMode) ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
         onMouseEnter={revealBar}
       >
@@ -264,5 +273,6 @@ function AudienceApp() {
 const el = document.getElementById('presenter-root');
 if (el) {
   setActiveLang(normalizeUiLanguage(new URLSearchParams(window.location.search).get('language')));
+  installTooltipLayer();
   createRoot(el).render(<AudienceApp />);
 }

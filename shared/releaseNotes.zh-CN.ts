@@ -1,3 +1,5 @@
+import { RELEASE_5_8_0_HIGHLIGHTS } from './releaseNotes580';
+import { RELEASE_5_7_4_HIGHLIGHTS } from './releaseNotes574';
 import { RELEASE_5_7_3_HIGHLIGHTS } from './releaseNotes573';
 import { RELEASE_5_6_0_HIGHLIGHTS } from './releaseNotes560';
 import { RELEASE_5_7_0_HIGHLIGHTS } from './releaseNotes570';
@@ -8,6 +10,8 @@ import { RELEASE_5_4_5_HIGHLIGHTS } from './releaseNotes545';
 
 /* Simplified Chinese release notes, keyed by version. Mirrors releaseNotes.it.ts / releaseNotes.tr.ts. */
 export const RELEASE_NOTES_ZH: Record<string, string[]> = {
+  "5.8.0": RELEASE_5_8_0_HIGHLIGHTS.map(highlight => highlight['zh-CN']),
+  "5.7.4": RELEASE_5_7_4_HIGHLIGHTS.map(highlight => highlight['zh-CN']),
   "5.7.3": RELEASE_5_7_3_HIGHLIGHTS.map(highlight => highlight['zh-CN']),
   "5.7.2": RELEASE_5_7_2_HIGHLIGHTS.map(highlight => highlight['zh-CN']),
   "5.7.1": RELEASE_5_7_0_HIGHLIGHTS.map(highlight => highlight['zh-CN']),

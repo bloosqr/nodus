@@ -68,6 +68,7 @@ import { DICTIONARY_TRANSLATIONS } from './i18n.dictionary';
 import { DEEP_RESEARCH_VERSION_TRANSLATIONS } from './i18n.deepResearchVersions';
 import { DOCUMENT_UNDERSTANDING_TRANSLATIONS } from './i18n.documentUnderstanding';
 import { STALE_MODEL_TRANSLATIONS } from './i18n.staleModels';
+import { SCHEME_DECLUTTER_TRANSLATIONS } from './i18n.schemeDeclutter';
 import { CHEMISTRY_STOCK_TRANSLATIONS } from './i18n.chemistryStock';
 import { DEEP_RESEARCH_QUALITY_TRANSLATIONS } from './i18n.deepResearchQuality';
 import { TEXT_PROVENANCE_TRANSLATIONS } from './i18n.textProvenance';
@@ -127,6 +128,7 @@ export const EN: Record<string, string> = {
   ...DEEP_RESEARCH_VERSION_TRANSLATIONS.en,
   ...DOCUMENT_UNDERSTANDING_TRANSLATIONS.en,
   ...STALE_MODEL_TRANSLATIONS.en,
+  ...SCHEME_DECLUTTER_TRANSLATIONS.en,
   ...CHEMISTRY_STOCK_TRANSLATIONS.en,
   ...DEEP_RESEARCH_QUALITY_TRANSLATIONS.en,
   ...TEXT_PROVENANCE_TRANSLATIONS.en,
@@ -9098,4 +9100,33 @@ export const EN: Record<string, string> = {
   "Sent": "Sent",
   ...CONCILIUM_TRANSLATIONS['en'],
   ...DRIFT_TRANSLATIONS['en'],
+  // PDF Presenter — editorial workspace
+  "Organiza tus diapositivas. Comparte tus ideas.": "Organize your slides. Share your ideas.",
+  "Buscar por número o notas…": "Search by number or notes…",
+
+  // PDF Presenter folder navigation.
+  "Editar carpeta": "Edit folder",
+  "Carpeta principal": "Parent folder",
+  "Biblioteca principal": "Main library",
+  "Color personalizado": "Custom color",
+  "Ruta de carpetas": "Folder path",
+  "Opciones de la carpeta {name}": "Options for folder {name}",
+  "No se pudo eliminar la carpeta.": "The folder could not be deleted.",
+  "Se eliminará la carpeta «{name}» y sus subcarpetas ({n}).": "The folder “{name}” and its subfolders ({n}) will be deleted.",
+  "¿Qué quieres hacer con sus {n} presentaciones?": "What would you like to do with its {n} presentations?",
+  "Conservar presentaciones": "Keep presentations",
+  "Moverlas a la biblioteca principal, con sus notas y vídeos.": "Move them to the main library, with their notes and videos.",
+  "Eliminar también las presentaciones": "Also delete the presentations",
+  "Se eliminarán sus copias de la biblioteca. Los archivos originales se conservarán.": "Their library copies will be deleted. The original files will be kept.",
+  "Eliminar carpeta y presentaciones": "Delete folder and presentations",
+  "Ciencia": "Science",
+  "Arte": "Art",
+  "Favoritos": "Favorites",
+  "Conexión móvil": "Mobile connection",
+  "Navegador web": "Web browser",
+  "App iPhone–iPad": "iPhone–iPad app",
+  "Escanea desde Nodus Presenter. Mantén Wi-Fi encendido en el Mac y el móvil; no necesitas el router de la sala.": "Scan with Nodus Presenter. Keep Wi-Fi on for your Mac and mobile device; the venue router is not required.",
+  "El enlace nativo no está disponible. Requiere macOS y permiso de red local.": "The native connection is unavailable. It requires macOS and local network permission.",
+  "Escanea desde Nodus Presenter. Conecta el ordenador y el móvil a la misma red local.": "Scan using Nodus Presenter. Connect the computer and phone to the same local network.",
+  "El enlace de la app no está disponible. Comprueba la conexión de red e inicia de nuevo la presentación.": "The app connection is unavailable. Check the network connection and restart the presentation.",
 };

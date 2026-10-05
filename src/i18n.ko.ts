@@ -68,6 +68,7 @@ import { DICTIONARY_TRANSLATIONS } from './i18n.dictionary';
 import { DEEP_RESEARCH_VERSION_TRANSLATIONS } from './i18n.deepResearchVersions';
 import { DOCUMENT_UNDERSTANDING_TRANSLATIONS } from './i18n.documentUnderstanding';
 import { STALE_MODEL_TRANSLATIONS } from './i18n.staleModels';
+import { SCHEME_DECLUTTER_TRANSLATIONS } from './i18n.schemeDeclutter';
 import { CHEMISTRY_STOCK_TRANSLATIONS } from './i18n.chemistryStock';
 import { DEEP_RESEARCH_QUALITY_TRANSLATIONS } from './i18n.deepResearchQuality';
 import { TEXT_PROVENANCE_TRANSLATIONS } from './i18n.textProvenance';
@@ -160,6 +161,7 @@ export const KO: Record<string, string> = {
   ...DEEP_RESEARCH_VERSION_TRANSLATIONS.ko,
   ...DOCUMENT_UNDERSTANDING_TRANSLATIONS.ko,
   ...STALE_MODEL_TRANSLATIONS.ko,
+  ...SCHEME_DECLUTTER_TRANSLATIONS.ko,
   ...CHEMISTRY_STOCK_TRANSLATIONS.ko,
   ...DEEP_RESEARCH_QUALITY_TRANSLATIONS.ko,
   ...TEXT_PROVENANCE_TRANSLATIONS.ko,
@@ -8233,4 +8235,33 @@ export const KO: Record<string, string> = {
   "Sent": "전송됨",
   ...CONCILIUM_TRANSLATIONS['ko'],
   ...DRIFT_TRANSLATIONS['ko'],
+  // PDF Presenter — editorial workspace
+  "Organiza tus diapositivas. Comparte tus ideas.": "슬라이드를 정리하고 아이디어를 공유하세요.",
+  "Buscar por número o notas…": "번호 또는 노트로 검색…",
+
+  // PDF Presenter folder navigation.
+  "Editar carpeta": "폴더 편집",
+  "Carpeta principal": "상위 폴더",
+  "Biblioteca principal": "기본 라이브러리",
+  "Color personalizado": "사용자 지정 색상",
+  "Ruta de carpetas": "폴더 경로",
+  "Opciones de la carpeta {name}": "{name} 폴더 옵션",
+  "No se pudo eliminar la carpeta.": "폴더를 삭제할 수 없습니다.",
+  "Se eliminará la carpeta «{name}» y sus subcarpetas ({n}).": "“{name}” 폴더와 하위 폴더({n}개)가 삭제됩니다.",
+  "¿Qué quieres hacer con sus {n} presentaciones?": "포함된 프레젠테이션 {n}개를 어떻게 처리할까요?",
+  "Conservar presentaciones": "프레젠테이션 유지",
+  "Moverlas a la biblioteca principal, con sus notas y vídeos.": "노트 및 동영상과 함께 기본 라이브러리로 이동합니다.",
+  "Eliminar también las presentaciones": "프레젠테이션도 삭제",
+  "Se eliminarán sus copias de la biblioteca. Los archivos originales se conservarán.": "라이브러리의 복사본이 삭제됩니다. 원본 파일은 유지됩니다.",
+  "Eliminar carpeta y presentaciones": "폴더 및 프레젠테이션 삭제",
+  "Ciencia": "과학",
+  "Arte": "예술",
+  "Favoritos": "즐겨찾기",
+  "Conexión móvil": "모바일 연결",
+  "Navegador web": "웹 브라우저",
+  "App iPhone–iPad": "iPhone–iPad 앱",
+  "Escanea desde Nodus Presenter. Mantén Wi-Fi encendido en el Mac y el móvil; no necesitas el router de la sala.": "Nodus Presenter로 스캔하세요. Mac과 모바일 기기의 Wi-Fi를 켜 두세요. 현장 라우터는 필요하지 않습니다.",
+  "El enlace nativo no está disponible. Requiere macOS y permiso de red local.": "네이티브 연결을 사용할 수 없습니다. macOS와 로컬 네트워크 권한이 필요합니다.",
+  "Escanea desde Nodus Presenter. Conecta el ordenador y el móvil a la misma red local.": "Nodus Presenter로 스캔하세요. 컴퓨터와 휴대폰을 같은 로컬 네트워크에 연결하세요.",
+  "El enlace de la app no está disponible. Comprueba la conexión de red e inicia de nuevo la presentación.": "앱 연결을 사용할 수 없습니다. 네트워크 연결을 확인하고 프레젠테이션을 다시 시작하세요.",
 };

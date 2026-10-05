@@ -68,6 +68,7 @@ import { DICTIONARY_TRANSLATIONS } from './i18n.dictionary';
 import { DEEP_RESEARCH_VERSION_TRANSLATIONS } from './i18n.deepResearchVersions';
 import { DOCUMENT_UNDERSTANDING_TRANSLATIONS } from './i18n.documentUnderstanding';
 import { STALE_MODEL_TRANSLATIONS } from './i18n.staleModels';
+import { SCHEME_DECLUTTER_TRANSLATIONS } from './i18n.schemeDeclutter';
 import { CHEMISTRY_STOCK_TRANSLATIONS } from './i18n.chemistryStock';
 import { DEEP_RESEARCH_QUALITY_TRANSLATIONS } from './i18n.deepResearchQuality';
 import { TEXT_PROVENANCE_TRANSLATIONS } from './i18n.textProvenance';
@@ -160,6 +161,7 @@ export const JA: Record<string, string> = {
   ...DEEP_RESEARCH_VERSION_TRANSLATIONS.ja,
   ...DOCUMENT_UNDERSTANDING_TRANSLATIONS.ja,
   ...STALE_MODEL_TRANSLATIONS.ja,
+  ...SCHEME_DECLUTTER_TRANSLATIONS.ja,
   ...CHEMISTRY_STOCK_TRANSLATIONS.ja,
   ...DEEP_RESEARCH_QUALITY_TRANSLATIONS.ja,
   ...TEXT_PROVENANCE_TRANSLATIONS.ja,
@@ -8233,4 +8235,33 @@ export const JA: Record<string, string> = {
   "Sent": "送信済み",
   ...CONCILIUM_TRANSLATIONS['ja'],
   ...DRIFT_TRANSLATIONS['ja'],
+  // PDF Presenter — editorial workspace
+  "Organiza tus diapositivas. Comparte tus ideas.": "スライドを整理し、アイデアを共有しましょう。",
+  "Buscar por número o notas…": "番号またはノートで検索…",
+
+  // PDF Presenter folder navigation.
+  "Editar carpeta": "フォルダーを編集",
+  "Carpeta principal": "親フォルダー",
+  "Biblioteca principal": "メインライブラリ",
+  "Color personalizado": "カスタムカラー",
+  "Ruta de carpetas": "フォルダーのパス",
+  "Opciones de la carpeta {name}": "フォルダー {name} のオプション",
+  "No se pudo eliminar la carpeta.": "フォルダーを削除できませんでした。",
+  "Se eliminará la carpeta «{name}» y sus subcarpetas ({n}).": "フォルダー「{name}」とそのサブフォルダー（{n} 個）を削除します。",
+  "¿Qué quieres hacer con sus {n} presentaciones?": "含まれる {n} 件のプレゼンテーションをどうしますか？",
+  "Conservar presentaciones": "プレゼンテーションを保持",
+  "Moverlas a la biblioteca principal, con sus notas y vídeos.": "ノートと動画を含めてメインライブラリに移動します。",
+  "Eliminar también las presentaciones": "プレゼンテーションも削除",
+  "Se eliminarán sus copias de la biblioteca. Los archivos originales se conservarán.": "ライブラリ内のコピーを削除します。元のファイルは保持されます。",
+  "Eliminar carpeta y presentaciones": "フォルダーとプレゼンテーションを削除",
+  "Ciencia": "科学",
+  "Arte": "アート",
+  "Favoritos": "お気に入り",
+  "Conexión móvil": "モバイル接続",
+  "Navegador web": "Webブラウザ",
+  "App iPhone–iPad": "iPhone–iPadアプリ",
+  "Escanea desde Nodus Presenter. Mantén Wi-Fi encendido en el Mac y el móvil; no necesitas el router de la sala.": "Nodus Presenterでスキャンしてください。Macとモバイル端末のWi-Fiをオンに保ってください。会場のルーターは不要です。",
+  "El enlace nativo no está disponible. Requiere macOS y permiso de red local.": "ネイティブ接続は利用できません。macOSとローカルネットワークの許可が必要です。",
+  "Escanea desde Nodus Presenter. Conecta el ordenador y el móvil a la misma red local.": "Nodus Presenter で読み取ってください。コンピューターとスマートフォンを同じローカルネットワークに接続してください。",
+  "El enlace de la app no está disponible. Comprueba la conexión de red e inicia de nuevo la presentación.": "アプリへの接続を利用できません。ネットワーク接続を確認し、プレゼンテーションを再開してください。",
 };

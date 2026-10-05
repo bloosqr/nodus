@@ -23,7 +23,7 @@ Choose the path that best matches your contribution:
 - **Feature request** for a new capability or improvement
 - **New vault type** for a specialized workspace proposal
 - **Product feedback** belongs in the permanent
-  [shared feedback thread](https://github.com/Drakonis96/nodus/issues/272);
+  [shared feedback thread](https://github.com/jorgepb96/nodus/issues/272);
   add a comment there instead of opening a new issue
 
 The desktop app exposes the same four paths under **Suggest / Report**. Bug
@@ -107,11 +107,17 @@ also be run manually by supplying the exact tag. The channel/version validator
 stops a stable tag from entering Beta or a beta tag from entering Stable before
 any native build begins.
 
+Linux AppImages support both the built-in Electron updater and external
+AppImageUpdate tools. See [AppImage update compatibility](docs/appimage-updates.md)
+for the finalization sequence, preserved download aliases and Linux checks.
+
 Desktop updates download automatically, but installation and restart require
 the explicit **Install and restart** action on every supported platform. An
 ordinary app quit never installs a pending update. The downloaded update remains
-accessible from the header and Settings after choosing **Later**. On launch, the
-header banner shows the update check, available version, and download progress
+accessible from Settings after choosing **Later**. The banner below the header
+reappears during backup and installation, including when installation starts
+from Settings after postponing the update. On launch, the banner shows the update
+check, available version, and download progress
 without blocking the workspace. It disappears when no update is available; an
 initial check or download error is shown briefly and dismissed after five seconds.
 Subsequent checks and downloads stay silent until an update is ready to install.

@@ -69,14 +69,13 @@ test('dedicated vaults expose only their own fixed navigation', () => {
   assert.equal(navigation.dedicatedVaultNavIds('genealogy'), null);
 });
 
-test('Docencia exposes Unit design and the Workspace under Crear with stable settings ids', () => {
+test('Docencia keeps Unit design under Crear; Scriptor is provided by Tools', () => {
   const create = TEACHING_GROUPS.find((group) => group.label === 'Crear');
   assert.ok(create, 'Crear is present');
   assert.deepEqual(
     create.items.map((item) => ({ label: item.label, id: teachingItemId(item) })),
     [
       { label: 'Diseño de unidades', id: 'teachingUnits' },
-      { label: 'Espacio de trabajo', id: 'notes' },
     ],
   );
   const ids = TEACHING_GROUPS.flatMap((group) => group.items.map(teachingItemId));
@@ -96,6 +95,31 @@ test('saved order is applied only to the bounded group supplied by a sidebar', (
 });
 
 const vaultTypes = load('shared/vaultTypes.ts');
+const focus = load('shared/studyFocus.ts');
+test('Focus defaults keep each vault\'s core work accessible with optional tools configurable', () => {
+  const core = {
+    academic: ['library', 'workspace', 'researchChat'],
+    genealogy: ['persons', 'tree', 'archive'],
+    primary_sources: ['archive', 'timeline', 'relations'],
+    prosopography: ['prosopPopulation', 'prosopSources', 'prosopAnalysis'],
+    databases: ['pages', 'dbSearch', 'dbAnalysis'],
+    testimonios: ['testimonyInterviews', 'testimonyParticipants', 'testimonyContrasts'],
+    worldbuilding: ['encyclopedia', 'characters', 'manuscript'],
+    estudio: ['studyCourses', 'studyLibrary', 'studyQuestions'],
+    docencia: ['studyCourses', 'teachingExams', 'teachingUnits'],
+  };
+  for (const [type, essential] of Object.entries(core)) {
+    const defaults = navigation.NAV_ITEMS.filter(item => focus.focusDefaultSectionVisible(type, item.id)).map(item => item.id);
+    for (const id of essential) assert.ok(defaults.includes(id), `${type}: ${id} is immediately accessible`);
+    assert.ok(defaults.length <= 12, `${type}: a bounded working set`);
+    for (const id of defaults) assert.ok(vaultTypes.isViewAllowedForVaultType(id, type), `${type}: ${id} belongs to this vault`);
+    for (const id of ['settings', 'home', 'radar', 'compass', 'toolkit', 'toolkit:drift']) {
+      assert.equal(focus.focusDefaultSectionVisible(type, id), false, `${type}: ${id} is optional`);
+      assert.equal(focus.focusLayoutVisible({ [`nav:${id}`]: true }, `nav:${id}`, false), true, 'manual choices override presets');
+    }
+  }
+  assert.equal(focus.focusDefaultSectionVisible('databases', 'database:new'), true);
+});
 const customChats = {
   primary_sources: load('src/components/PrimarySourcesSidebar.tsx').PRIMARY_SOURCES_SIDEBAR_ITEMS,
   prosopography: load('src/components/ProsopographySidebar.tsx').PROSOPOGRAPHY_GROUPS.flatMap(group => group.items),
