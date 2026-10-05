@@ -286,6 +286,15 @@ function trimSentenceEdges(token: string): string {
   return token.replace(SENTENCE_LEADING, '').replace(SENTENCE_TRAILING, '');
 }
 
+/** Whether a species the model wrote as a NAME is in fact a bare SMILES. Only ever asked of a
+ *  name no reference service could resolve: a real systematic name ("butan-2-one") passes the
+ *  shape test below, so this must not be used to pre-empt resolution — the structure is taken
+ *  only once the name has failed, where the alternative is discarding a species the author
+ *  described unambiguously. */
+export function isBareSmilesName(name: string): boolean {
+  return isSmilesLike(name.trim(), 3);
+}
+
 function isSmilesLike(token: string, minLength: number): boolean {
   return token.length >= minLength
     && token.length <= 2000
@@ -982,6 +991,14 @@ export function buildRouteSteps(speciesByStep: Array<Array<Pick<ResolvedSpecies,
     return out;
   };
   return speciesByStep.map((step) => {
+    // A reactant or product the resolver could not turn into a structure must not just be left
+    // out. What remains is a different equation, and the checker then returns a verdict on a
+    // step the author never wrote: a cyclisation whose precursor and product were both name-only
+    // came back as "oxygen -> water", failing because "the reactants lack exactly H2". An empty
+    // step is reported as unbuilt instead, which is what the author has to fix. Agents take no
+    // part in the balance, so a condition that does not resolve — a named coupling reagent, a
+    // buffer — is still dropped and the step still checked.
+    if (step.some((entry) => entry.role !== 'agent' && !(entry.smiles ?? '').trim())) return '';
     const reactants = fragments(step, 'reactant');
     const agents = fragments(step, 'agent');
     const products = fragments(step, 'product');

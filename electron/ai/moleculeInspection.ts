@@ -7,6 +7,7 @@ import {
   buildRouteSteps,
   classifyCoProducts,
   countRouteSteps,
+  isBareSmilesName,
   stepDeclaresRacemic,
   stepDeclaresRearrangement,
   stepDeclaresRadical,
@@ -229,9 +230,11 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
     ...(declared.rearrangement?.some(Boolean) && routeAccepts(provider, 'rearrangement') ? { rearrangement: declared.rearrangement } : {}),
     ...(declared.radical?.some(Boolean) && routeAccepts(provider, 'radical') ? { radical: declared.radical } : {}),
     ...(target ? { target } : {}),
-    // A long protected-peptide name is still sent, cut to the schema's 1,000 characters: one
-    // overlong name must not make the package reject the whole route.
-    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, 1000) }))) } : {}),
+    // A long species name is still sent, cut to the schema's 4,000 characters: one
+    // overlong name must not make the package reject the whole route. The cut matches the
+    // schema rather than undercutting it, because a species given as its own structure carries
+    // that structure as its name, and cutting one corrupts the label it is displayed under.
+    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, 4000) }))) } : {}),
     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
   };
   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
@@ -554,6 +557,19 @@ export async function resolveNamedRoute(
         await resolveAll([...renamed.values()]);
       }
     }
+
+    // A species written as a bare SMILES where a name belongs — the contract asks for a name, or
+    // a name with the structure in backticks, and under load the model gives the structure alone.
+    // The reference services then report "no exact match for this name" for a molecule that is
+    // perfectly well defined, and the whole step is discarded over the formatting. The structure
+    // is what the route is checked against, so take it: only for a name that has already failed
+    // to resolve (a real systematic name resolves and never reaches here), and through the same
+    // declared-structure path, so it is named back from PubChem below where possible and
+    // disclosed as author-supplied where not. Some species have no resolvable name at all — a
+    // protected intermediate, or one on a solid support — so this is a normal case, not an edge one.
+    speciesByStep = speciesByStep.map((step) => step.map((entry) => (!entry.declaredSmiles
+      && resolutions.get(entry.name)?.status !== 'resolved' && isBareSmilesName(entry.name)
+      ? { ...entry, declaredSmiles: entry.name.trim() } : entry)));
 
     // A species the model could only give as a structure: try to read a name back from PubChem,
     // so the route uses a real name where one exists. An unnamed structure keeps the author's
@@ -893,7 +909,14 @@ export async function appendRouteReportAndDrawings(
     // blocking: a finding marks the route not verified. An unreadable reply never blocks. It
     // runs while the drawings compile, so the reviewer and the drawings overlap.
     const reviewPromise = timed('review', requestRouteReview(options.question ?? '', labels, audit, options, stepProse));
-    const drawings = compile ? await timed('drawings', drawRouteSteps(runner, compile, steps, conditions, audit, options)) : '';
+    // Nothing is drawn until every step passes. A route with a failing step is about to be
+    // rewritten and each picture made for it is discarded with it: measured on one long route,
+    // ~200,000 characters of SVG per turn, three turns running, none of it ever read, while the
+    // package's runtime budget was being exhausted elsewhere in the same turn. The report, the
+    // precedent text and the review are unaffected — those are what a correction is written
+    // from, and they cost nothing to render.
+    const routeIsRight = audit.steps.length > 0 && audit.steps.every((step) => !routeStepFailure(step));
+    const drawings = compile && routeIsRight ? await timed('drawings', drawRouteSteps(runner, compile, steps, conditions, audit, options)) : '';
     // Paint the deterministic report and drawings before the reviewer returns. The transport
     // replaces the provisional stream with this returned answer, so the route only waits on
     // the reviewer when the reviewer is the last thing outstanding.
@@ -904,10 +927,11 @@ export async function appendRouteReportAndDrawings(
     const supportPromise = timed('step support', precedentPromise
       .then((result) => (result ? buildStepSupport(runner, result.precedent, queries, labels, audit, options) : new Map<number, StepSupport>()))
       .catch(() => new Map<number, StepSupport>()));
+    // Pictures of the recorded reactions wait for the same gate: they are the largest of the lot.
     const precedentSection = Promise.all([precedentPromise, supportPromise]).then(([result, support]) => {
       if (!result) return '';
       const target = options.target ? { smiles: options.target, name: targetName(labels, audit, options.target) } : null;
-      const drawings = precedentDrawings(runner, result.provider, result.precedent, queries);
+      const drawings = routeIsRight ? precedentDrawings(runner, result.provider, result.precedent, queries) : undefined;
       return formatReactionPrecedents(result.precedent, { queries, labels, target, drawings, support });
     }).catch(() => '');
     // The same steps in the reaction schemes of the user's own textbooks, cited by book and page.

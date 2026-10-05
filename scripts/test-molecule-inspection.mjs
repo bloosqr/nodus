@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, stepDeclaresRearrangement, stepDeclaresRadical, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, stepDeclaresRearrangement, stepDeclaresRadical, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, isBareSmilesName, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -668,6 +668,20 @@ test('in-place annotation does not split a longer name or touch headings and pro
   assert.match(out, /\*\*Step 1 — Oxidation of cyclohexanol\*\*/, 'the heading is untouched');
 });
 
+test('a species written as a bare SMILES is recognised, but a systematic name is never mistaken for one', () => {
+  // Only ever asked of a name that already failed to resolve. Some species have no resolvable
+  // name, so under load the model gives the structure alone and the step was being discarded
+  // over the formatting while the structure sat right there.
+  assert.ok(isBareSmilesName('O=C(O)[C@@H](CCCCNC(C)=O)NC(=O)OCC1c2ccccc2-c2ccccc21'), 'a protected intermediate');
+  assert.ok(isBareSmilesName('C=C1c2ccccc2-c2ccccc21'), 'dibenzofulvene');
+  assert.ok(isBareSmilesName('*OC(=O)CN'), 'a species on a solid support, written with *');
+  // A real systematic name passes the shape test too, which is why this is only consulted after
+  // resolution has failed — never to pre-empt it.
+  assert.ok(!isBareSmilesName('ethanol'), 'no structural characters');
+  assert.ok(!isBareSmilesName('2-methylbutanoic acid'), 'a name with a space is never a SMILES');
+  assert.ok(!isBareSmilesName('=O'), 'a quoted fragment is not a species');
+});
+
 test('reaction lines are derived from resolved species, never the model', () => {
   const resolved = [[
     { role: 'reactant', byproduct: false, name: 'acetylene', status: 'resolved', smiles: 'C#C', source: 'pubchem' },
@@ -680,6 +694,23 @@ test('reaction lines are derived from resolved species, never the model', () => 
   // A step with no resolvable reactant cannot form an equation; it stays as an empty line so the
   // steps after it keep their numbers.
   assert.deepEqual(buildRouteSteps([[{ role: 'product', byproduct: false, name: 'x', status: 'unresolved' }]]), ['']);
+  // One unresolved reactant or product empties the whole step, rather than leaving the rest to be
+  // checked as an equation nobody wrote: a ring closure whose precursor and product were name-only
+  // came back as "oxygen -> water" and failed for want of H2.
+  const partial = [[
+    { role: 'reactant', byproduct: false, name: 'the long precursor', status: 'unresolved' },
+    { role: 'reactant', byproduct: false, name: 'oxygen', status: 'resolved', smiles: '[O]', source: 'pubchem' },
+    { role: 'product', byproduct: false, name: 'the macrocycle', status: 'resolved', smiles: 'C1CCCCC1', source: 'pubchem' },
+    { role: 'product', byproduct: true, name: 'water', status: 'resolved', smiles: 'O', source: 'pubchem' },
+  ]];
+  assert.deepEqual(buildRouteSteps(partial), ['']);
+  // An agent that does not resolve is still only a condition: it is dropped and the step checked.
+  const unresolvedAgent = [[
+    { role: 'reactant', byproduct: false, name: 'acetylene', status: 'resolved', smiles: 'C#C', source: 'pubchem' },
+    { role: 'product', byproduct: false, name: 'but-1-yne', status: 'resolved', smiles: 'CCC#C', source: 'pubchem' },
+    { role: 'agent', byproduct: false, name: 'aqueous buffer, pH 8', status: 'unresolved' },
+  ]];
+  assert.deepEqual(buildRouteSteps(unresolvedAgent), ['C#C>>CCC#C']);
 });
 
 test('precedent queries leave byproducts out, as the Open Reaction Database records the main product', () => {
