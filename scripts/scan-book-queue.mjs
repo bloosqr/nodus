@@ -48,7 +48,7 @@ if (!process.argv.includes('--electron-scan-book-queue')) {
 const args = process.argv.slice(2).filter((a) => a !== '--electron-scan-book-queue');
 const dryRun = args.includes('--dry-run');
 // --plan <file.json>: [{ zoteroKey | nodusId | title, title, rescan?: true, declutter?: [pdf paths] }]
-// instead of the BOOKS below. `declutter` adds the PDFs to <userData>/scheme-declutter.json
+// instead of the BOOKS below. `declutter` records a declutter choice for those PDFs' works
 // (their text is extracted without reaction schemes); `rescan` redoes light and deep analysis
 // even when done, as a book whose text changed needs.
 const planAt = args.indexOf('--plan');
@@ -241,17 +241,34 @@ async function ensurePassages(page, nodusId) {
   if (status !== 'complete') throw new Error(`passages did not complete (${status})`);
 }
 
-function addToDeclutterList(books) {
+function recordDeclutterChoices(books) {
   const fs = require('node:fs');
   const os = require('node:os');
-  const files = books.flatMap((book) => book.declutter ?? []).map((file) => path.resolve(file));
-  if (!files.length) return;
-  for (const file of files) if (!fs.existsSync(file)) throw new Error(`declutter file not found: ${file}`);
-  const listPath = path.join(os.homedir(), 'Library', 'Application Support', 'Nodus', 'scheme-declutter.json');
-  const current = fs.existsSync(listPath) ? JSON.parse(fs.readFileSync(listPath, 'utf8')).files ?? [] : [];
-  const merged = [...new Set([...current, ...files])];
-  if (!dryRun) fs.writeFileSync(listPath, JSON.stringify({ files: merged }, null, 2));
-  log(`declutter list: ${merged.length} file(s)${dryRun ? ' (dry run, not written)' : ''} → ${listPath}`);
+  const { createHash } = require('node:crypto');
+  const Database = require('better-sqlite3');
+  const planned = books.flatMap((book) => (book.declutter ?? []).map((file) => ({ book, file: path.resolve(file) })));
+  if (!planned.length) return;
+  for (const { file } of planned) if (!fs.existsSync(file)) throw new Error(`declutter file not found: ${file}`);
+  // The choice extraction reads (schemeDeclutter.ts): one per work and attachment, keyed by
+  // sha256([nodus_id, source_ref]). A rescanned book gets new text and new analysis, so it takes
+  // the current classifier ('declutter'), replacing any earlier choice.
+  const dbPath = path.join(os.homedir(), 'Library', 'Application Support', 'Nodus', 'nodus.sqlite');
+  const db = new Database(dbPath, { readonly: dryRun, fileMustExist: true });
+  try {
+    for (const { book, file } of planned) {
+      const itemKey = path.basename(path.dirname(file)); // Zotero storage: <storage>/<itemKey>/<file>
+      const work = db.prepare('SELECT nodus_id FROM works WHERE zotero_key = ? OR nodus_id = ?').get(book.zoteroKey ?? '', book.nodusId ?? '')
+        ?? db.prepare('SELECT nodus_id FROM work_text_sources WHERE source_ref LIKE ?').get(`zotero:%:%:${itemKey}`);
+      if (!work) throw new Error(`no work found for declutter file: ${file}`);
+      const sourceRef = db.prepare('SELECT source_ref FROM work_text_sources WHERE nodus_id = ? AND source_ref LIKE ?').get(work.nodus_id, `zotero:%:%:${itemKey}`)?.source_ref
+        ?? `zotero:user:0:${itemKey}`;
+      const key = `pdf_declutter:${createHash('sha256').update(JSON.stringify([work.nodus_id, sourceRef])).digest('hex')}`;
+      if (!dryRun) db.prepare("INSERT INTO settings (key, value) VALUES (?, 'declutter') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key);
+      log(`declutter${dryRun ? ' (dry run, not written)' : ''}: ${path.basename(file)} -> ${sourceRef}`);
+    }
+  } finally {
+    db.close();
+  }
 }
 
 async function main() {
@@ -261,7 +278,7 @@ async function main() {
 
   if (PLAN) BOOKS.splice(0, BOOKS.length, ...PLAN);
   console.log('=== Plan ===');
-  addToDeclutterList(BOOKS);
+  recordDeclutterChoices(BOOKS);
   for (const book of BOOKS) {
     console.log(`  ${book.rescan ? '[RESCAN light+deep+passages+DocIndex]' : book.needsFullAnalysis ? '[light+deep+DocIndex]' : '[DocIndex only]'} ${book.title}${book.declutter ? ' [declutter]' : ''}${book.note ? `  (${book.note})` : ''}`);
   }
