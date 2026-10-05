@@ -818,7 +818,7 @@ export interface ResolvedSpecies extends NamedSpecies {
   status: 'resolved' | 'fallback' | 'unresolved';
   smiles?: string;
   formula?: string;
-  source?: 'pubchem' | 'opsin' | 'declared';
+  source?: 'pubchem' | 'opsin' | 'declared' | 'builtin';
   feedback?: string;
 }
 

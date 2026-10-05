@@ -329,7 +329,7 @@ interface SpeciesResolution {
   status: 'resolved' | 'ambiguous' | 'unresolved';
   smiles?: string;
   formula?: string;
-  source?: 'pubchem' | 'opsin';
+  source?: 'pubchem' | 'opsin' | 'builtin';
   feedback?: string;
 }
 
@@ -373,7 +373,7 @@ function normalizeSpeciesResolution(entry: unknown): SpeciesResolution | null {
     status,
     ...(typeof value.smiles === 'string' && value.smiles ? { smiles: value.smiles.slice(0, 2000) } : {}),
     ...(typeof value.formula === 'string' ? { formula: value.formula.slice(0, 200) } : {}),
-    ...(value.source === 'pubchem' || value.source === 'opsin' ? { source: value.source } : {}),
+    ...(value.source === 'pubchem' || value.source === 'opsin' || value.source === 'builtin' ? { source: value.source } : {}),
     ...(typeof value.feedback === 'string' && value.feedback ? { feedback: value.feedback.slice(0, 400) } : {}),
   };
 }
