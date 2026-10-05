@@ -680,6 +680,18 @@ test('a species written as a bare SMILES is recognised, but a systematic name is
   assert.ok(!isBareSmilesName('ethanol'), 'no structural characters');
   assert.ok(!isBareSmilesName('2-methylbutanoic acid'), 'a name with a space is never a SMILES');
   assert.ok(!isBareSmilesName('=O'), 'a quoted fragment is not a species');
+  // Numbered systematic names all satisfy the looser shape test used to find candidates in prose,
+  // because a locant digit reads as a ring closure. They must not reach the declared-structure
+  // path: when a reference service is merely unreachable, adopting the name as its own structure
+  // replaces a precise "this name could not be resolved" with a route of unparseable steps.
+  for (const name of ['2-methylbutan-2-ol', 'cyclohex-2-en-1-one', 'benzene-1,2-diamine',
+    '4-nitrophenol', 'bornan-2-ol', 'N,N-dimethylformamide', '2,3-dibromobutane',
+    '(1R,5R)-2,6,6-trimethylbicyclo[3.1.1]hept-2-ene']) {
+    assert.ok(!isBareSmilesName(name), `a systematic name is not a structure: ${name}`);
+  }
+  // A hyphen is an explicit single bond, not a locant: a biaryl linkage is still a structure.
+  assert.ok(isBareSmilesName('C=C1c2ccccc2-c2ccccc21'));
+  assert.ok(isBareSmilesName('[Na+].[Cl-]'), 'a charge inside a bracket atom is not punctuation');
 });
 
 test('reaction lines are derived from resolved species, never the model', () => {

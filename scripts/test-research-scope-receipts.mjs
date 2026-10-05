@@ -75,9 +75,27 @@ try {
     'a rebuilt passage row cannot replace the text a citation was issued against');
   assert.equal(legacy.getScopedLegacyPassageDetail(citations[PASSAGES - 1]).text, `measure inside evidence ${PASSAGES - 1}`);
 
-  // And a tampered citation is still rejected rather than resolved to something else.
-  const tampered = citations[0].replace(/.$/, citations[0].endsWith('0') ? '1' : '0');
-  assert.equal(legacy.getScopedLegacyPassageDetail(tampered), null, 'tampered receipts are rejected');
+  // An unknown citation resolves to nothing rather than to something else.
+  const unknown = citations[0].replace(/.$/, citations[0].endsWith('0') ? '1' : '0');
+  assert.equal(legacy.getScopedLegacyPassageDetail(unknown), null, 'an unknown citation id resolves to nothing');
+
+  // And a receipt ROW edited behind the app's back is rejected. Now that the receipt lives in its
+  // own table rather than inside the scope row it is authorized against, the fingerprint carried
+  // in the citation is the only thing binding the two — so this has to be tested by rewriting the
+  // stored row, not merely by altering an id, which would fail for the trivial reason of matching
+  // no row at all.
+  const stored = db.prepare('SELECT scope_id, key, receipt_json FROM research_scope_receipts LIMIT 1').get();
+  const forged = JSON.parse(stored.receipt_json);
+  forged.text = 'text the citation was never issued against';
+  db.prepare('UPDATE research_scope_receipts SET receipt_json=? WHERE scope_id=? AND key=?')
+    .run(JSON.stringify(forged), stored.scope_id, stored.key);
+  const forgedCitation = citations.find(citation => citation.includes(stored.key));
+  if (forgedCitation) {
+    assert.equal(legacy.getScopedLegacyPassageDetail(forgedCitation), null,
+      'a receipt row rewritten behind the app is rejected by its fingerprint');
+  } else {
+    assert.fail('could not match a stored receipt row to its citation');
+  }
 
   console.log(`scope receipts: ${PASSAGES} recorded and resolved, ${PASSAGES - OLD_LIMIT} of them past the old ${OLD_LIMIT} limit`);
 } finally {

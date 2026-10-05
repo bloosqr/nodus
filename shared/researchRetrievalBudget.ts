@@ -20,12 +20,22 @@ export class ResearchRetrievalBudget {
   constructor(settings: RetrievalSettings, public evidenceTokenLimit = settings.evidenceTokens, public decisionTokenLimit = settings.evidenceTokens) {
     this.settings = validateRetrievalSettings(settings);
   }
-  /** Fit the evidence allowance into what the window leaves, but never to nothing: at zero,
-   *  `nextRound` compares 0 >= 0 and no retrieval round can ever start, so the turn answers with
-   *  no corpus evidence at all and says only that it found none. A floor makes a tight window
-   *  degrade retrieval instead of disabling it, as the callers' own floors already do. */
-  constrainToWindow(window: number, reservedTokens: number): void {
-    const limit = Math.max(MIN_EVIDENCE_TOKENS, Math.floor(window - reservedTokens));
+  /** Fit the evidence allowance into what the window leaves.
+   *
+   *  Everything this class counts is UTF-8 bytes, as a conservative bound on tokens (see above),
+   *  so the window has to be converted to the same unit before subtracting: comparing a byte
+   *  count against a token window overstated the prompt by roughly the bytes-per-token ratio,
+   *  and on a large system prompt the reservation came out bigger than the whole window. The
+   *  allowance was then 0, `nextRound` compared 0 >= 0, and no retrieval round could ever start,
+   *  so the turn answered with no corpus evidence and reported only that it had found none.
+   *
+   *  `charsPerToken` is the caller's own estimate, so one ratio is used for the whole turn. A
+   *  tight-but-real window keeps the floor and degrades; a prompt that genuinely does not fit
+   *  gets nothing, which is what the caller's own overflow check will report. */
+  constrainToWindow(windowTokens: number, reservedBytes: number, charsPerToken: number): void {
+    const windowBytes = Math.floor(windowTokens * charsPerToken);
+    const room = windowBytes - reservedBytes;
+    const limit = room > 0 ? Math.max(MIN_EVIDENCE_TOKENS, room) : 0;
     if (limit < this.evidenceTokenLimit) { this.evidenceTokenLimit = limit; this.partial = true; }
   }
   reserveDecision(system: string, user: string, output: number): boolean {

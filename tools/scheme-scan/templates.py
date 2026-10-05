@@ -28,7 +28,8 @@ import contextlib, hashlib, io, json, os, re, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.insert(0, os.path.join(HERE, '..', 'reaction-index'))
+# Appended, not inserted: this tool's own directory must win, and build_index.py exists in both.
+sys.path.append(os.path.join(HERE, '..', 'reaction-index'))
 DB = os.environ.get('SCHEME_SCAN_DB') or os.path.expanduser('~/Library/Application Support/Nodus/chemistry-schemes/scan.sqlite')
 # A side work directory (SCHEME_TEMPLATES_WORK) builds an alternative template set without touching
 # the one the index was built from.
@@ -361,7 +362,7 @@ def merge(fallback):
     with open(MERGED_META, 'w') as fh:
         json.dump({'version': 1, 'files': {os.path.abspath(p): file_hash(p) for p in paths}}, fh)
     print(dict(tally), '->', MERGED)
-from reaction_audit import DECLARED, ASYMMETRIC, MECHANISM_FLAGS, audit_reaction  # noqa: E402  (shared with build_index)
+from reaction_audit import MECHANISM_FLAGS, audit_reaction  # noqa: E402  (shared with build_index)
 
 
 def audit_record(mapping, row):

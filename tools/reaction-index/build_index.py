@@ -463,10 +463,12 @@ def main():
     ap.add_argument('--extra-map-audit', metavar='JSON',
                     help='{key: [flags]} from re-mapping reactions neither the gate nor their own atom map could '
                          'decide (an ambiguous or missing map): used as the map audit for exactly those')
-    ap.add_argument('--gate-flags', choices=('exclude', 'tag'), default='exclude',
-                    help="what a gate flag does to a recorded reaction: leave it out, or keep it cited and list its flags "
-                         "in audit-flags.tsv.zst (a record has no prose, so a real rearrangement cannot be declared and "
-                         "looks like a flagged one). Map-audit flags always exclude")
+    ap.add_argument('--gate-flags', choices=('exclude', 'tag'), default='tag',
+                    help="what a gate flag does to a recorded reaction: keep it cited and list its flags in "
+                         "audit-flags.tsv.zst (the default), or leave it out. A record carries no prose, so a real "
+                         "rearrangement cannot be declared and looks like a flagged one — excluding by default would "
+                         "silently drop every Beckmann, pinacol, Claisen and Cope record from the index, so that is "
+                         "opt-in for a curated build. Map-audit flags always exclude")
     ap.add_argument('--revision', default='93475c46949f9218e1dfb6624096025135db2add')
     args = ap.parse_args()
 
@@ -669,17 +671,22 @@ def main():
                     if key not in e['k'] and len(e['k']) < SAMPLE_KEYS_PER_PRODUCT:
                         e['k'].append(key)
 
+    def counts(name, field):
+        """`fam` is a defaultdict, so reading a family that was never merged would create it and
+        the manifest would then advertise a source this build never read."""
+        return fam[name][field] if name in fam else Counter()
+
     def combined(field):
         """ORD's uspto-grants and Lowe's grants file report the same reactions: count the larger of
         the two, then add the applications (and everything else ORD holds) once."""
-        o, g, a = fam['ord'][field], fam['lowe-grants'][field], fam['lowe-applications'][field]
+        o, g, a = counts('ord', field), counts('lowe-grants', field), counts('lowe-applications', field)
         return Counter({k: max(o.get(k, 0), g.get(k, 0)) + a.get(k, 0) for k in set(o) | set(g) | set(a)})
 
     exact, templates = combined('exact'), combined('templates')
     templates_r, templates_f = combined('r'), combined('f')
     for k, n in combined('products').items():
         products[k]['n'] = n
-    per_family = ', '.join(f'{name} {sum(c["exact"].values())}' for name, c in sorted(fam.items()))
+    per_family = ', '.join(f'{name} {sum(c.get("exact", {}).values())}' for name, c in sorted(fam.items()))
     print(f'merged: {len(exact)} exact keys, {len(templates)} templates, {len(products)} products '
           f'(reactions per family: {per_family})', flush=True)
 
@@ -687,6 +694,11 @@ def main():
     # the reaction itself (no atom map, so a mapper's error cannot condemn a sound reaction); where
     # the gate cannot compare the sides (a carbon by-product left out), the map audit decides; a
     # reaction neither can read stays in, counted as unaudited.
+    #
+    # This gate decides CITATIONS only. Templates were already filtered one by one at extraction by
+    # the map audit (_map_audit), which is the right test for them: a template IS an atom map, and
+    # it is aggregated across every reaction that yields it, so one excluded citation cannot retract
+    # a template that a hundred clean reactions also produce. The manifest records both rules.
     gate = run_skeleton_gate(args, reaction_meta) if args.skeleton_gate else {}
     extra_audit = json.load(open(args.extra_map_audit)) if args.extra_map_audit else {}
     verdict_by = Counter()
@@ -874,7 +886,7 @@ def main():
         'sources': sorted(fam),
         'audit': {'citations': dict(verdict_by), 'skeletonGate': bool(args.skeleton_gate), 'gateFlags': args.gate_flags,
                   'templateExclusions': dict(audit_flags),
-                  'rule': 'citations: app bond-edit gate, else map audit, else unaudited; templates: map audit per reaction'},
+                  'rule': 'citations: app bond-edit gate, else map audit, else unaudited (gateFlags decides tag vs exclude); templates: map audit per reaction at extraction, aggregated across reactions, so the citation gate does not retract them'},
         'files': files_meta,
         'builtAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
     }

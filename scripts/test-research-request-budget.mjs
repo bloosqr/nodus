@@ -20,13 +20,21 @@ try {
   await pending;
   const { ResearchRetrievalBudget } = load('shared/researchRetrievalBudget.ts');
   const budget = new ResearchRetrievalBudget(load('shared/researchCorpus.ts').RETRIEVAL_PRESETS.deep);
-  budget.constrainToWindow(4096, 3500);
+  // The window is in tokens and the reservation in the budget's own bytes: 4096 tokens is
+  // 13,107 bytes at this ratio, so 12,511 reserved leaves 596.
+  budget.constrainToWindow(4096, 12511, 3.2);
   assert.equal(budget.evidenceTokenLimit, 596);
   assert.equal(budget.accept('first', 'a'.repeat(500)), true);
   assert.equal(budget.accept('second', '界'.repeat(40)), false);
   assert.equal(budget.partial, true);
-  budget.constrainToWindow(8192, 0);
+  budget.constrainToWindow(8192, 0, 3.2);
   assert.equal(budget.evidenceTokenLimit, 596, 'later requests cannot reset or enlarge a run budget');
+  // A prompt that already fills the window leaves nothing, rather than a floor's worth of
+  // evidence on a payload that cannot fit.
+  const tight = new ResearchRetrievalBudget(load('shared/researchCorpus.ts').RETRIEVAL_PRESETS.deep);
+  tight.constrainToWindow(1000, 99999, 3.2);
+  assert.equal(tight.evidenceTokenLimit, 0);
+  assert.equal(tight.nextRound(), false, 'no round starts when the prompt does not fit');
   let calls = 0;
   globalThis.fetch = async () => { calls++; throw new Error('No external provider is permitted in this test'); };
   const ai = load('electron/ai/aiClient.ts');

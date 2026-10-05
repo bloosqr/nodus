@@ -8,6 +8,7 @@ import {
   classifyCoProducts,
   countRouteSteps,
   isBareSmilesName,
+  isolatedSteps,
   stepDeclaresRacemic,
   stepDeclaresRearrangement,
   stepDeclaresRadical,
@@ -206,6 +207,17 @@ function routeAcceptsLabels(provider: CapabilityProvider): boolean {
   return Boolean(schema?.properties && 'labels' in schema.properties);
 }
 
+/** The longest species label the installed package declares it will accept. A species given as
+ *  its own structure carries that structure as its label, and cutting one corrupts the molecule
+ *  it is displayed under, so follow the schema rather than a figure fixed here: an older package
+ *  keeps its shorter limit, a newer one is used to the full. */
+function routeLabelNameLimit(provider: CapabilityProvider): number {
+  const schema = provider.tools.find((tool) => tool.id === ROUTE_TOOL)?.inputSchema as
+    { properties?: { labels?: { items?: { items?: { properties?: { name?: { maxLength?: unknown } } } } } } } | undefined;
+  const declared = schema?.properties?.labels?.items?.items?.properties?.name?.maxLength;
+  return typeof declared === 'number' && declared > 0 ? declared : 1000;
+}
+
 function routeAccepts(provider: CapabilityProvider, property: string): boolean {
   const schema = provider.tools.find((tool) => tool.id === ROUTE_TOOL)?.inputSchema as { properties?: Record<string, unknown> } | undefined;
   return Boolean(schema?.properties && property in schema.properties);
@@ -224,6 +236,7 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
   // target entry or name check. The schema probe keeps a 2.3.0 package from rejecting an
   // input it never declared.
   const named = labels && labels.some((entries) => entries.length);
+  const labelLimit = named ? routeLabelNameLimit(provider) : 0;
   const input = {
     steps,
     ...(racemic ? { racemic } : {}),
@@ -232,11 +245,11 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
     ...(declared.rearrangement?.some(Boolean) && routeAccepts(provider, 'rearrangement') ? { rearrangement: declared.rearrangement } : {}),
     ...(declared.radical?.some(Boolean) && routeAccepts(provider, 'radical') ? { radical: declared.radical } : {}),
     ...(target ? { target } : {}),
-    // A long species name is still sent, cut to the schema's 4,000 characters: one
-    // overlong name must not make the package reject the whole route. The cut matches the
-    // schema rather than undercutting it, because a species given as its own structure carries
-    // that structure as its name, and cutting one corrupts the label it is displayed under.
-    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, 4000) }))) } : {}),
+    // A long species name is still sent, cut to whatever the installed package's schema allows:
+    // one overlong name must not make the package reject the whole route, and a species given as
+    // its own structure carries that structure as its name, so cutting one to a figure fixed
+    // here would corrupt the label it is displayed under.
+    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, labelLimit) }))) } : {}),
     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
   };
   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
@@ -923,8 +936,15 @@ export async function appendRouteReportAndDrawings(
     // package's runtime budget was being exhausted elsewhere in the same turn. The report, the
     // precedent text and the review are unaffected — those are what a correction is written
     // from, and they cost nothing to render.
-    const routeIsRight = audit.steps.length > 0 && audit.steps.every((step) => !routeStepFailure(step));
-    const drawings = compile && routeIsRight ? await timed('drawings', drawRouteSteps(runner, compile, steps, conditions, audit, options)) : '';
+    // Nothing is drawn while any step still fails, and the report says so rather than leaving a
+    // gap: a route with a failing step is about to be rewritten, and every picture made for it is
+    // discarded with it. Route-level refusals count too — a route whose steps do not join up is
+    // equally about to change.
+    const routeIsRight = audit.steps.every((step) => !routeStepFailure(step))
+      && !isolatedSteps(audit).length && audit.target?.reason !== 'not-formed';
+    const drawings = !compile ? ''
+      : routeIsRight ? await timed('drawings', drawRouteSteps(runner, compile, steps, conditions, audit, options))
+      : 'Not drawn: the route has a step that does not pass yet. The structures are drawn once every step passes.';
     // Paint the deterministic report and drawings before the reviewer returns. The transport
     // replaces the provisional stream with this returned answer, so the route only waits on
     // the reviewer when the reviewer is the last thing outstanding.

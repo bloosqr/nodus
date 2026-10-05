@@ -291,8 +291,30 @@ function trimSentenceEdges(token: string): string {
  *  shape test below, so this must not be used to pre-empt resolution — the structure is taken
  *  only once the name has failed, where the alternative is discarding a species the author
  *  described unambiguously. */
+/** A systematic name separates locants with commas; a SMILES string does not carry one. A hyphen
+ *  is NOT a tell — it is an explicit single bond in a biaryl linkage (`c2ccccc2-c2ccccc21`) — so
+ *  the lowercase-run test below is what rejects `2-methylbutan-2-ol`. */
+const NAME_PUNCTUATION = /,/;
+/** Lowercase outside a bracket atom spells aromatic atoms and nothing else. */
+const AROMATIC_RUN = /^(?:se|as|[bcnops])+$/;
+
+/** Whether a name is in fact a structure written where a name belongs. Deliberately much
+ *  stricter than `isSmilesLike`, which only has to find a candidate inside prose that other
+ *  evidence then confirms: here the answer decides whether a species is taken as author-declared,
+ *  so a false positive silently turns an ordinary systematic name into its own structure. Every
+ *  numbered name — `4-nitrophenol`, `bornan-2-ol`, `benzene-1,2-diamine` — satisfies the looser
+ *  test, because a locant digit reads as a ring closure. */
 export function isBareSmilesName(name: string): boolean {
-  return isSmilesLike(name.trim(), 3);
+  const token = name.trim();
+  if (!isSmilesLike(token, 3)) return false;
+  // Outside bracket atoms only: a charge (`[Cl-]`) and an isotope live inside one.
+  const outside = token.replace(/\[[^\]]*\]/g, '');
+  if (NAME_PUNCTUATION.test(outside)) return false;
+  const runs = outside.match(/[a-z]+/g) ?? [];
+  if (runs.some(run => !AROMATIC_RUN.test(run))) return false;
+  // Real structure, not merely a digit: a bond, a branch or a bracket atom — or a ring closure
+  // on an aromatic run, which is how benzene is written.
+  return /[()[\]\\=#@/]/.test(token) || (runs.length > 0 && /\d/.test(token));
 }
 
 function isSmilesLike(token: string, minLength: number): boolean {
@@ -1619,7 +1641,7 @@ function normalizeRouteTarget(entry: unknown): RouteTargetAudit | null {
 
 /** Steps connected to nothing, from the structured field or, for an older package, from the
  *  sentence it writes into `blocked`. */
-function isolatedSteps(audit: RouteAudit): number[] {
+export function isolatedSteps(audit: RouteAudit): number[] {
   if (audit.isolated) return audit.isolated;
   return audit.blocked.flatMap((entry) => {
     const match = /^Step (\d+) is disconnected/.exec(entry);

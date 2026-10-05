@@ -84,9 +84,32 @@ def audit_reaction(mapped, conditions, ignore=frozenset()):
             if path:
                 soft.append('reorganised skeleton'); break
     centres = lambda mol: [c for c in Chem.FindMolChiralCenters(mol, useLegacyImplementation=False) if c[1] in ('R', 'S')]
-    # A defined E/Z double bond is a stereo source too: a stereospecific addition to it (epoxidation,
-    # dihydroxylation) sets the product's relative configuration.
-    geometric = any(b.GetStereo() != Chem.BondStereo.STEREONONE for b in rm.GetBonds())
-    if centres(pm) and not centres(rm) and not geometric and not ASYMMETRIC.search(conditions or ''):
-        soft.append('stereo from achiral inputs'); details['stereocentres'] = len(centres(pm))
+    DEFINED_GEOMETRY = (Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ,
+                        Chem.BondStereo.STEREOCIS, Chem.BondStereo.STEREOTRANS)
+
+    def born_from_geometry(maps):
+        """Whether a new stereocentre could have been set by a defined double bond, i.e. one at or
+        next to the atom it appears on: a stereospecific addition (epoxidation, dihydroxylation)
+        carries the alkene's geometry into the product's configuration.
+
+        Asking only whether the reaction has a defined double bond ANYWHERE excuses a centre that
+        has nothing to do with it — a ketone reduction on a substrate that happens to carry an
+        unrelated E-alkene — and a large share of mined substrates carry one, so the check would
+        almost never fire. STEREOANY is explicitly unknown geometry and sets nothing."""
+        for number in maps:
+            atom = r_atom.get(number)
+            if atom is None:
+                continue
+            near = [atom, *atom.GetNeighbors()]
+            if any(b.GetStereo() in DEFINED_GEOMETRY for a in near for b in a.GetBonds()):
+                return True
+        return False
+
+    p_centres = centres(pm)
+    centre_maps = {pm.GetAtomWithIdx(index).GetAtomMapNum() for index, _ in p_centres}
+    was_centre = {rm.GetAtomWithIdx(index).GetAtomMapNum() for index, _ in centres(rm)}
+    new_centres = {number for number in centre_maps if number and number not in was_centre}
+    if p_centres and not centres(rm) and new_centres and not born_from_geometry(new_centres) \
+            and not ASYMMETRIC.search(conditions or ''):
+        soft.append('stereo from achiral inputs'); details['stereocentres'] = len(p_centres)
     return hard, soft, details

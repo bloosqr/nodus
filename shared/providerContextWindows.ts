@@ -13,7 +13,9 @@ const DOCUMENTED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
     'deepseek-v4-pro': 1_000_000,
   },
   // https://platform.claude.com/docs/en/models/overview
-  // Legacy Opus/Sonnet 4.6 and Opus/Sonnet 5: their individual overview pages.
+  // Legacy Opus 4.6-4.8, Sonnet 4.6 and Opus/Sonnet 5: their individual overview pages. Without
+  // an entry a model falls back to the unknown default of 32,768, which on a 1M model reserved
+  // more than the window for the prompt alone and left no evidence allowance.
   anthropic: {
     'claude-fable-5-1': 1_000_000,
     'claude-opus-5-5': 1_000_000,
