@@ -97,15 +97,12 @@ class PipelineTests(unittest.TestCase):
             t.extract()
             self.assertEqual(len(json.loads(Path(t.OUT).read_text())), 1)
 
-    def test_declared_rearrangement_survives_extraction_and_undeclared_is_hard(self):
-        # Mechanism flags are hard here: a skeletal shift is kept only when the scheme says so.
-        hard, _, _ = t.audit_reaction(PINACOL, 'H2SO4, heat')
-        self.assertIn('1,2-shift', hard)
-        source = row(PINACOL, conditions='H2SO4, heat; pinacol rearrangement')
+    def test_valid_rearrangement_is_soft_and_survives_extraction(self):
+        source = row(PINACOL, conditions='H2SO4, heat')
         m = self.put(source, PINACOL, .772)
-        hard, soft, _ = t.audit_reaction(PINACOL, 'H2SO4, heat; pinacol rearrangement')
+        hard, soft, _ = t.audit_reaction(PINACOL, 'H2SO4, heat')
         self.assertFalse(hard)
-        self.assertNotIn('1,2-shift', soft)
+        self.assertIn('1,2-shift', soft)
         t.audit()
         t.extract()
         extracted = json.loads(Path(t.OUT).read_text())

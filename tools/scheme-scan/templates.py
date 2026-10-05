@@ -37,9 +37,9 @@ TO_MAP, MAPPED, OUT = (os.path.join(WORK, n) for n in ('to-map.jsonl', 'mapped.j
 MAX_TOKENS = 500         # RXNMapper's encoder takes 512 tokens; a reaction over it loses reagents first
 MAX_ATOMS = 220          # a backstop before tokenising
 MIN_CONFIDENCE = 0.5     # atom maps below this are left out
-# --strict: mechanism flags exclude a template too (see the module docstring).
+# --strict: mechanism flags exclude a template too (see the module docstring). The flag set itself
+# lives in reaction_audit, beside the checks that raise them.
 STRICT = os.environ.get('SCHEME_TEMPLATES_STRICT') == '1'
-MECHANISM_FLAGS = frozenset({'unactivated C–C', 'unactivated C–X', '1,2-shift', 'reorganised skeleton', 'stereo from achiral inputs'})
 
 
 def input_hash(row):
@@ -361,7 +361,7 @@ def merge(fallback):
     with open(MERGED_META, 'w') as fh:
         json.dump({'version': 1, 'files': {os.path.abspath(p): file_hash(p) for p in paths}}, fh)
     print(dict(tally), '->', MERGED)
-from reaction_audit import DECLARED, ASYMMETRIC, audit_reaction  # noqa: E402  (shared with build_index)
+from reaction_audit import DECLARED, ASYMMETRIC, MECHANISM_FLAGS, audit_reaction  # noqa: E402  (shared with build_index)
 
 
 def audit_record(mapping, row):

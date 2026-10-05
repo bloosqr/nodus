@@ -164,17 +164,22 @@ def _template(reactants, agents, products, rid):
 
 
 def _map_audit(reactants, agents, products):
-    """Hard flags for one atom-mapped reaction (reaction_audit, shared with the textbook templates).
-    A record carries no prose, so nothing is declared; stereocentres drawn from achiral inputs are
-    hard unless an agent is itself chiral (a chiral catalyst or ligand)."""
-    from reaction_audit import audit_reaction
+    """Exclusions for one atom-mapped reaction (reaction_audit, shared with the textbook templates).
+    A record carries no prose, so nothing can be declared: a mechanism flag here has no scheme text
+    that could explain it, and in a mined record it is more often a mapping or transcription error
+    than genuinely unusual chemistry. The template is the atom map, so a flagged map would propose
+    that error as a disconnection — this builder therefore treats every mechanism flag as an
+    exclusion. Stereocentres from achiral inputs are excused when an agent is itself chiral (a
+    chiral catalyst or ligand), which is the one case the prose would otherwise have declared."""
+    from reaction_audit import audit_reaction, MECHANISM_FLAGS
     hard, soft, _ = audit_reaction(f'{reactants}>>{products}', '')
-    if 'stereo from achiral inputs' in soft:
+    excluded = set(hard) | (MECHANISM_FLAGS & set(soft))
+    if 'stereo from achiral inputs' in excluded:
         chiral_agent = any(Chem.FindMolChiralCenters(m, useLegacyImplementation=False)
                            for m in (Chem.MolFromSmiles(x) for x in agents.split('.') if x) if m is not None)
-        if not chiral_agent:
-            hard = hard + ['stereo from achiral inputs']
-    return sorted(set(hard))
+        if chiral_agent:
+            excluded.discard('stereo from achiral inputs')
+    return sorted(excluded)
 
 
 def _template_for(reactants, agents, products, rid, n_atoms, force_fast=False):

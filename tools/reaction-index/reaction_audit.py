@@ -15,10 +15,20 @@ ASYMMETRIC = re.compile(r'(?i)asymmetric|enantio|chiral|\((?:R|S|R,R|S,S)\)|\b(?
                         r'auxiliar|enzyme|lipase|proline|Corey|Noyori|Jacobsen|Shi|Ru-BINAP|Rh-DIPAMP|ee\b)')
 
 
+# Suspicions about the chemistry rather than the mapping. A caller that wants them to exclude a
+# reaction intersects them with the soft flags; scheme-scan does so under --strict, and the
+# reaction-index builder always does (see _map_audit).
+MECHANISM_FLAGS = frozenset({'unactivated C–C', 'unactivated C–X', '1,2-shift',
+                             'reorganised skeleton', 'stereo from achiral inputs'})
+
+
 def audit_reaction(mapped, conditions, ignore=frozenset()):
     """Flags for one atom-mapped reaction, read from its maps (so a scheme that leaves out its
-    by-products is still checked). Hard flags exclude the reaction from the templates; soft ones are
-    reported. Returns (hard, soft, details)."""
+    by-products is still checked). Hard flags identify an invalid atom map, which makes every edit
+    read from it meaningless. Mechanism and stereochemical suspicions are soft: whether they also
+    exclude a reaction is the caller's policy (MECHANISM_FLAGS), because it depends on the source —
+    a text-mined record is more often mis-mapped than genuinely unusual, while a named scheme is
+    not. Returns (hard, soft, details)."""
     from rdkit import Chem
     reactants, _, products = mapped.partition('>>')
     rm, pm = Chem.MolFromSmiles(reactants), Chem.MolFromSmiles(products)
@@ -60,19 +70,19 @@ def audit_reaction(mapped, conditions, ignore=frozenset()):
     cx_formed = [e for e in formed if carbon(e[0]) != carbon(e[1])]
     cc_broken = [e for e in broken if carbon(e[0]) and carbon(e[1])]
     if any(not (activated(a) and activated(b)) for a, b in cc_formed) and not declared:
-        hard.append('unactivated C–C')
+        soft.append('unactivated C–C')
     if any(not activated(a if carbon(a) else b) for a, b in cx_formed) and not declared:
-        hard.append('unactivated C–X')
+        soft.append('unactivated C–X')
     r_bonded = lambda a, b: r_atom[a].GetOwningMol().GetBondBetweenAtoms(r_atom[a].GetIdx(), r_atom[b].GetIdx()) is not None
     migration = any(m in f and m in c and r_bonded(next(x for x in f if x != m), next(x for x in c if x != m))
                     for f in cc_formed for c in cc_broken for m in set(f) & set(c))
     if migration and not declared:
-        hard.append('1,2-shift')
+        soft.append('1,2-shift')
     if not migration and cc_formed and not declared:
         for a, b in cc_broken:
             path = Chem.GetShortestPath(pm, p_atom[a].GetIdx(), p_atom[b].GetIdx())
             if path:
-                hard.append('reorganised skeleton'); break
+                soft.append('reorganised skeleton'); break
     centres = lambda mol: [c for c in Chem.FindMolChiralCenters(mol, useLegacyImplementation=False) if c[1] in ('R', 'S')]
     # A defined E/Z double bond is a stereo source too: a stereospecific addition to it (epoxidation,
     # dihydroxylation) sets the product's relative configuration.
