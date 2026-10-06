@@ -15,6 +15,7 @@ import { executeChatSkills } from './chatSkillExecution';
 import { authorizeNotebookRequest, validateNotebookRequest, requestNotebookScope, hasResearchSourceRestriction, rememberNotebookTurn, registerNotebookRun } from './researchNotebookService';
 import { researchModelContextWindow } from './aiClient';
 import { researchAnswerTokens } from '@shared/researchRetrievalBudget';
+import { documentedMaxOutput } from '@shared/providerContextWindows';
 import { researchContextLayers } from '@shared/researchContextLayers';
 import { ResearchCorpusRun } from './researchCorpusRun';
 import { RESEARCH_CHAT_AGENT_DECISION_BYTES, RESEARCH_CHAT_AGENT_SETTINGS, RESEARCH_CHAT_LIGHT_AGENT_SETTINGS, researchScopeForPrompt, validateRetrievalSettings, compactResearchTraversal } from '@shared/researchCorpus';
@@ -635,7 +636,9 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
 
   // Derive the budget from the window. Cloud (window === null) keeps the cloud-sized cap
   // and the default generation budget; local shrinks both to fit the loaded window.
-  let maxTokens = researchAnswerTokens(window, skills.length > 0);
+  // The model's own output ceiling, so the budget can scale with the window without asking for
+  // more than the provider will emit.
+  let maxTokens = researchAnswerTokens(window, skills.length > 0, documentedMaxOutput(model.provider, model.model));
   let contextBudget = MAX_TOTAL_CONTEXT_CHARS;
   if (window != null) {
     const margin = Math.max(96, Math.round(window * 0.05));
