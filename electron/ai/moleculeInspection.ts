@@ -470,15 +470,25 @@ function unresolvedNames(speciesByStep: NamedSpecies[][], resolutions: Map<strin
 }
 
 async function requestCorrectedNames(prose: string, unresolved: UnresolvedName[], options: InspectOptions): Promise<NameFeedbackEntry[]> {
+  // One corrected name per unresolved species, so the budget follows the count rather than a flat
+  // figure that happened to fit the routes it was written against.
+  const budget = Math.min(8_000, Math.max(1_600, 400 + 220 * Math.max(1, unresolved.length)));
   try {
     const raw = await completeText({
       system: ROUTE_NAME_FEEDBACK_SYSTEM,
       user: buildNameFeedbackRequest(unresolved, prose),
       temperature: 0,
-      maxTokens: 1600,
+      maxTokens: budget,
+      reasoning: 'off',
     }, options.model ?? null);
-    return parseNameFeedback(raw);
-  } catch {
+    const parsed = parseNameFeedback(raw);
+    if (!parsed.length) {
+      console.warn(`[routeNames] no corrections parsed from ${raw.trim().length} chars`
+        + ` (budget ${budget} tokens, ${unresolved.length} unresolved)`);
+    }
+    return parsed;
+  } catch (error) {
+    console.warn(`[routeNames] call failed (budget ${budget} tokens, ${unresolved.length} unresolved): ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
 }
@@ -505,17 +515,42 @@ async function evidenceSources(modelAnswer: string, stepCount: number, precedent
   }
 }
 
+/** The review's output budget. It reads every step and may return up to 24 findings, so a flat
+ *  budget silently truncates the longer the route gets: a 19-step route was given the same 2,000
+ *  tokens as a 3-step one. Scaled by step count, with a ceiling so a pathological route cannot
+ *  ask for an unbounded answer. */
+function routeReviewTokens(stepCount: number): number {
+  return Math.min(16_000, Math.max(2_000, 1_200 + 600 * Math.max(1, stepCount)));
+}
+
 async function requestRouteReview(question: string, labels: RouteSpeciesLabel[][], audit: RouteAudit, options: InspectOptions, stepProse: string[] = []): Promise<RouteReview | null> {
+  const budget = routeReviewTokens(audit.steps.length);
+  const started = Date.now();
+  let raw = '';
   try {
-    const raw = await completeText({
+    raw = await completeText({
       system: ROUTE_REVIEW_SYSTEM,
       user: buildRouteReviewRequest(question, labels, audit, stepProse),
       temperature: 0,
-      maxTokens: 2000,
+      maxTokens: budget,
+      // Explicit, so this call does not inherit whatever reasoning the profile happens to carry:
+      // the budget above is for the review, and a model that spends it thinking returns nothing.
+      reasoning: 'off',
       ...(options.signal ? { signal: options.signal } : {}),
     }, options.model ?? null);
-    return parseRouteReview(raw);
-  } catch {
+    const review = parseRouteReview(raw);
+    // A review that produced nothing readable is indistinguishable, in the report, from a review
+    // that found nothing wrong — and that is how a dead check looked healthy for two sessions.
+    // Say it out loud instead.
+    if (!review) {
+      console.warn(`[routeReview] no review parsed: ${raw.trim().length} chars from ${options.model?.model ?? 'the configured model'}`
+        + ` after ${((Date.now() - started) / 1000).toFixed(1)}s, budget ${budget} tokens, ${audit.steps.length} steps`
+        + (raw.trim() ? `; reply began ${JSON.stringify(raw.trim().slice(0, 120))}` : '; the reply was empty'));
+    }
+    return review;
+  } catch (error) {
+    console.warn(`[routeReview] call failed after ${((Date.now() - started) / 1000).toFixed(1)}s`
+      + ` (budget ${budget} tokens, ${audit.steps.length} steps): ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }

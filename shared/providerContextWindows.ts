@@ -133,6 +133,38 @@ const DOCUMENTED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
 };
 
 /** A documented, conservative request envelope, or null for an unknown model. */
+/**
+ * The maximum OUTPUT tokens a model will emit, which is a different limit from its context
+ * window and not derivable from it. A request whose max_tokens exceeds the model's own ceiling is
+ * rejected outright, so a budget expressed as a share of the window has to be clamped by this.
+ *
+ * Only values with a documented source belong here. A model that is absent returns null and its
+ * caller keeps its own conservative default, which is the behaviour every model had before this
+ * table existed.
+ */
+const DOCUMENTED_MAX_OUTPUT: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  // https://platform.claude.com/docs/en/about-claude/models — 128K output across the 4.6+ family.
+  // Values this large require a streaming request; a non-streaming call hits the HTTP timeout
+  // first. Research Chat streams, so it can use them.
+  anthropic: {
+    'claude-opus-5-5': 128_000,
+    'claude-opus-5': 128_000,
+    'claude-opus-4-8': 128_000,
+    'claude-opus-4-7': 128_000,
+    'claude-opus-4-6': 128_000,
+    'claude-sonnet-5-5': 128_000,
+    'claude-sonnet-5': 128_000,
+    'claude-sonnet-4-6': 128_000,
+  },
+};
+
+/** The documented output ceiling for one provider/model, or null when it is not recorded. */
+export function documentedMaxOutput(provider: string, model: string): number | null {
+  const byModel = DOCUMENTED_MAX_OUTPUT[provider];
+  const value = byModel?.[model];
+  return typeof value === 'number' && value > 0 ? value : null;
+}
+
 export function documentedContextWindow(provider: string, model: string): number | null {
   const models = Object.hasOwn(DOCUMENTED, provider) ? DOCUMENTED[provider] : undefined;
   if (models && Object.hasOwn(models, model)) return models[model];

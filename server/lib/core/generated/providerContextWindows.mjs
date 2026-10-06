@@ -133,11 +133,32 @@ var DOCUMENTED = {
     "deepseek-v4-flash": 1e6
   }
 };
+var DOCUMENTED_MAX_OUTPUT = {
+  // https://platform.claude.com/docs/en/about-claude/models — 128K output across the 4.6+ family.
+  // Values this large require a streaming request; a non-streaming call hits the HTTP timeout
+  // first. Research Chat streams, so it can use them.
+  anthropic: {
+    "claude-opus-5-5": 128e3,
+    "claude-opus-5": 128e3,
+    "claude-opus-4-8": 128e3,
+    "claude-opus-4-7": 128e3,
+    "claude-opus-4-6": 128e3,
+    "claude-sonnet-5-5": 128e3,
+    "claude-sonnet-5": 128e3,
+    "claude-sonnet-4-6": 128e3
+  }
+};
+function documentedMaxOutput(provider, model) {
+  const byModel = DOCUMENTED_MAX_OUTPUT[provider];
+  const value = byModel?.[model];
+  return typeof value === "number" && value > 0 ? value : null;
+}
 function documentedContextWindow(provider, model) {
   const models = Object.hasOwn(DOCUMENTED, provider) ? DOCUMENTED[provider] : void 0;
   if (models && Object.hasOwn(models, model)) return models[model];
   return null;
 }
 export {
-  documentedContextWindow
+  documentedContextWindow,
+  documentedMaxOutput
 };
