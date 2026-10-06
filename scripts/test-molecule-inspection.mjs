@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor, formatResolutionSourceNote, UNBUILT_STEP_ERROR_PREFIX } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor, formatResolutionSourceNote, UNBUILT_STEP_ERROR_PREFIX, isPlaceholderSpecies } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -693,16 +693,31 @@ test('precedent queries leave byproducts out, as the Open Reaction Database reco
   assert.deepEqual(buildPrecedentQueries(gap), [{ step: 1, query: 'CCO>>CC=O' }]);
 });
 
-test('an ion shared by two salts is written once per side so the balance is unique', () => {
+test('two salts sharing an ion each keep their own stoichiometry', () => {
+  // This used to write each distinct ion once and leave the counts to the solver, so that a
+  // shared ion could not appear twice on one side. It read as tidy and it threw away what the
+  // author had actually declared: chromium(III) sulfate's own 2:3 ratio became one chromium and
+  // one sulfate, and the solver re-derived whatever numbers balanced. The same freedom let a
+  // wrong equation balance elsewhere -- a hydrolysis one hydrogen short came back balanced by
+  // taking two of one reagent -- because a free ion's coefficient is the solver's to choose.
+  //
+  // Now every fragment of every species is written out, and the package regroups them from the
+  // labels so each DECLARED species takes one coefficient. The ratio the author wrote survives.
   const sulfate = 'S(=O)(=O)([O-])[O-]';
+  const chromiumSulfate = `${sulfate}.[Cr+3].${sulfate}.${sulfate}.[Cr+3]`;
+  const sodiumSulfate = `${sulfate}.[Na+].[Na+]`;
   const resolved = [[
     { role: 'reactant', byproduct: false, name: 'sodium dichromate', status: 'resolved', smiles: '[O-][Cr](=O)(=O)O[Cr](=O)(=O)[O-].[Na+].[Na+]' },
     { role: 'reactant', byproduct: false, name: 'cyclohexanol', status: 'resolved', smiles: 'C1CCC(CC1)O' },
-    { role: 'product', byproduct: false, name: 'chromium(III) sulfate', status: 'resolved', smiles: `${sulfate}.[Cr+3].${sulfate}.${sulfate}.[Cr+3]` },
-    { role: 'product', byproduct: false, name: 'sodium sulfate', status: 'resolved', smiles: `${sulfate}.[Na+].[Na+]` },
+    { role: 'product', byproduct: false, name: 'chromium(III) sulfate', status: 'resolved', smiles: chromiumSulfate },
+    { role: 'product', byproduct: false, name: 'sodium sulfate', status: 'resolved', smiles: sodiumSulfate },
   ]];
   const [step] = buildRouteSteps(resolved);
-  assert.deepEqual(step.split('>')[2].split('.'), [sulfate, '[Cr+3]', '[Na+]'], 'sulfate, chromium and sodium each appear once');
+  assert.equal(step.split('>')[2], `${chromiumSulfate}.${sodiumSulfate}`, 'each salt contributes its own fragments, in order');
+  const products = step.split('>')[2].split('.');
+  assert.equal(products.filter((part) => part === sulfate).length, 4, 'three sulfates from one salt and one from the other');
+  assert.equal(products.filter((part) => part === '[Cr+3]').length, 2);
+  assert.equal(products.filter((part) => part === '[Na+]').length, 2);
 });
 
 test('the resolved SMILES is attached to the name in place, replacing any declared one', () => {
@@ -1613,4 +1628,48 @@ test('the resolution source of every structure is reported', () => {
   ]), 'Structures resolved: 2 from the built-in dictionary · 1 from PubChem · 1 from OPSIN · 1 from the answer itself.');
   assert.equal(formatResolutionSourceNote([]), '', 'nothing resolved is no note');
   assert.equal(formatResolutionSourceNote([{ status: 'unresolved' }]), '', 'an unresolved species is not a source');
+});
+
+test('a placeholder where a species belongs is called a placeholder, not an unresolvable name', () => {
+  // Seen live: a step whose Byproducts line read "see prose". Asking for "its structure" invites
+  // the author to invent one; the fault is that the species were never listed.
+  for (const name of ['see prose', 'see prose (protected building blocks)', 'as above', 'see step 2', 'as described in the text', 'various', 'etc.']) {
+    assert.equal(isPlaceholderSpecies(name), true, name);
+  }
+  for (const name of ['water', 'sodium bromide', '9H-fluoren-9-ylidenemethanone', 'propan-2-ol', 'the supported intermediate', 'Seebach amide']) {
+    assert.equal(isPlaceholderSpecies(name), false, name);
+  }
+  const audit = normalizeRouteAudit({
+    steps: [{ index: 0, reaction: '', ok: false, error: 'This step could not be built: a species it names has no resolved structure.', reactants: [], agents: [], products: [], balanced: null, chargeBalanced: null, differences: [], unspecifiedStereocentres: 0 }],
+  });
+  const placeholder = formatRouteAudit(audit, [[]], null, false, [{ step: 1, role: 'product', byproduct: true, name: 'see prose' }]);
+  assert.match(placeholder, /no structure resolved for byproduct "see prose"\. That is a placeholder, not a species: list each one by name, or write "none"\./);
+  const ordinary = formatRouteAudit(audit, [[]], null, false, [{ step: 1, role: 'reactant', byproduct: false, name: 'bornan-2-ol' }]);
+  assert.match(ordinary, /Give that species a name a reference resolves, or its structure\./);
+  assert.doesNotMatch(ordinary, /placeholder/);
+});
+
+test('every fragment of every species reaches the equation, including repeated counterions', () => {
+  // The components of one species are written out because a reaction SMILES cannot carry the
+  // boundary; the package regroups them from the labels. Dropping a repeated token to avoid an
+  // ambiguous balance used to cost atoms, which is the worse failure: calcium chloride lost a
+  // chloride, so any salt with repeated counterions could never balance.
+  const salt = buildRouteSteps([[
+    { role: 'reactant', smiles: 'CC(=O)O' }, { role: 'reactant', smiles: '[Ca+2].[Cl-].[Cl-]' },
+    { role: 'product', smiles: 'CC(=O)[O-]' },
+  ]]);
+  assert.equal(salt[0], 'CC(=O)O.[Ca+2].[Cl-].[Cl-]>>CC(=O)[O-]', 'both chlorides survive');
+
+  const shared = buildRouteSteps([[
+    { role: 'reactant', smiles: 'C[Mg]Br' }, { role: 'reactant', smiles: '[Na+].[Br-]' },
+    { role: 'product', smiles: 'C' }, { role: 'product', smiles: '[Mg+2].[Br-]' }, { role: 'product', smiles: '[Na+].[Br-]' },
+  ]]);
+  assert.equal(shared[0], 'C[Mg]Br.[Na+].[Br-]>>C.[Mg+2].[Br-].[Na+].[Br-]', 'two salts sharing an ion keep both');
+
+  // Unchanged: agents are still dropped from the equation, and a step missing a side is unbuilt.
+  const agents = buildRouteSteps([[
+    { role: 'reactant', smiles: 'CCO' }, { role: 'agent', smiles: 'O=S(=O)(O)O' }, { role: 'product', smiles: 'CC=O' },
+  ]]);
+  assert.equal(agents[0], 'CCO>O=S(=O)(O)O>CC=O');
+  assert.equal(buildRouteSteps([[{ role: 'reactant', smiles: 'CCO' }]])[0], '', 'no product is still unbuilt');
 });
