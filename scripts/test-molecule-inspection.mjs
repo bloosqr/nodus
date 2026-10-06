@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, stepDeclaresRearrangement, stepDeclaresRadical, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, isBareSmilesName, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor, formatResolutionSourceNote, UNBUILT_STEP_ERROR_PREFIX, isPlaceholderSpecies } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, stepDeclaresRearrangement, stepDeclaresRadical, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, isBareSmilesName, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor, formatResolutionSourceNote, UNBUILT_STEP_ERROR_PREFIX, isPlaceholderSpecies, statedConfiguration } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -1822,4 +1822,66 @@ test('every fragment of every species reaches the equation, including repeated c
   ]]);
   assert.equal(agents[0], 'CCO>O=S(=O)(O)O>CC=O');
   assert.equal(buildRouteSteps([[{ role: 'reactant', smiles: 'CCO' }]])[0], '', 'no product is still unbuilt');
+});
+
+test('the configuration report names each block, what was measured, and what the name asserts', () => {
+  // The user-visible half of the configuration work. A block of the opposite configuration has
+  // the same formula, atom counts and constitution as the intended one, so the report is the only
+  // place a reader can see the difference — and it must never imply a verdict, because which
+  // letter belongs to a series flips when a sulfur-bearing branch outranks the carboxyl.
+  const species = (input, name, alphaConfiguration) => ({
+    input, canonicalSmiles: input, skeletonSmiles: input, formula: 'C9H11NO2', charge: 0,
+    heavyAtoms: 12, stereocentres: 1, unspecifiedStereocentres: 0, name, alphaConfiguration,
+  });
+  const audit = normalizeRouteAudit({
+    continuous: true, blocked: [],
+    steps: [{
+      index: 0, reaction: 'a.b>>c', ok: true, balanced: true, chargeBalanced: true, differences: [],
+      unspecifiedStereocentres: 0, links: [],
+      reactants: [
+        species('N[C@@H](C)C(=O)O', 'Fmoc-3-(2-naphthyl)-L-Ala-OH', '(R)'),
+        species('N[C@H](C)C(=O)O', 'Fmoc-Asn(Trt)-OH', '(S)'),
+        species('CC(=O)O', 'acetic acid', undefined),
+        species('N[C@H](C)C(=O)O', '(2S)-2-amino-3-phenylpropanoic acid', '(S)'),
+        species('N[C@@H](C)C(=O)O', '(2S)-2-amino-4-methylpentanoic acid', '(R)'),
+      ],
+      agents: [], products: [species('CCO', 'ethanol', undefined)],
+    }],
+  });
+  const text = formatRouteAudit(audit, [[]], null, false, []);
+  assert.match(text, /Building blocks, alpha configuration as measured \(2 \(R\), 2 \(S\)\)/, 'it tallies what it measured');
+  assert.match(text, /a block of the wrong configuration balances exactly like the right one/, 'and says why it is reported at all');
+  // What the name asserts is shown beside the measurement, never resolved into a verdict.
+  assert.match(text, /Fmoc-3-\(2-naphthyl\)-L-Ala-OH \(R\), name says L/, 'an L- name beside an (R) measurement');
+  assert.match(text, /Fmoc-Asn\(Trt\)-OH \(S\)(?! ?, name says)/, 'a name that asserts nothing gets no claim');
+  // Two CIP statements CAN be compared directly, with no L/D mapping involved.
+  assert.match(text, /\(2S\)-2-amino-3-phenylpropanoic acid \(S\), name agrees/, 'matching descriptors agree');
+  // The asserted descriptor is normalised to the measured one's form, so the two read side by side.
+  assert.match(text, /\(2S\)-2-amino-4-methylpentanoic acid \(R\), NAME SAYS \(S\)/, 'conflicting descriptors are called out');
+  // A species with no such centre is left out of the configuration line rather than reported as
+  // unknown. It still appears in the step's equation, which is where every species belongs.
+  const alphaLine = text.split('\n').find((line) => line.includes('alpha configuration as measured'));
+  assert.ok(alphaLine, 'the configuration line is present');
+  assert.doesNotMatch(alphaLine, /acetic acid/, 'a reactant with no alpha centre is not in it');
+  assert.doesNotMatch(alphaLine, /ethanol/, 'nor is a product');
+  assert.match(text, /acetic acid/, 'but it is still in the step equation');
+});
+
+test('what a name asserts about configuration is read, and only when it says something', () => {
+  for (const [name, expected] of [
+    ['Fmoc-3-(2-naphthyl)-L-Ala-OH', 'L'],
+    ['N-acetyl-S-trityl-beta,beta-dimethyl-D-cysteine', 'D'],
+    ['(2R)-2-(9H-fluoren-9-ylmethoxycarbonylamino)propanoic acid', '(R)'],
+    ['(2S)-2-aminopropanoic acid', '(S)'],
+    ['(S)-naproxen', '(S)'],
+    ['Fmoc-Asn(Trt)-OH', null],
+    ['benzocaine', null],
+    ['cyclohexanol', null],
+    // A lone capital L or D inside a word must not read as a configuration.
+    ['LDA', null],
+    ['DMF', null],
+  ]) {
+    assert.equal(statedConfiguration(name), expected, name);
+  }
+  assert.equal(statedConfiguration(undefined), null, 'no name asserts nothing');
 });

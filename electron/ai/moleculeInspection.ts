@@ -48,6 +48,7 @@ import {
   type StepSupport,
   type UnresolvedName,
 } from '@shared/moleculeInspection';
+import { routeReviewTokens } from '@shared/researchRetrievalBudget';
 import { compoundAvailability, findStartingSmiles, formatStartingMaterialStock, formatTargetAvailability, relevantExcerpt, routeStartingMaterials, routeTargetSmiles, textbookQueryForClass } from '@shared/synthesisEvidence';
 import { chemistryStockDirectory } from './chemistryStock';
 import { textbookCitations, textbookSchemeDirectory } from './textbookSchemes';
@@ -513,14 +514,6 @@ async function evidenceSources(modelAnswer: string, stepCount: number, precedent
   } catch {
     return '';
   }
-}
-
-/** The review's output budget. It reads every step and may return up to 24 findings, so a flat
- *  budget silently truncates the longer the route gets: a 19-step route was given the same 2,000
- *  tokens as a 3-step one. Scaled by step count, with a ceiling so a pathological route cannot
- *  ask for an unbounded answer. */
-function routeReviewTokens(stepCount: number): number {
-  return Math.min(16_000, Math.max(2_000, 1_200 + 600 * Math.max(1, stepCount)));
 }
 
 async function requestRouteReview(question: string, labels: RouteSpeciesLabel[][], audit: RouteAudit, options: InspectOptions, stepProse: string[] = []): Promise<RouteReview | null> {

@@ -101,3 +101,32 @@ test('the budget can be asked before a row is written', async () => {
     assert.equal(budget.accept('a', 'x'.repeat(5)), false, 'a duplicate id is still refused by accept, not by the check');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('the route review and the SVG repair size their budgets to what they are reading', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-call-budgets-'));
+  try {
+    await build({ entryPoints: ['shared/researchRetrievalBudget.ts'], outfile: path.join(root, 'b.cjs'), bundle: true, platform: 'node', format: 'cjs' });
+    const { routeReviewTokens, svgRepairTokens } = require(path.join(root, 'b.cjs'));
+
+    // The review reads every step and may return up to 24 findings, so a flat budget truncates
+    // the longer the route gets: a nineteen-step route was handed the same 2,000 tokens as a
+    // three-step one, and a review that produced nothing readable was indistinguishable in the
+    // report from a review that found nothing wrong.
+    assert.equal(routeReviewTokens(3), 3_000, 'a short route gets more than the old flat figure');
+    assert.equal(routeReviewTokens(19), 12_600, 'a nineteen-step route gets proportionally more');
+    assert.equal(routeReviewTokens(0), 2_000, 'a route with no steps still gets the floor');
+    assert.equal(routeReviewTokens(500), 16_000, 'a pathological route cannot ask without bound');
+    assert.ok(routeReviewTokens(19) > routeReviewTokens(3), 'it rises with the step count');
+
+    // The repair is asked to return the WHOLE drawing, so the budget has to hold the drawing.
+    assert.equal(svgRepairTokens('x'.repeat(1_000)), 10_000, 'a small drawing keeps the old floor');
+    assert.equal(svgRepairTokens('x'.repeat(126_837)), Math.ceil(126_837 / 2.5) + 2_000,
+      'the 126,837-character scheme that could never be repaired now gets room for itself');
+    assert.ok(svgRepairTokens('x'.repeat(126_837)) > 50_000, 'which is far past the old flat 10,000');
+    // And it stays inside what the model will emit.
+    assert.equal(svgRepairTokens('x'.repeat(2_000_000), 'anthropic', 'claude-opus-5'), 128_000,
+      'a drawing larger than the model ceiling is held at the ceiling');
+    assert.ok(svgRepairTokens('x'.repeat(2_000_000), 'deepseek', 'deepseek-flash') > 128_000,
+      'an undocumented ceiling is left alone rather than guessed at');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

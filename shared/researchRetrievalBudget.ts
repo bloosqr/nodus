@@ -110,3 +110,23 @@ export function withinModelOutput(total: number, provider: string, model: string
   const ceiling = documentedMaxOutput(provider, model);
   return ceiling == null ? total : Math.min(total, ceiling);
 }
+
+/** Output tokens for one route review. It reads every step and may return up to 24 findings, so a
+ *  flat budget truncates the longer the route gets: a nineteen-step route was handed the same
+ *  2,000 tokens as a three-step one, and a review that produced nothing readable was
+ *  indistinguishable in the report from a review that found nothing wrong. The ceiling keeps a
+ *  pathological route from asking without bound. */
+export function routeReviewTokens(stepCount: number): number {
+  return Math.min(16_000, Math.max(2_000, 1_200 + 600 * Math.max(1, stepCount)));
+}
+
+/** Output tokens for one SVG repair. The model is asked to return the WHOLE drawing, so the budget
+ *  has to hold the drawing: a flat 10,000 could not, and a chemistry scheme runs to 126,837
+ *  characters — roughly 32,000 tokens on SVG's dense punctuation. The repair came back truncated,
+ *  failed the completeness check and was dropped without a word, so a drawing too big to repair
+ *  looked like one that needed none. Sized from the drawing at a conservative 2.5 characters per
+ *  token, with headroom for a repair that legitimately grows, and held under the model's ceiling. */
+export function svgRepairTokens(svg: string, provider?: string | null, model?: string | null): number {
+  const budget = Math.max(10_000, Math.ceil(svg.length / 2.5) + 2_000);
+  return provider && model ? withinModelOutput(budget, provider, model) : budget;
+}
