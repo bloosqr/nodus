@@ -1050,15 +1050,23 @@ export function findStepNamedSpecies(text: string, count: number): NamedSpecies[
  *  an empty line, so every later step keeps its number and lines up with its labels, prose and
  *  conditions, and the checker reports that step as unbuilt. */
 export function buildRouteSteps(speciesByStep: Array<Array<Pick<ResolvedSpecies, 'role' | 'smiles'>>>): string[] {
+  // Every fragment of every species, in order, with nothing dropped. The components of one
+  // species are written out because a reaction SMILES has no other way to carry them; the
+  // package regroups them from the labels, so a salt still counts once and takes one coefficient.
+  //
+  // This used to discard a repeated token, to stop two salts sharing an ion from putting the same
+  // token on one side twice. That cost atoms: the set was per ROLE, so calcium chloride written
+  // as `[Ca+2].[Cl-].[Cl-]` lost a chloride, and any salt with repeated counterions — magnesium
+  // bromide, sodium sulfate, potassium carbonate — could then never balance. Losing an atom to
+  // avoid an ambiguous balance is the wrong trade: a duplicate token is at worst reported as
+  // several possible equations, which the author can see and fix, while a missing atom is a
+  // verdict on an equation nobody wrote.
   const fragments = (step: Array<Pick<ResolvedSpecies, 'role' | 'smiles'>>, role: RouteLabelRole): string[] => {
-    const seen = new Set<string>();
     const out: string[] = [];
     for (const entry of step.filter((item) => item.role === role)) {
       for (const part of (entry.smiles ?? '').split('.')) {
         const token = part.trim();
-        if (!token || seen.has(token)) continue;
-        seen.add(token);
-        out.push(token);
+        if (token) out.push(token);
       }
     }
     return out;
@@ -1136,6 +1144,16 @@ export function annotateSpeciesSmiles(answer: string, speciesByStep: ResolvedSpe
     out = out.slice(0, replacement.start) + replacement.text + out.slice(replacement.end);
   }
   return out;
+}
+
+/** A placeholder the author wrote where a species belongs: "see prose", "as above", "see step 2".
+ *  It is not a name a resolver could ever turn into a structure, and asking for "its structure"
+ *  invites the author to invent one. Seen live: a step whose Byproducts line read "see prose",
+ *  which made the whole step uncheckable. The rules already say a step that gives its species
+ *  only in prose cannot be checked; this names the specific thing the author did. */
+export function isPlaceholderSpecies(name: string): boolean {
+  return /^(?:see|as)\b[^.]{0,40}\b(?:prose|above|below|text|step\s*\d*|described|discussion|list)\b/i.test(name.trim())
+    || /^(?:unchanged|same as|ditto|various|etc\.?|multiple|several)\b/i.test(name.trim());
 }
 
 /** A species name as the resolver feedback may return it: a short label with letters, and no
@@ -2012,9 +2030,15 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const label = `Step ${step.index + 1}`;
     if (!step.ok) {
       if (unbuilt(step)) {
-        const named = unresolved.filter((entry) => entry.step === step.index + 1)
-          .map((entry) => `${entry.byproduct ? 'byproduct' : entry.role} "${entry.name}"`);
-        lines.push(`- ${label} UNBUILT — nothing was checked: ${named.length ? `no structure resolved for ${named.join(', ')}` : 'a species it names has no resolved structure'}. Give that species a name a reference resolves, or its structure.`);
+        const forStep = unresolved.filter((entry) => entry.step === step.index + 1);
+        const named = forStep.map((entry) => `${entry.byproduct ? 'byproduct' : entry.role} "${entry.name}"`);
+        // A placeholder is a different fault from a name that merely would not resolve, and it
+        // needs different advice: no structure exists to give, the species have to be listed.
+        const placeholder = forStep.some((entry) => isPlaceholderSpecies(entry.name));
+        const advice = placeholder
+          ? 'That is a placeholder, not a species: list each one by name, or write "none".'
+          : 'Give that species a name a reference resolves, or its structure.';
+        lines.push(`- ${label} UNBUILT — nothing was checked: ${named.length ? `no structure resolved for ${named.join(', ')}` : 'a species it names has no resolved structure'}. ${advice}`);
         continue;
       }
       lines.push(`- ${label} FAIL — ${step.error ?? 'could not be parsed'}`);
@@ -2501,6 +2525,9 @@ export function formatUnresolvedNameClarification(unresolved: UnresolvedName[], 
     'Unresolved species:',
     ...lines,
     '',
+    ...(unresolved.some((entry) => isPlaceholderSpecies(entry.name))
+      ? ['A placeholder such as "see prose" or "as above" is not a species and has no structure: list every species of that step by name, or write "none" when a side has none.', '']
+      : []),
     'Re-output the complete route, in order, with each unresolved species corrected. What may change: only those names — every step keeps its prose and every other name exactly. Each step ends with the four labelled lines of systematic IUPAC names, names only:',
     ...NAMES_ONLY_FORMAT,
     ...correctionRules(target),
