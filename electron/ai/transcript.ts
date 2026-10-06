@@ -59,6 +59,15 @@ export async function withTranscript(
   }
 }
 
+/** A counted event the trace should carry beside the calls: what retrieval actually did on this
+ *  turn. The prompt deliberately shows a model no counters (researchScopeForPrompt strips them),
+ *  and nothing else logged them, so a run could not say how many rounds ran — which is exactly
+ *  what hid "retrieval never ran at all". A no-op when the transcript is off. */
+export function recordRetrieval(fields: Record<string, unknown>): void {
+  if (!process.env.NODUS_AI_TRANSCRIPT) return;
+  append({ phase: 'retrieval', ...fields });
+}
+
 /** A `fetch` for a provider client that records the exact request and response (and a key
  *  fingerprint, never the key) when the transcript is on; undefined when off, so the client keeps its
  *  default fetch and pays nothing. */

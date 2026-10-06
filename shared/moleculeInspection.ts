@@ -68,6 +68,13 @@ export interface RouteSpeciesSummary {
   heavyAtoms: number;
   stereocentres: number;
   unspecifiedStereocentres: number;
+  /** For a species written as a free acid with a stereocentre carrying a nitrogen — a chiral
+   *  building block — the CIP descriptor at that centre, as the package measured it. Reported,
+   *  not judged: a block of the opposite configuration parses and balances exactly like the
+   *  intended one, so the atom check can never see it, and the letter that corresponds to a
+   *  given series flips when a sulfur-bearing branch outranks the carboxyl. The report puts the
+   *  measurement beside what the author's own name asserts. */
+  alphaConfiguration?: '(R)' | '(S)' | 'unassigned';
   /** The systematic name the author wrote for this species, when the answer carries one. */
   name?: string;
   /** Set by the capability when it could resolve the name: true when the name denotes this
@@ -770,6 +777,48 @@ function cleanSpeciesName(raw: string): string {
   return raw.replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
+/** Whether a parsed species name can be a chemical name at all. A model that draws its route
+ *  as an inline SVG writes the role labels into the picture too ("Byproducts: isobutylene, CO2…"
+ *  inside a `<text>` element), and those were read as species: they cannot resolve, so the step
+ *  they land on is emptied and reported as unbuilt even though the author's own list was
+ *  complete. Markup is not a name. */
+function isNameLikeSpecies(name: string): boolean {
+  return !/[<>{}\\"\n\r\t|]/.test(name) && !name.includes('→');
+}
+
+/** The answer with the blocks the interface renders specially blanked, the same length, so
+ *  offsets into it still address the original text. A species list the author wrote in prose, in
+ *  an ordinary code fence or in a table is untouched.
+ *
+ *  A model may emit its own picture through a capability fence (`nodus-view`, which
+ *  splitChatVisuals classifies as a view, not prose) and hand-write the SVG inside it. Seen on a
+ *  solid-phase route: the drawing repeated the role labels in its `<text>` elements and ran out
+ *  before `</svg>`, so one `Byproducts:` inside the picture claimed every character to the end of
+ *  the answer and two fragments of markup became species of that step. They resolve to nothing,
+ *  so the step was emptied and reported as unbuilt although the author's own list was complete.
+ *  A picture of a route is not a declaration of one. */
+function maskDrawnRegions(text: string): string {
+  const blank = (value: string, from: number, to: number) =>
+    value.slice(0, from) + ' '.repeat(Math.max(0, to - from)) + value.slice(to);
+  let out = text;
+  // A capability fence carries a structured payload, not a species list. An unclosed one runs to
+  // the end of the answer, which is what a truncated drawing leaves behind.
+  for (const open of [...text.matchAll(/```nodus-[A-Za-z0-9_-]*/g)].reverse()) {
+    const from = open.index ?? 0;
+    const close = out.indexOf('```', from + open[0].length);
+    out = blank(out, from, close >= 0 ? close + 3 : out.length);
+  }
+  // Raw markup outside a fence, with the same allowance for a drawing that was cut off.
+  for (const open of [...out.matchAll(/<svg\b/gi)].reverse()) {
+    const from = open.index ?? 0;
+    const close = /<\/svg\s*>/i.exec(out.slice(from));
+    const fence = out.indexOf('```', from);
+    const to = close ? from + (close.index ?? 0) + close[0].length : fence >= 0 ? fence : out.length;
+    out = blank(out, from, to);
+  }
+  return out;
+}
+
 interface RoleSegment { role: RouteLabelRole; byproduct: boolean; start: number; end: number }
 
 /** Every labelled segment, in document order, with the span of text that belongs to it. */
@@ -912,11 +961,11 @@ function parseRoleEntries(fragment: string): RoleEntry[] {
     const pair = /^(.+?)\s*[—–]\s*`([^`]+)`/.exec(entry);
     if (pair) {
       const name = cleanSpeciesName(pair[1]);
-      if (name) out.push({ name, declaredSmiles: pair[2].trim(), start: span.start, end: span.end });
+      if (name && isNameLikeSpecies(name)) out.push({ name, declaredSmiles: pair[2].trim(), start: span.start, end: span.end });
       continue;
     }
     const name = cleanSpeciesName(entry.replace(/[—–]?\s*`[^`]*`/g, '').replace(/[*_`]/g, '').replace(/[.,;:\s]+$/, ''));
-    if (!name || /^(?:none|no|n\/a|nil)\b/i.test(name) || /^[—–-]+$/.test(name)) continue;
+    if (!name || !isNameLikeSpecies(name) || /^(?:none|no|n\/a|nil)\b/i.test(name) || /^[—–-]+$/.test(name)) continue;
     out.push({ name, start: span.start, end: span.end });
   }
   return out;
@@ -927,7 +976,8 @@ interface NamedSegment { step: number; role: RouteLabelRole; byproduct: boolean;
 /** Every named role segment, assigned to its step. In the name-first path only the plural
  *  labels count; a non-step section (an "Alternative…") is skipped; without headings the role
  *  cycle splits the steps. */
-function namedSegments(text: string, count: number): NamedSegment[] {
+function namedSegments(answer: string, count: number): NamedSegment[] {
+  const text = maskDrawnRegions(answer);
   const segments = roleSegments(text, NAME_ROLE_MARKER);
   if (!segments.length) return [];
   const headings = sectionHeadings(text);
@@ -959,7 +1009,8 @@ function namedSegments(text: string, count: number): NamedSegment[] {
  *  carry species, or the role cycle (a new step begins at a `Reactants:` that follows a
  *  product) when there are no headings. A prose summary heading with no species under it does
  *  not count, so a route written twice is still one route. */
-export function countRouteSteps(text: string): number {
+export function countRouteSteps(answer: string): number {
+  const text = maskDrawnRegions(answer);
   const segments = roleSegments(text, NAME_ROLE_MARKER);
   const headings = sectionHeadings(text);
   const stepHeadings = headings.filter((heading) => heading.step);
@@ -1320,6 +1371,8 @@ function normalizeRouteSpecies(entry: unknown): RouteSpeciesSummary | null {
     heavyAtoms: numberOr(value.heavyAtoms, 0),
     stereocentres: numberOr(value.stereocentres, 0),
     unspecifiedStereocentres: numberOr(value.unspecifiedStereocentres, 0),
+    ...(value.alphaConfiguration === '(R)' || value.alphaConfiguration === '(S)' || value.alphaConfiguration === 'unassigned'
+      ? { alphaConfiguration: value.alphaConfiguration } : {}),
     ...(typeof value.name === 'string' && value.name.trim() ? { name: value.name.trim().slice(0, 200) } : {}),
     ...(typeof value.nameOk === 'boolean' ? { nameOk: value.nameOk } : {}),
     ...(value.byproduct === true ? { byproduct: true } : {}),
@@ -1877,7 +1930,52 @@ const LARGE_COEFFICIENT = 6;
 
 /** `reviewPending` is set for the interim repaint shown while the model review still runs: a
  *  route whose checks pass is then reported as passing so far, not as verified. */
-export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][] = [], review: RouteReview | null = null, reviewPending = false): string {
+/** What a species name asserts about configuration, when it says anything: an L-/D- prefix, or an
+ *  explicit CIP descriptor. Only what the author wrote — no mapping is applied, because L maps to
+ *  one letter in most of the series and the other when a sulfur-bearing branch outranks the
+ *  carboxyl, so no mapping is applied here. */
+export function statedConfiguration(name: string | undefined): string | null {
+  if (!name) return null;
+  if (/\(2?R\)/.test(name)) return '(R)';
+  if (/\(2?S\)/.test(name)) return '(S)';
+  if (/\bD-|\bD\b(?=[- ])|-D-/.test(name)) return 'D';
+  if (/\bL-|\bL\b(?=[- ])|-L-/.test(name)) return 'L';
+  return null;
+}
+
+/** The measured configuration of each chiral building block a step consumes, beside what its
+ *  own name asserts. Reported, never a verdict: this is the one error class the deterministic checks
+ *  cannot see, because the wrong enantiomer has the same formula, the same atom counts and the
+ *  same canonical constitution as the right one. Where the name and the structure both state a
+ *  CIP descriptor the two are compared directly, which needs no mapping; an L-/D- prefix is
+ *  printed as-is for the reader to weigh. */
+function alphaConfigurationLine(step: RouteStepAudit, stepLabels: RouteSpeciesLabel[]): string | null {
+  const blocks = step.reactants.filter((entry) => entry.alphaConfiguration);
+  if (!blocks.length) return null;
+  const nameFor = (entry: RouteSpeciesSummary, index: number): string | undefined =>
+    entry.name ?? stepLabels.filter((label) => label.role === 'reactant')[index]?.name;
+  const parts = blocks.map((entry) => {
+    const name = nameFor(entry, step.reactants.indexOf(entry));
+    const measured = entry.alphaConfiguration!;
+    const stated = statedConfiguration(name);
+    const note = !stated ? ''
+      : (stated === '(R)' || stated === '(S)')
+        ? stated === measured ? ', name agrees' : `, NAME SAYS ${stated}`
+        : `, name says ${stated}`;
+    return `${name ?? entry.formula} ${measured}${note}`;
+  });
+  const counts = new Map<string, number>();
+  for (const entry of blocks) counts.set(entry.alphaConfiguration!, (counts.get(entry.alphaConfiguration!) ?? 0) + 1);
+  const tally = [...counts].sort().map(([key, count]) => `${count} ${key}`).join(', ');
+  return `  Building blocks, alpha configuration as measured (${tally}) — a block of the wrong configuration balances exactly like the right one: ${parts.join(' · ')}`;
+}
+
+/** How the package reports a step it could not build, because a species the step names has no
+ *  resolved structure. It is not a verdict on the chemistry: nothing was checked. Matched by
+ *  prefix so the report can say UNBUILT and name the species instead of printing FAIL. */
+export const UNBUILT_STEP_ERROR_PREFIX = 'This step could not be built';
+
+export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][] = [], review: RouteReview | null = null, reviewPending = false, unresolved: UnresolvedName[] = []): string {
   const names = routeLabelNames(labels);
   const lines: string[] = [
     '### Route check (RDKit)',
@@ -1885,14 +1983,19 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     'Every step was parsed with RDKit and every equation and intermediate link was checked. This block is generated by the application, not by the model.',
     '',
   ];
-  const failing = (step: RouteStepAudit): boolean => routeStepFailure(step) !== null;
+  const unbuilt = (step: RouteStepAudit): boolean => !step.ok && Boolean(step.error?.startsWith(UNBUILT_STEP_ERROR_PREFIX));
+  const failing = (step: RouteStepAudit): boolean => routeStepFailure(step) !== null && !unbuilt(step);
   const failedSteps = audit.steps.filter(failing).map((step) => step.index + 1);
+  const unbuiltSteps = audit.steps.filter(unbuilt).map((step) => step.index + 1);
   const assembled = audit.steps.filter((step) => Boolean(step.assemblyProblem)).map((step) => step.index + 1);
   const skeletal = audit.steps.filter((step) => Boolean(step.skeletonProblem)).map((step) => step.index + 1);
   const isolated = isolatedSteps(audit);
   const reviewProblems = blockingReviewProblems(review);
   const reasons: string[] = [];
   if (failedSteps.length) reasons.push(`${failedSteps.length} of ${audit.steps.length} step(s) do not pass (${failedSteps.map((index) => `step ${index}`).join(', ')})`);
+  // Said separately: an unbuilt step had nothing checked, so counting it as a failed check makes
+  // a route look worse than it is and hides what the author actually has to fix.
+  if (unbuiltSteps.length) reasons.push(`${unbuiltSteps.length} step(s) could not be built because a species they name has no resolved structure (${unbuiltSteps.map((index) => `step ${index}`).join(', ')})`);
   if (assembled.length) reasons.push(`${assembled.length === 1 ? 'a step' : 'steps'} cannot be assembled from a single substrate molecule (${assembled.map((index) => `step ${index}`).join(', ')})`);
   if (skeletal.length) reasons.push(`${skeletal.length === 1 ? 'a step makes or breaks a bond' : 'steps make or break bonds'} its reactants cannot (${skeletal.map((index) => `step ${index}`).join(', ')})`);
   if (isolated.length) reasons.push(`${isolated.length} step(s) are disconnected from the rest of the route`);
@@ -1907,7 +2010,16 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     : `**Route check failed** — ${reasons.join('; ')}.`);
   for (const step of audit.steps) {
     const label = `Step ${step.index + 1}`;
-    if (!step.ok) { lines.push(`- ${label} FAIL — ${step.error ?? 'could not be parsed'}`); continue; }
+    if (!step.ok) {
+      if (unbuilt(step)) {
+        const named = unresolved.filter((entry) => entry.step === step.index + 1)
+          .map((entry) => `${entry.byproduct ? 'byproduct' : entry.role} "${entry.name}"`);
+        lines.push(`- ${label} UNBUILT — nothing was checked: ${named.length ? `no structure resolved for ${named.join(', ')}` : 'a species it names has no resolved structure'}. Give that species a name a reference resolves, or its structure.`);
+        continue;
+      }
+      lines.push(`- ${label} FAIL — ${step.error ?? 'could not be parsed'}`);
+      continue;
+    }
     const racemic = step.racemic === true && step.unspecifiedStereocentres > 0;
     const moot = !racemic && step.stereoNotRequired === true && step.unspecifiedStereocentres > 0;
     const nameFailure = (step.nameProblems?.length ?? 0) > 0;
@@ -1939,6 +2051,8 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const reactantSide = groupedSideTrace(step.reactants, stepLabels.filter((entry) => entry.role === 'reactant'), names, step.balanced === true, step.products);
     const productSide = groupedSideTrace(step.products, stepLabels.filter((entry) => entry.role === 'product'), names, step.balanced === true, step.reactants);
     lines.push(`- ${label} ${verdict} — ${balance}${stereo}.${nameNote}${largeNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
+    const alpha = alphaConfigurationLine(step, stepLabels);
+    if (alpha) lines.push(alpha);
   }
   if (audit.links.length) {
     lines.push('', 'Intermediate continuity:', '');
@@ -2353,6 +2467,28 @@ export function parseNameFeedback(raw: string): NameFeedbackEntry[] {
 export function formatAuthorStructureNote(entries: string[]): string {
   const unique = [...new Set(entries.map((entry) => entry.trim()).filter(Boolean))];
   return unique.length ? `Author-supplied structures (no reference name was available): ${unique.join('; ')}` : '';
+}
+
+/** Where each species' structure came from, as one line. The author-supplied ones are named
+ *  individually by formatAuthorStructureNote, because that is the category a wrong structure
+ *  hides in; the rest are counted, which is what a run needs recorded to compare with the next
+ *  one. Without this a run cannot say whether a protected name was resolved offline, looked up,
+ *  or taken from the model. */
+export function formatResolutionSourceNote(species: Array<{ status: string; source?: string }>): string {
+  const label: Record<string, string> = {
+    builtin: 'the built-in dictionary', pubchem: 'PubChem', opsin: 'OPSIN', declared: 'the answer itself',
+  };
+  const counts = new Map<string, number>();
+  for (const entry of species) {
+    if (entry.status === 'unresolved') continue;
+    const key = entry.source ?? 'unknown';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  if (!counts.size) return '';
+  const order = ['builtin', 'pubchem', 'opsin', 'declared', 'unknown'];
+  const parts = [...counts].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+    .map(([key, count]) => `${count} from ${label[key] ?? 'an unnamed resolver'}`);
+  return `Structures resolved: ${parts.join(' · ')}.`;
 }
 
 /** The escalation when a name cannot be resolved to a structure even after the feedback
