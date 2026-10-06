@@ -80,3 +80,24 @@ test('the answer budget plus its thinking reserve stays inside what the model wi
     assert.match(generation, /withinModelOutput\(maxTokens \+ thinkingOutputAllowance\(/, 'the clamp wraps the sum');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('the budget can be asked before a row is written', async () => {
+  // A receipt has to be written before its id exists, so the budget was consulted second and a
+  // refused passage had already consumed a receipt row — the receipt count then no longer
+  // equalled the evidence used. Asking first costs nothing and keeps the two in step.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-would-accept-'));
+  try {
+    await build({ entryPoints: ['shared/researchRetrievalBudget.ts'], outfile: path.join(root, 'b.cjs'), bundle: true, platform: 'node', format: 'cjs' });
+    const { ResearchRetrievalBudget } = require(path.join(root, 'b.cjs'));
+    const budget = new ResearchRetrievalBudget({ preset: 'custom', rounds: 2, candidates: 4, passagesPerRound: 2,
+      evidenceTokens: 256, decisionTokens: 256, autoExpand: false, threshold: { mode: 'automatic' } }, 300, 300);
+    assert.equal(budget.wouldAccept('x'.repeat(200)), true, 'it fits');
+    assert.equal(budget.usedEvidenceTokens, 0, 'and asking reserves nothing');
+    assert.equal(budget.partial, false, 'nor does it mark the run partial');
+    assert.equal(budget.accept('a', 'x'.repeat(200)), true);
+    assert.equal(budget.usedEvidenceTokens, 200, 'accepting does reserve');
+    assert.equal(budget.wouldAccept('y'.repeat(200)), false, 'the next one would not fit');
+    assert.equal(budget.accept('b', 'y'.repeat(200)), false, 'and accepting it is refused');
+    assert.equal(budget.accept('a', 'x'.repeat(5)), false, 'a duplicate id is still refused by accept, not by the check');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
