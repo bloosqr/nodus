@@ -51,6 +51,13 @@ export class ResearchRetrievalBudget {
     this.rounds++;
     return true;
   }
+  /** Whether this text would fit, without reserving it. Needed where a row has to be written
+   *  before its id exists: the receipt was recorded first and the budget consulted second, so a
+   *  passage the budget then refused had already consumed a receipt row and the receipt count no
+   *  longer equalled the evidence used. Asking first costs nothing and keeps the two in step. */
+  wouldAccept(text: string): boolean {
+    return this.usedEvidenceTokens + new TextEncoder().encode(text).length <= this.evidenceTokenLimit;
+  }
   accept(id: string, text: string): boolean {
     if (this.visited.has(id)) return false;
     const tokens = new TextEncoder().encode(text).length;
