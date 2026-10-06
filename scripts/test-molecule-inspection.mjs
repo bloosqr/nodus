@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'molecule-inspection-'));
 await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
+const { findSmilesCandidates, findAnswerSpecies, normalizeMoleculeDossier, formatMoleculeDossier, formatStructureAudit, MOLECULE_DOSSIER_SYSTEM_RULE, findStepConditions, declaresRacemic, stepDeclaresRacemic, normalizeRouteAudit, formatRouteAudit, ROUTE_CONTINUITY_SYSTEM_RULE, findRequestedTarget, requestedTargetFor, ROUTE_FIX_PROMPT_LEAD, parseRouteReview, buildRouteReviewRequest, ROUTE_REVIEW_SYSTEM, clampReviewDetail, findStepProse, routeLabelNames, countRouteSteps, findStepNamedSpecies, buildRouteSteps, annotateSpeciesSmiles, formatNameCorrectionNote, formatAuthorStructureNote, formatNamedRouteFixPrompts, formatMissingSpeciesPrompt, isRouteFixPrompt, parseNameFeedback, ROUTE_NAME_FEEDBACK_SYSTEM, formatUnresolvedNameClarification, routeReportsForHistory, classifyCoProducts, smilesHasCarbon, routeStepFailure, routeFixPromptForHistory, formatRouteCheckUnavailable, normalizeReactionPrecedent, formatReactionPrecedents, buildPrecedentQueries, similarityBand, precedentDrawingFor, formatResolutionSourceNote, UNBUILT_STEP_ERROR_PREFIX } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
 await build({ entryPoints: ['shared/chatSkills.ts'], outfile: path.join(dir, 'chatSkills.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { splitChatVisuals } = await import(pathToFileURL(path.join(dir, 'chatSkills.mjs')));
 await build({ entryPoints: ['shared/synthesisPrompt.ts'], outfile: path.join(dir, 'synthesisPrompt.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -1526,4 +1526,91 @@ test('open stereocentres that cannot reach the target pass, and say so', () => {
   // Without the flag the same step still fails.
   const strict = normalizeRouteAudit({ ...audit, steps: [{ ...audit.steps[0], stereoNotRequired: false }] });
   assert.match(routeStepFailure(strict.steps[0]) ?? '', /2 unspecified stereocentre/);
+});
+
+test('a route the model draws in a capability fence does not turn its own labels into species', () => {
+  // Seen on a long route: the model emitted its own picture through the `nodus-view`
+  // fence and hand-wrote the SVG inside it, repeating the role labels in its `<text>` elements,
+  // and the drawing ran out before `</svg>`. One `Byproducts:` inside the picture claimed the
+  // rest of the answer, and two fragments of markup became species of that step that no resolver
+  // could turn into structures — so the step was emptied and reported as unbuilt although the
+  // author's own list was complete.
+  const answer = [
+    '**Step 1 — Coupling**',
+    'Reactants: ethanol; ethanoic acid',
+    'Products: ethyl ethanoate',
+    'Byproducts: water',
+    'Agents: sulfuric acid',
+    '',
+    '**Step 2 — Hydrolysis**',
+    'Reactants: ethyl ethanoate; water',
+    'Products: ethanol',
+    'Byproducts: ethanoic acid',
+    'Agents: none',
+    '',
+    '```nodus-view',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">',
+    '  <text x="60" y="40" font-size="16">Step 1 — Coupling</text>',
+    '  <text x="80" y="65" font-size="13">Byproducts: water, carbon dioxide, etc.</text>',
+    '  <text x="80" y="90" font-size="13">Product: ethyl ethanoate, purified.</text>',
+    '```',
+    '',
+    'Caveats: the conditions are a proposal.',
+  ].join('\n');
+  assert.equal(countRouteSteps(answer), 2, 'the picture does not add a step');
+  const species = findStepNamedSpecies(answer, 2);
+  assert.deepEqual(species[0].map((entry) => entry.name), ['ethanol', 'ethanoic acid', 'ethyl ethanoate', 'water', 'sulfuric acid']);
+  assert.deepEqual(species[1].map((entry) => entry.name), ['ethyl ethanoate', 'water', 'ethanol', 'ethanoic acid'],
+    'no fragment of the drawing is read as a species');
+  // Every species still resolves, so both steps are built rather than reported unbuilt.
+  const steps = buildRouteSteps([
+    species[0].map((entry) => ({ role: entry.role, smiles: 'CCO' })),
+    species[1].map((entry) => ({ role: entry.role, smiles: 'CCO' })),
+  ]);
+  assert.ok(steps.every((step) => step.length > 0), 'a step is not emptied by the drawing');
+});
+
+test('a closed inline SVG is masked too, and a species name that is markup is dropped', () => {
+  const answer = [
+    '**Step 1 — Oxidation**',
+    'Reactants: cyclohexanol',
+    'Products: cyclohexanone',
+    'Byproducts: water; <text x="80" y="745">Product: something</text>',
+    'Agents: none',
+    '<svg width="10" height="10"><text>Reactants: benzene</text></svg>',
+  ].join('\n');
+  const species = findStepNamedSpecies(answer, 1);
+  assert.deepEqual(species[0].map((entry) => entry.name), ['cyclohexanol', 'cyclohexanone', 'water'],
+    'markup is not a species name, and the closed picture contributes nothing');
+});
+
+test('a step the application could not build is reported as UNBUILT and names the species', () => {
+  // Nothing was checked on such a step, so calling it a failed check both overstates the route's
+  // problems and hides what the author has to fix. The old line read
+  // "Step 2 FAIL — This step could not be built: a species it names has no resolved structure."
+  // and named nothing, which made a real diagnosis slow.
+  const audit = normalizeRouteAudit({
+    steps: [
+      { index: 0, reaction: 'CCO>>CC=O', ok: true, reactants: [], agents: [], products: [], balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0 },
+      { index: 1, reaction: '', ok: false, error: 'This step could not be built: a species it names has no resolved structure.', reactants: [], agents: [], products: [], balanced: null, chargeBalanced: null, differences: [], unspecifiedStereocentres: 0 },
+    ],
+  });
+  const report = formatRouteAudit(audit, [[], []], null, false, [
+    { step: 2, role: 'reactant', byproduct: false, name: 'the supported intermediate' },
+  ]);
+  assert.match(report, /- Step 2 UNBUILT — nothing was checked: no structure resolved for reactant "the supported intermediate"/);
+  assert.doesNotMatch(report, /Step 2 FAIL/, 'an unbuilt step is not reported as a failed check');
+  assert.match(report, /1 step\(s\) could not be built because a species they name has no resolved structure \(step 2\)/);
+  assert.doesNotMatch(report, /1 of 2 step\(s\) do not pass/, 'it is not counted among the steps that do not pass');
+});
+
+test('the resolution source of every structure is reported', () => {
+  assert.equal(formatResolutionSourceNote([
+    { status: 'resolved', source: 'builtin' }, { status: 'resolved', source: 'builtin' },
+    { status: 'resolved', source: 'pubchem' }, { status: 'resolved', source: 'opsin' },
+    { status: 'fallback', source: 'declared' },
+    { status: 'unresolved' },
+  ]), 'Structures resolved: 2 from the built-in dictionary · 1 from PubChem · 1 from OPSIN · 1 from the answer itself.');
+  assert.equal(formatResolutionSourceNote([]), '', 'nothing resolved is no note');
+  assert.equal(formatResolutionSourceNote([{ status: 'unresolved' }]), '', 'an unresolved species is not a source');
 });
