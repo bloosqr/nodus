@@ -295,6 +295,7 @@ const CLASS_RELEVANCE: Record<string, { all: RegExp[]; not?: RegExp[] }> = {
   'acylation of an alcohol or phenol': { all: [/acylat|acetylat|esterif/i] },
   'amide formation by acylation of an amine': { all: [/amide/i, /amine|ammonia/i, /acid chloride|acyl chloride|acylat|anhydride/i] },
   'ester hydrolysis': { all: [/hydroly|saponif/i, /ester/i] },
+  'reduction of an ester to an alcohol': { all: [/reduc/i, /ester/i], not: [/hydroly|saponif/i] },
   'nitrile hydrolysis': { all: [/nitrile/i, /hydroly/i] },
   'acid chloride formation with thionyl chloride': { all: [/thionyl chloride|SOCl\s*2/i, /acid chloride|acyl chloride|carboxylic acid/i] },
   'oxidation to a carboxylic acid': { all: [/oxidi[sz]|oxidation/i, /carboxylic acid/i] },
