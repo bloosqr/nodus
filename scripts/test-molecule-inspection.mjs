@@ -1999,3 +1999,43 @@ test('a bond check that could not run is said out loud, and does not fail the ro
   });
   assert.doesNotMatch(formatRouteAudit(clean), /could not settle/);
 });
+
+test('a replayed answer carries its text, never its drawings', () => {
+  // A drawing has already been rendered and read; replaying its markup only spends the window.
+  // Dropping the route-drawings section was not enough, because the precedent section is KEPT
+  // for the latest answer and carries drawings of its own. Measured on a real route: 652,000
+  // characters of answer, 604,000 of it SVG, after which the model said the preceding answer was
+  // not in its history and rebuilt the route from scratch instead of correcting it.
+  const answer = [
+    '**Step 1 — Protect the amine.**',
+    'Reactants: glycine; di-tert-butyl dicarbonate',
+    'Products: N-(tert-butoxycarbonyl)glycine',
+    '',
+    '### Route check (RDKit)',
+    '- Step 1 OK — balanced.',
+    '',
+    '### Known reactions (Open Reaction Database)',
+    'A precedent worth keeping: amide formation by acylation of an amine.',
+    // a realistic size: a real route drawing runs to tens of thousands of characters
+    `<svg xmlns="http://www.w3.org/2000/svg" width="300">${'<path d="M 1 2 L 3 4"/>'.repeat(400)}</svg>`,
+    'Another precedent line.',
+    '',
+    '### Route drawings (RDKit)',
+    `<svg xmlns="http://www.w3.org/2000/svg">${'<circle r="2"/>'.repeat(400)}</svg>`,
+  ].join('\n');
+
+  const replayed = routeReportsForHistory(answer, true);
+  assert.ok(!replayed.includes('<svg'), 'no drawing markup survives');
+  assert.ok(!replayed.includes('<path'), 'nor its contents');
+  // The text around the drawings is what the next turn reasons from, so it must survive.
+  assert.match(replayed, /amide formation by acylation of an amine/);
+  assert.match(replayed, /Another precedent line/);
+  assert.match(replayed, /Reactants: glycine/);
+  assert.ok(replayed.length < answer.length / 10, 'and it is far smaller: measured 94-97% on real answers');
+
+  // A truncated drawing must not claim the rest of the answer.
+  const unterminated = 'Keep this.\n### Known reactions (Open Reaction Database)\nprecedent\n<svg width="9"><path d="M 1';
+  const cut = routeReportsForHistory(unterminated, true);
+  assert.ok(!cut.includes('<svg'), 'an unterminated drawing is removed too');
+  assert.match(cut, /Keep this/);
+});

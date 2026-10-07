@@ -1242,11 +1242,30 @@ export function routeFixPromptForHistory(text: string): string {
   return cut < 0 ? text : `${text.slice(0, cut).trimEnd()}\n[The shared route rules followed here.]`;
 }
 
+/** Every picture, wherever it sits, replaced by a word. A drawing has already been rendered and
+ *  read; replaying its markup only spends the window.
+ *
+ *  Dropping the route drawings section was not enough. A precedent section is KEPT for the latest
+ *  answer — it is the evidence the next turn reasons from — and it carries drawings of its own, so
+ *  a correction turn still replayed them. Measured on a real route: 652,000 characters of answer,
+ *  604,000 of it SVG, and the model opened its reply with "the complete preceding answer is not
+ *  included in the supplied history… below is a complete reconstruction". It then rebuilt the route
+ *  from scratch rather than correcting it, and the step count swung 9 -> 2 -> 8 -> 2 -> 9 across
+ *  four rounds. The pictures had pushed the route out of the window.
+ *
+ *  An unterminated `<svg` is handled too: a truncated drawing otherwise claims the rest of the
+ *  answer, which is the same fault the species parser had to be taught about. */
+function withoutDrawings(prose: string): string {
+  return prose
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '[drawing omitted from history]')
+    .replace(/<svg[\s\S]*$/i, '[drawing omitted from history]');
+}
+
 export function routeReportsForHistory(prose: string, latest: boolean): string {
   const dropped = latest ? HISTORY_ALWAYS_DROPPED : [...HISTORY_ALWAYS_DROPPED, ...HISTORY_LATEST_ONLY];
   const kept: string[] = [];
   let skipping = false;
-  for (const line of prose.split('\n')) {
+  for (const line of withoutDrawings(prose).split('\n')) {
     if (dropped.includes(line.trim())) { skipping = true; continue; }
     if (skipping && (/^#{1,3}\s/.test(line) || HISTORY_NOTE.test(line))) skipping = false;
     if (!skipping) kept.push(line);
