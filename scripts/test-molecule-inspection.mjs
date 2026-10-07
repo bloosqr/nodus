@@ -1885,3 +1885,117 @@ test('what a name asserts about configuration is read, and only when it says som
   }
   assert.equal(statedConfiguration(undefined), null, 'no name asserts nothing');
 });
+
+test('a systematic name with braces is a species, not markup', () => {
+  // Braces are standard IUPAC punctuation for a nested substituent prefix, and every protected
+  // building block carries them. They used to be treated as a sign of markup, so a step that
+  // declared such a species BY NAME lost it: the step kept its other reactant, the equation was
+  // solved on something the author never wrote, and the report told the author a species it had
+  // declared was missing from Reactants. Ten steps of one route failed that way, through three
+  // fix rounds, with no unresolved-name message anywhere.
+  const named = '(2R)-2-{[(9H-fluoren-9-yl)methoxycarbonyl]amino}-3-(pyridin-3-yl)propanoic acid';
+  const answer = [
+    '**Step 1 — Couple the building block.** One amide forms.',
+    '',
+    `Reactants: the chain on the support — \`*NC(=O)CNC\`;${named}`,
+    'Products: the extended chain — `*NC(=O)CN(C)C(=O)[C@H](Cc1cccnc1)NC(=O)OCC1c2ccccc2-c2ccccc21`',
+    'Byproducts: water — `O`',
+    'Agents: N,N-dimethylformamide',
+  ].join('\n');
+  const species = findStepNamedSpecies(answer, 1);
+  const reactants = species[0].filter((entry) => entry.role === 'reactant');
+  assert.equal(reactants.length, 2, 'the named building block must be one of the reactants');
+  assert.ok(reactants.some((entry) => entry.name === named), 'the braced name must survive verbatim');
+
+  // And markup still does not become a species: angle brackets, quotes and pipes remain tells.
+  const markup = [
+    '**Step 1 — A drawing, not a declaration.**',
+    '',
+    'Reactants: <text x="10">Reactants: ethanol</text>;ethanol — `CCO`',
+    'Products: ethanal — `CC=O`',
+  ].join('\n');
+  const scraped = findStepNamedSpecies(markup, 1)[0].filter((entry) => entry.role === 'reactant');
+  assert.ok(!scraped.some((entry) => entry.name.includes('<text')), 'markup must still be rejected');
+});
+
+test('one fault repeated across steps is stated once, as a pattern', () => {
+  // Ten copies of the same sentence read as ten problems and invite ten local edits. One route
+  // failed ten coupling steps identically and three correction rounds edited them one at a time
+  // without addressing the pattern, so the repeat is now named up front.
+  // ok: true with balanced: false is the real shape of a step that parsed and failed its
+  // equation; ok: false short-circuits to "could not be parsed" and would group everything.
+  const step = (index, missing) => ({
+    index, reaction: 'a>>b', ok: true, balanced: false, chargeBalanced: true,
+    differences: [`The declared species cannot be balanced: N: reactants 2, products ${missing}.`],
+    unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+  });
+  const audit = normalizeRouteAudit({
+    continuous: true, blocked: [],
+    steps: [step(0, 4), step(2, 5), step(4, 6)],
+    links: [],
+  });
+  const labels = [[], [], [], [], []];
+  const chips = routeFixChips(formatNamedRouteFixPrompts(labels, audit));
+  const backwards = chips.find((chip) => chip.label === 'Fix from the target backwards');
+  assert.ok(backwards, 'the whole-route backwards chip exists');
+  for (const chip of [chips[0], backwards]) {
+    assert.match(chip.prompt, /One fault repeats below, so this is one mistake made several times/);
+    assert.match(chip.prompt, /step 1, step 3, step 5 all fail the same way/);
+    // and it must quote the real failure, not a generic parse message
+    assert.match(chip.prompt, /all fail the same way: not balanced \(The declared species cannot be balanced/);
+  }
+  // A per-step chip must NOT carry the pattern line: it is scoped to one step by design.
+  const single = chips.find((chip) => chip.label === 'Fix step 1');
+  if (single) assert.doesNotMatch(single.prompt, /One fault repeats below/);
+});
+
+test('distinct faults are not collapsed into a false pattern', () => {
+  const audit = normalizeRouteAudit({
+    continuous: true, blocked: [],
+    steps: [
+      { index: 0, reaction: 'a>>b', ok: true, balanced: false, chargeBalanced: true,
+        differences: ['The declared species cannot be balanced: N: reactants 2, products 4.'],
+        unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] },
+      { index: 1, reaction: 'c>>d', ok: true, balanced: false, chargeBalanced: true,
+        differences: ['This step inverts a stereocentre: its reactants carry 1 (S) and 0 (R).'],
+        unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] },
+    ],
+    links: [],
+  });
+  const chips = routeFixChips(formatNamedRouteFixPrompts([[], []], audit));
+  assert.doesNotMatch(chips[0].prompt, /One fault repeats below/);
+});
+
+test('a bond check that could not run is said out loud, and does not fail the route', () => {
+  // The bond-edit search is budgeted and gives up on a hard graph. Until this was reported, a
+  // route whose bonds were never examined read exactly like one whose bonds were sound — the
+  // fourth instance in one session of a check that did not run looking like a check that passed.
+  const facts = (change, reason) => ({
+    change, formed: 0, cleaved: 0, ringSizes: [], migration: false, reorganised: false,
+    unactivated: 0, unactivatedHetero: 0, heteroElements: [], ...(reason ? { reason } : {}),
+  });
+  const step = (index, skeleton) => ({
+    index, reaction: 'CCO>>CC=O', ok: true, balanced: true, chargeBalanced: true, differences: [],
+    unspecifiedStereocentres: 0, reactants: [], agents: [], products: [], skeleton,
+  });
+  const audit = normalizeRouteAudit({
+    continuous: true, blocked: [],
+    steps: [step(0, facts('none')), step(1, facts('unchecked', 'the search ran out of budget'))],
+    links: [{ from: 0, to: 1, reason: 'carried' }],
+  });
+  const text = formatRouteAudit(audit);
+  // The verdict is unchanged: a step whose bonds could not be examined has done nothing wrong.
+  assert.match(text, /\*\*Route checked: balanced and connected\*\*/);
+  // But the gap in coverage is stated, naming the step and the reason.
+  assert.match(text, /Not examined: the bond-edit check could not settle 1 of 2 step\(s\) \(step 2\)/);
+  assert.match(text, /gap in coverage, not a finding about the chemistry/);
+  assert.match(text, /the search ran out of budget/);
+
+  // And when every step was examined, nothing extra is said.
+  const clean = normalizeRouteAudit({
+    continuous: true, blocked: [],
+    steps: [step(0, facts('none')), step(1, facts('formed'))],
+    links: [{ from: 0, to: 1, reason: 'carried' }],
+  });
+  assert.doesNotMatch(formatRouteAudit(clean), /could not settle/);
+});

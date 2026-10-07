@@ -47,6 +47,7 @@ import {
   type RouteSpeciesLabel,
   type StepSupport,
   type UnresolvedName,
+  MAX_SPECIES_NAME,
 } from '@shared/moleculeInspection';
 import { routeReviewTokens } from '@shared/researchRetrievalBudget';
 import { compoundAvailability, findStartingSmiles, formatStartingMaterialStock, formatTargetAvailability, relevantExcerpt, routeStartingMaterials, routeTargetSmiles, textbookQueryForClass } from '@shared/synthesisEvidence';
@@ -395,7 +396,7 @@ function normalizeSpeciesResolution(entry: unknown): SpeciesResolution | null {
   const status = value.status;
   if (status !== 'resolved' && status !== 'ambiguous' && status !== 'unresolved') return null;
   return {
-    name: value.name.slice(0, 200),
+    name: value.name.slice(0, MAX_SPECIES_NAME),
     status,
     ...(typeof value.smiles === 'string' && value.smiles ? { smiles: value.smiles.slice(0, 2000) } : {}),
     ...(typeof value.formula === 'string' ? { formula: value.formula.slice(0, 200) } : {}),
@@ -439,7 +440,7 @@ function normalizeStructureName(entry: unknown): SpeciesStructureName | null {
     smiles: value.smiles.slice(0, 2000),
     status: value.status === 'named' ? 'named' : 'unnamed',
     ...(Number.isSafeInteger(value.cid) && (value.cid as number) > 0 ? { cid: value.cid as number } : {}),
-    ...(typeof value.name === 'string' && value.name ? { name: value.name.slice(0, 300) } : {}),
+    ...(typeof value.name === 'string' && value.name ? { name: value.name.slice(0, MAX_SPECIES_NAME) } : {}),
     ...(typeof value.formula === 'string' && value.formula ? { formula: value.formula.slice(0, 200) } : {}),
     ...(typeof value.canonicalSmiles === 'string' && value.canonicalSmiles ? { canonicalSmiles: value.canonicalSmiles.slice(0, 2000) } : {}),
     ...(typeof value.feedback === 'string' && value.feedback ? { feedback: value.feedback.slice(0, 400) } : {}),
@@ -531,7 +532,7 @@ async function requestRouteReview(question: string, labels: RouteSpeciesLabel[][
       reasoning: 'off',
       ...(options.signal ? { signal: options.signal } : {}),
     }, options.model ?? null);
-    const review = parseRouteReview(raw);
+    const review = parseRouteReview(raw, audit.steps.length);
     // A review that produced nothing readable is indistinguishable, in the report, from a review
     // that found nothing wrong — and that is how a dead check looked healthy for two sessions.
     // Say it out loud instead.

@@ -5,7 +5,7 @@
  * `MoleculeDossier`. Research Chat injects that dossier as authoritative context
  * so a model reasons over a verified graph instead of re-reading SMILES text. */
 
-import { correctionTargetPlanRule, ROUTE_LABEL_LINES, ROUTE_SPECIES_RULES } from './routeRules';
+import { correctionTargetPlanRule, ROUTE_LABEL_LINES, routeSpeciesRules } from './routeRules';
 import { similarityBand } from './reactionSimilarity';
 import { conditionsText, normalizeReactionConditions, type ReactionConditions } from './reactionConditions';
 import { auditNote, normalizeAuditFlags, recordLabel, RECORD_ID } from './recordAudit';
@@ -122,6 +122,9 @@ export interface RouteStepAudit {
   stereoNotRequired?: boolean;
   /** The equation balances only by assembling a product from more than one substrate. */
   assemblyProblem?: string;
+  /** Why the per-molecule packing search gave up. Absent when the step's shape is simply outside
+   *  what packing models (a convergent coupling), which is not a gap in coverage. */
+  assemblyUnchecked?: string;
   /** The bonds at carbon this balanced step forms and breaks, read as a graph edit by the
    *  capability. Facts for the report and the reviewer, whether or not the step was refused. */
   skeleton?: RouteSkeletonFacts;
@@ -146,6 +149,8 @@ export interface RouteSkeletonFacts {
   unactivated: number;
   unactivatedHetero: number;
   heteroElements: string[];
+  /** Why the bond-edit search could not settle this step, when `change` is 'unchecked'. */
+  reason?: string;
 }
 
 export interface RouteLinkAudit {
@@ -773,8 +778,19 @@ function roleOf(label: string): { role: RouteLabelRole; byproduct: boolean } | n
   return null;
 }
 
+/** A systematic name for an assembled chain is long, and cutting one leaves it SYNTACTICALLY
+ *  INCOMPLETE, so it can never resolve — the step is then reported as "no structure resolved",
+ *  which reads as the author's naming problem when it was our cut. Observed on a six-unit chain:
+ *  five steps unbuilt, every rejected name exactly 200 characters long.
+ *
+ *  Sized from the longest target in the suite rather than guessed. At roughly 40 characters per
+ *  unit in the nested style a model actually writes: 13 units ~580, 32 units ~1,340, 40 units
+ *  ~1,660. The bound is only a guard against a runaway reply, so it clears the longest by more
+ *  than twice and matches the 4000 already used for a declared structure in this file. */
+export const MAX_SPECIES_NAME = 4000;
+
 function cleanSpeciesName(raw: string): string {
-  return raw.replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return raw.replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
 }
 
 /** Whether a parsed species name can be a chemical name at all. A model that draws its route
@@ -783,7 +799,14 @@ function cleanSpeciesName(raw: string): string {
  *  they land on is emptied and reported as unbuilt even though the author's own list was
  *  complete. Markup is not a name. */
 function isNameLikeSpecies(name: string): boolean {
-  return !/[<>{}\\"\n\r\t|]/.test(name) && !name.includes('→');
+  // Braces are NOT a tell: they are standard IUPAC punctuation for a nested substituent prefix,
+  // and every protected building block has them — "(2R)-2-{[(9H-fluoren-9-yl)methoxycarbonyl]
+  // amino}-3-(pyridin-3-yl)propanoic acid". Rejecting them dropped exactly those species from
+  // the declaration, silently: the step kept its other reactant, the balance was computed on an
+  // equation nobody wrote, and the author was told a species it HAD declared was missing. The
+  // markup this guard exists for carries angle brackets, quotes, backslashes, pipes or newlines,
+  // and a capability fence's JSON payload is already blanked by maskDrawnRegions.
+  return !/[<>\\"\n\r\t|]/.test(name) && !name.includes('→');
 }
 
 /** The answer with the blocks the interface renders specially blanked, the same length, so
@@ -1391,7 +1414,7 @@ function normalizeRouteSpecies(entry: unknown): RouteSpeciesSummary | null {
     unspecifiedStereocentres: numberOr(value.unspecifiedStereocentres, 0),
     ...(value.alphaConfiguration === '(R)' || value.alphaConfiguration === '(S)' || value.alphaConfiguration === 'unassigned'
       ? { alphaConfiguration: value.alphaConfiguration } : {}),
-    ...(typeof value.name === 'string' && value.name.trim() ? { name: value.name.trim().slice(0, 200) } : {}),
+    ...(typeof value.name === 'string' && value.name.trim() ? { name: value.name.trim().slice(0, MAX_SPECIES_NAME) } : {}),
     ...(typeof value.nameOk === 'boolean' ? { nameOk: value.nameOk } : {}),
     ...(value.byproduct === true ? { byproduct: true } : {}),
     ...(typeof value.coefficient === 'number' && Number.isInteger(value.coefficient) && value.coefficient > 0 ? { coefficient: value.coefficient } : {}),
@@ -1427,6 +1450,7 @@ function normalizeRouteStep(entry: unknown, index: number): RouteStepAudit | nul
     ...(value.racemic === true ? { racemic: true } : {}),
     ...(value.stereoNotRequired === true ? { stereoNotRequired: true } : {}),
     ...(typeof value.assemblyProblem === 'string' && value.assemblyProblem ? { assemblyProblem: value.assemblyProblem.slice(0, 400) } : {}),
+    ...(typeof value.assemblyUnchecked === 'string' && value.assemblyUnchecked ? { assemblyUnchecked: value.assemblyUnchecked.slice(0, 300) } : {}),
     ...(normalizeSkeleton(value.skeleton) ? { skeleton: normalizeSkeleton(value.skeleton)! } : {}),
     ...(normalizeBonds(value.bonds) ? { bonds: normalizeBonds(value.bonds)! } : {}),
     ...(value.rearrangement === true ? { rearrangement: true } : {}),
@@ -1461,6 +1485,7 @@ function normalizeSkeleton(entry: unknown): RouteSkeletonFacts | null {
     unactivated: count('unactivated'),
     unactivatedHetero: count('unactivatedHetero'),
     heteroElements: stringArray(value.heteroElements).filter((element) => /^[A-Z][a-z]?$/.test(element)).slice(0, 8),
+    ...(typeof value.reason === 'string' && value.reason ? { reason: value.reason.slice(0, 300) } : {}),
   };
 }
 
@@ -1888,7 +1913,7 @@ export function clampReviewDetail(detail: string): string {
 
 /** Parse the review defensively: an unreadable or inconsistent reply means "not checked",
  *  never a fabricated problem, so it never blocks a route. */
-export function parseRouteReview(raw: string): RouteReview | null {
+export function parseRouteReview(raw: string, stepCount?: number): RouteReview | null {
   const match = /\{[\s\S]*\}/.exec(raw);
   if (!match) return null;
   let value: unknown;
@@ -1900,7 +1925,13 @@ export function parseRouteReview(raw: string): RouteReview | null {
   const problems = (Array.isArray(record.problems) ? record.problems : []).map((entry) => {
     const item = asRecord(entry);
     if (!item || typeof item.detail !== 'string' || !item.detail.trim()) return null;
-    const step = Number.isInteger(item.step) ? Math.min(Math.max(item.step as number, 0), 15) : 0;
+    // Clamp to the route's own length, never a constant. A hard-coded 15 silently RELABELLED
+    // every finding above step 15 as step 15 — on a 24-step route a correct finding about the
+    // macrolactamisation at step 23 was reported against an Fmoc removal at step 15, which reads
+    // as the review inventing a molecule and sent three fix rounds after the wrong step. Routes
+    // only started exceeding 15 steps once they were asked to decompose.
+    const highest = Number.isInteger(stepCount) && (stepCount as number) > 0 ? (stepCount as number) : 999;
+    const step = Number.isInteger(item.step) ? Math.min(Math.max(item.step as number, 0), highest) : 0;
     // Only an explicit "blocking" stops the route; a missing or unreadable severity is advisory.
     const severity: RouteReviewProblem['severity'] = item.severity === 'blocking' ? 'blocking' : 'advisory';
     return { step, severity, detail: clampReviewDetail(item.detail) };
@@ -2008,6 +2039,10 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
   const assembled = audit.steps.filter((step) => Boolean(step.assemblyProblem)).map((step) => step.index + 1);
   const skeletal = audit.steps.filter((step) => Boolean(step.skeletonProblem)).map((step) => step.index + 1);
   const isolated = isolatedSteps(audit);
+  // A check that could not run must not look like a check that passed. The bond-edit search is
+  // budgeted and gives up on a hard graph; until this was said out loud, a route whose bonds were
+  // never examined read exactly like one whose bonds were fine.
+  const bondUnchecked = audit.steps.filter((step) => step.skeleton?.change === 'unchecked');
   const reviewProblems = blockingReviewProblems(review);
   const reasons: string[] = [];
   if (failedSteps.length) reasons.push(`${failedSteps.length} of ${audit.steps.length} step(s) do not pass (${failedSteps.map((index) => `step ${index}`).join(', ')})`);
@@ -2020,12 +2055,29 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
   if (audit.target?.reason === 'not-formed') reasons.push('no step forms the requested target');
   else if (audit.target?.reason === 'stereo-mismatch') reasons.push('the target is formed only with the wrong stereochemistry');
   if (reviewProblems.length) reasons.push(`a route review raised ${reviewProblems.length} problem(s)`);
+  // Not a reason the route failed: a caveat on what was examined. Kept out of `reasons` so it
+  // cannot refuse a step, and said anyway so no one reads silence as a pass.
+  const packUnchecked = audit.steps.filter((step) => Boolean(step.assemblyUnchecked));
+  const coverage: string[] = [];
+  if (bondUnchecked.length) {
+    coverage.push(`the bond-edit check could not settle ${bondUnchecked.length} of ${audit.steps.length} step(s) (${bondUnchecked.map((step) => `step ${step.index + 1}`).join(', ')})${bondUnchecked[0]?.skeleton?.reason ? ` — ${bondUnchecked[0].skeleton.reason}` : ''}`);
+  }
+  if (packUnchecked.length) {
+    coverage.push(`the per-molecule packing search gave up on ${packUnchecked.length} step(s) (${packUnchecked.map((step) => `step ${step.index + 1}`).join(', ')}) — ${packUnchecked[0].assemblyUnchecked}`);
+  }
+  const bondCaveat = coverage.length
+    ? `Not examined: ${coverage.join('; ')}. Those checks say nothing about those steps either way — this is a gap in coverage, not a finding about the chemistry.`
+    : '';
   const verified = !reasons.length;
   lines.push(verified
     ? reviewPending
       ? `**Route checks passed** — every equation balances and every intermediate is carried over${audit.target ? ', and the target is formed' : ''}. The model review is still running.`
       : `**Route checked: balanced and connected** — every equation balances and every intermediate is carried over${audit.target ? ', and the target is formed' : ''}. This is bookkeeping only: conditions, selectivity, yields and safety are not checked.`
     : `**Route check failed** — ${reasons.join('; ')}.`);
+  // Said right under the verdict, where a problem would appear, so coverage is never mistaken for
+  // a clean result. It does not change the verdict: a step whose bonds could not be examined has
+  // not done anything wrong.
+  if (bondCaveat) lines.push(bondCaveat);
   for (const step of audit.steps) {
     const label = `Step ${step.index + 1}`;
     if (!step.ok) {
@@ -2263,7 +2315,7 @@ const NAMES_ONLY_FORMAT = ROUTE_LABEL_LINES.map((line) => `  ${line}`);
 /** The rules every correction ends with: the same species rules the first request was given,
  *  then what to do with the target drawing. */
 function correctionRules(target: string | null | undefined): string[] {
-  return ['Rules for every step:', ...ROUTE_SPECIES_RULES.map((rule) => `- ${rule}`), '', correctionTargetPlanRule(target)];
+  return ['Rules for every step:', ...routeSpeciesRules().map((rule) => `- ${rule}`), '', correctionTargetPlanRule(target)];
 }
 
 /** The route-level problems: a step that connects to nothing, and a target no step forms. */
@@ -2312,10 +2364,38 @@ function fixEvidence(support: StepSupport | undefined, indent: string): string {
   return lines.length ? `\n${lines.join('\n')}` : '';
 }
 
-function namedFixPreamble(failures: string[], problems: string[], review: RouteReviewProblem[] = []): string[] {
+/** When one fault repeats across steps, say it ONCE with the list of steps.
+ *
+ *  Ten copies of the same sentence read as ten separate problems and invite ten local edits.
+ *  Named once with its steps it reads as the single systematic mistake it is — which is what the
+ *  author actually has to change. Observed: one route failed ten coupling steps for the same
+ *  reason, and three correction rounds edited them one at a time without ever addressing the
+ *  pattern. The arithmetic differs per step, so the numbers are stripped to key the CLASS of
+ *  fault rather than its particulars. */
+function repeatedFaultSummary(flagged: Array<{ step: RouteStepAudit; reasons: string[] }>): string[] {
+  const groups = new Map<string, { steps: number[]; sample: string }>();
+  for (const entry of flagged) {
+    const failure = routeStepFailure(entry.step);
+    if (!failure) continue;
+    const key = failure.replace(/\d+/g, '#').replace(/\s+/g, ' ').slice(0, 200);
+    const seen = groups.get(key);
+    if (seen) seen.steps.push(entry.step.index + 1);
+    else groups.set(key, { steps: [entry.step.index + 1], sample: failure });
+  }
+  const repeated = [...groups.values()].filter((group) => group.steps.length > 1);
+  if (!repeated.length) return [];
+  return [
+    'One fault repeats below, so this is one mistake made several times, not several mistakes. Fix the pattern rather than each step on its own:',
+    ...repeated.map((group) => `- step ${group.steps.join(', step ')} all fail the same way: ${group.sample.split('. ')[0]}.`),
+    '',
+  ];
+}
+
+function namedFixPreamble(failures: string[], problems: string[], review: RouteReviewProblem[] = [], flagged: Array<{ step: RouteStepAudit; reasons: string[] }> = []): string[] {
   return [
     ROUTE_FIX_PROMPT_LEAD,
     '',
+    ...repeatedFaultSummary(flagged),
     ...(failures.length ? ['The route checker rejected these steps:', ...failures, ''] : []),
     ...(problems.length ? ['The route as a whole has these problems:', ...problems, ''] : []),
     ...(review.length ? ['A model review of the route plan also reported:', ...review.map((problem) => `- ${problem.step > 0 ? `Step ${problem.step}: ` : ''}${problem.detail}`), ''] : []),
@@ -2364,7 +2444,7 @@ export function formatNamedRouteFixPrompts(labels: RouteSpeciesLabel[][], audit:
   chips.push({
     label: 'Ask the model to fix the failed steps',
     prompt: [
-      ...namedFixPreamble(failures, problems, reviewProblems),
+      ...namedFixPreamble(failures, problems, reviewProblems, flagged),
       relabel,
       ...NAMES_ONLY_FORMAT,
       `What may change: only the rejected steps above and what their failures require. You may split a rejected step, combine it with a neighbour (see the rules below), insert a missing step, or remove a step reported above as disconnected or redundant. Every other step keeps its prose and names exactly, and no step is duplicated. The route must still reach the requested target${atTarget}.`,
@@ -2374,7 +2454,7 @@ export function formatNamedRouteFixPrompts(labels: RouteSpeciesLabel[][], audit:
   chips.push({
     label: 'Fix from the target backwards',
     prompt: [
-      ...namedFixPreamble(failures, problems, reviewProblems),
+      ...namedFixPreamble(failures, problems, reviewProblems, flagged),
       `Work backwards from the final step. First make the last step name the requested target${atTarget} as a Product. Then move to the step before it and make its Products line name exactly the species the next step consumes as a Reactant. Continue back to step 1, so every step's product is the next step's reactant (or a permitted starting material).`,
       'What may change: this is the one correction that may rename a species in a step that already passes — only so that its Products line names exactly the species the next step consumes. Otherwise a passing step keeps its prose and names. Split, combine, insert or remove steps only where the failures above require it.',
       relabel,
