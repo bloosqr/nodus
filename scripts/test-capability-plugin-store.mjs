@@ -201,6 +201,36 @@ test('a signed package installs, registers its capability and pins its own diges
   assert.deepEqual(pins.pins.get('nodus:chemistry'), { version: '2.0.0', digest: outcome.state.active.digest });
 });
 
+test('the provider stamp names the version of the content, not the slot it was installed into', () => {
+  reset();
+  const outcome = lib.installVerifiedPlugin(download(), { approvePermissions: true });
+  assert.equal(outcome.state.active.version, '2.0.0', 'the slot was created for 2.0.0');
+  const digest = outcome.state.active.digest;
+  const slot = path.join(profile, 'plugins', 'installed', 'chemistry-studio', 'versions', `2.0.0-${digest}`);
+
+  // A sideload replaces what a slot HOLDS without renaming the slot, so the directory keeps the
+  // version it was created with while the manifests inside it move on. Reproduce exactly that.
+  // Both manifests are rewritten because the reader requires them to agree.
+  for (const relative of [['plugin.json'], ['capabilities', 'chemistry', 'capability.json']]) {
+    const file = path.join(slot, ...relative);
+    const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+    manifest.version = '2.0.9';
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2));
+  }
+
+  const provider = lib.rebuildCapabilityRegistry().providers.get('nodus:chemistry');
+  assert.ok(provider, 'the capability is still registered');
+  assert.equal(provider.plugin.version, '2.0.9', 'the stamp every artifact carries names the content');
+  assert.equal(provider.plugin.digest, digest, 'the digest still identifies the content exactly');
+
+  // And the slot's own label is untouched, because it is what resolves the directory: a stamp
+  // that told the truth at the cost of breaking plugin loading would be a worse bug.
+  const state = lib.listInstalledPluginsV2().find(entry => entry.id === 'chemistry-studio');
+  assert.equal(state.active.version, '2.0.0', 'the recorded slot label is deliberately unchanged');
+  assert.ok(lib.resolveTrustedCapability('nodus:chemistry').entryPath.includes(`2.0.0-${digest}`),
+    'the entry path still resolves through the slot label');
+});
+
 test('nothing installs without a signature that verifies against a trusted key', () => {
   reset();
   const good = download();
