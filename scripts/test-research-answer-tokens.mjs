@@ -52,9 +52,13 @@ test('the documented output ceiling is recorded only where it is sourced', async
     const { documentedMaxOutput, documentedContextWindow } = require(path.join(root, 'windows.cjs'));
     assert.equal(documentedMaxOutput('anthropic', 'claude-opus-5'), 128_000);
     assert.equal(documentedMaxOutput('anthropic', 'claude-opus-4-8'), 128_000);
+    // Recorded for deepseek too, and deliberately: an absent ceiling is not neutral, because
+    // the caller falls back to the flat figure and pins the provider at 10,000 output tokens
+    // however large its window. The source sits beside the figure in providerContextWindows.ts.
+    assert.equal(documentedMaxOutput('deepseek', 'deepseek-flash'), 384_000);
     // Not recorded is null, never a guess: the caller then keeps its conservative default.
-    assert.equal(documentedMaxOutput('deepseek', 'deepseek-flash'), null);
     assert.equal(documentedMaxOutput('anthropic', 'claude-made-up-9'), null);
+    assert.equal(documentedMaxOutput('nobody', 'nothing'), null);
     // The output ceiling is a different limit from the window and must not be confused with it.
     assert.equal(documentedContextWindow('anthropic', 'claude-opus-5'), 1_000_000);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }

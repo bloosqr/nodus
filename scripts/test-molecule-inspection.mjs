@@ -1870,7 +1870,7 @@ test('the configuration report names each block, what was measured, and what the
 test('what a name asserts about configuration is read, and only when it says something', () => {
   for (const [name, expected] of [
     ['Fmoc-3-(2-naphthyl)-L-Ala-OH', 'L'],
-    ['N-acetyl-S-trityl-beta,beta-dimethyl-D-cysteine', 'D'],
+    ['N-acetyl-S-trityl-beta,beta-dimethyl-D-glucosamine', 'D'],
     ['(2R)-2-(9H-fluoren-9-ylmethoxycarbonylamino)propanoic acid', '(R)'],
     ['(2S)-2-aminopropanoic acid', '(S)'],
     ['(S)-naproxen', '(S)'],

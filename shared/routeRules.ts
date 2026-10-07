@@ -40,9 +40,12 @@ export const ROUTE_SPECIES_RULES = [
  *  only shape that trips the coefficient search's dimension limit, so retiring this removes the
  *  trigger as well as the symptom.
  *
- *  Kept VERBATIM rather than deleted, and restored at its original position in the list, so the
- *  prompt is byte-identical to the retired form if it is ever wanted again. To restore for a run:
- *  NODUS_ROUTE_MEGA_STEP=on (the harness suite field `megaStep: true`). */
+ *  The sentence below is unchanged from the rule that was in force, and is spliced back at its
+ *  original position when restored. It is NOT the whole of the old rule: the structure-fallback
+ *  guidance that used to share this one string is now an always-active rule of its own, because it
+ *  is needed whether or not a route is written wide. So restoring this reinstates the affordance and
+ *  the guidance is still present, but as two list entries rather than the original single one.
+ *  To restore for a run: NODUS_ROUTE_MEGA_STEP=on (the harness suite field `megaStep: true`). */
 const RETIRED_SINGLE_EQUATION_RULE =
   'A solid-phase peptide synthesis may be written as one mega-step (assemble the whole chain in a single balanced equation) rather than one step per residue — the coupling/deprotection cycle is the same recipe repeated. If you do, that step must still balance: list every protected amino acid consumed under Reactants, and every aggregate byproduct under Byproducts — one water for each amide bond formed, and for Fmoc removal one dibenzofulvene (`C=C1c2ccccc2-c2ccccc21`) and one carbon dioxide per deprotection, plus the activator byproducts.';
 
