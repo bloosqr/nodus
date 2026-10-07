@@ -69,13 +69,12 @@ function providerFor(state: InstalledPluginStateV2, manifest: CapabilityManifest
     version: manifest.version,
     description: manifest.description,
     source: 'plugin',
-    // The CONTENT's version, not the slot's label. A sideload can replace what a slot holds
-    // without renaming it, so `state.active.version` is the version the slot was CREATED with
-    // and can be older than the manifest inside it. The digest still identifies the content
-    // exactly, and it is what resolves the directory, so only this stamp needed correcting:
-    // every artifact carries this, and an artifact that names the wrong build makes the
-    // archive unusable as evidence. Paths deliberately keep reading `state.active.version`.
-    plugin: { id: state.id, version: manifest.version, digest: state.active!.digest },
+    // The SLOT's label, which is what identifies the installation: this is the turn pin
+    // (pinCapabilitiesForTurn below), and resolveTrustedCapability both matches it against
+    // state.active and builds `<version>-<digest>` from it. It must stay the slot label even
+    // when the slot holds newer content. The CONTENT's version is `version` above, and that is
+    // what an artifact is stamped with — see persistArtifact in runner.ts.
+    plugin: { id: state.id, version: state.active!.version, digest: state.active!.digest },
     capabilityKey: manifest.id,
     tools: manifest.tools,
     ...(manifest.chat ? { chat: manifest.chat } : {}),

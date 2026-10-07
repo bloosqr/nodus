@@ -201,7 +201,7 @@ test('a signed package installs, registers its capability and pins its own diges
   assert.deepEqual(pins.pins.get('nodus:chemistry'), { version: '2.0.0', digest: outcome.state.active.digest });
 });
 
-test('the provider stamp names the version of the content, not the slot it was installed into', () => {
+test('a slot that holds newer content reports BOTH the content version and the slot label', () => {
   reset();
   const outcome = lib.installVerifiedPlugin(download(), { approvePermissions: true });
   assert.equal(outcome.state.active.version, '2.0.0', 'the slot was created for 2.0.0');
@@ -220,15 +220,27 @@ test('the provider stamp names the version of the content, not the slot it was i
 
   const provider = lib.rebuildCapabilityRegistry().providers.get('nodus:chemistry');
   assert.ok(provider, 'the capability is still registered');
-  assert.equal(provider.plugin.version, '2.0.9', 'the stamp every artifact carries names the content');
-  assert.equal(provider.plugin.digest, digest, 'the digest still identifies the content exactly');
 
-  // And the slot's own label is untouched, because it is what resolves the directory: a stamp
-  // that told the truth at the cost of breaking plugin loading would be a worse bug.
-  const state = lib.listInstalledPluginsV2().find(entry => entry.id === 'chemistry-studio');
-  assert.equal(state.active.version, '2.0.0', 'the recorded slot label is deliberately unchanged');
-  assert.ok(lib.resolveTrustedCapability('nodus:chemistry').entryPath.includes(`2.0.0-${digest}`),
-    'the entry path still resolves through the slot label');
+  // The CONTENT's version, which is what an artifact is stamped with so an archive of runs can
+  // say which build produced it.
+  assert.equal(provider.version, '2.0.9', 'the provider reports the version of the content');
+
+  // The SLOT's label, which is what IDENTIFIES the installation. This one must not follow the
+  // content: it is the turn pin, and resolveTrustedCapability both matches it against
+  // state.active and builds `<version>-<digest>` from it.
+  assert.equal(provider.plugin.version, '2.0.0', 'the plugin identity stays the slot label');
+  assert.equal(provider.plugin.digest, digest);
+
+  // THE REGRESSION GUARD. Stamping provider.plugin with the content version type-checked, passed
+  // a stamp-only assertion, and still broke every capability call: the pin stopped matching
+  // state.active and the slot path stopped existing, so the plugin reported itself "no longer
+  // installed". Only a round trip through the pin catches that.
+  const pin = lib.pinCapabilitiesForTurn().pins.get('nodus:chemistry');
+  assert.deepEqual(pin, { version: '2.0.0', digest }, 'the pin carries the slot label');
+  const runtime = lib.resolveTrustedCapability('nodus:chemistry', pin);
+  assert.ok(runtime, 'the pinned capability still resolves');
+  assert.ok(runtime.entryPath.includes(`2.0.0-${digest}`), 'through the slot directory that exists');
+  assert.equal(runtime.manifest.version, '2.0.9', 'and the manifest it loads is the newer content');
 });
 
 test('nothing installs without a signature that verifies against a trusted key', () => {

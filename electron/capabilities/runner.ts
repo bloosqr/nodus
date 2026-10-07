@@ -194,7 +194,15 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
       if (!declared) throw new Error(`${provider.id} produced an undeclared artifact type.`);
       const reference = storeCapabilityArtifact(context.owner, artifact, {
         capabilityId: provider.id,
-        plugin: provider.plugin ?? { id: 'core', version: '0.0.0', digest: '0'.repeat(64) },
+        // The CONTENT's version, not the slot's label. A sideload can replace what a slot
+        // holds without renaming it, so the slot label can be older than the manifest inside
+        // it — measured on one machine, a slot labelled 2.5.7 holding 2.5.23. The label is
+        // still the right thing for RESOLVING the installation (provider.plugin, the turn pin),
+        // but an artifact that names the wrong build makes an archive of runs useless as
+        // evidence, and `provider.version` is the manifest's own version.
+        plugin: provider.plugin
+          ? { id: provider.plugin.id, version: provider.version, digest: provider.plugin.digest }
+          : { id: 'core', version: '0.0.0', digest: '0'.repeat(64) },
         modelVisibility: declared.modelVisibility,
       });
       const pieces = [serializeArtifactReference(reference)];
