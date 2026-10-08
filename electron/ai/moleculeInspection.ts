@@ -368,6 +368,9 @@ export interface RouteResolutionOutcome {
   /** Species the model supplied as structures because no name would resolve, as prose, so the
    *  caller discloses that their structure came from the model, not a reference. */
   authorStructures: string[];
+  /** Every species' resolution status and source, so a run can record where each structure came
+   *  from. The author-supplied ones are the category silent wrongness hides in. */
+  resolutionSources: Array<{ status: string; source?: string }>;
   /** True when the installed package has no resolve-names tool, so the caller falls back to
    *  the legacy reaction-line path. */
   legacy: boolean;
@@ -467,15 +470,25 @@ function unresolvedNames(speciesByStep: NamedSpecies[][], resolutions: Map<strin
 }
 
 async function requestCorrectedNames(prose: string, unresolved: UnresolvedName[], options: InspectOptions): Promise<NameFeedbackEntry[]> {
+  // One corrected name per unresolved species, so the budget follows the count rather than a flat
+  // figure that happened to fit the routes it was written against.
+  const budget = Math.min(8_000, Math.max(1_600, 400 + 220 * Math.max(1, unresolved.length)));
   try {
     const raw = await completeText({
       system: ROUTE_NAME_FEEDBACK_SYSTEM,
       user: buildNameFeedbackRequest(unresolved, prose),
       temperature: 0,
-      maxTokens: 1600,
+      maxTokens: budget,
+      reasoning: 'off',
     }, options.model ?? null);
-    return parseNameFeedback(raw);
-  } catch {
+    const parsed = parseNameFeedback(raw);
+    if (!parsed.length) {
+      console.warn(`[routeNames] no corrections parsed from ${raw.trim().length} chars`
+        + ` (budget ${budget} tokens, ${unresolved.length} unresolved)`);
+    }
+    return parsed;
+  } catch (error) {
+    console.warn(`[routeNames] call failed (budget ${budget} tokens, ${unresolved.length} unresolved): ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
 }
@@ -502,17 +515,42 @@ async function evidenceSources(modelAnswer: string, stepCount: number, precedent
   }
 }
 
+/** The review's output budget. It reads every step and may return up to 24 findings, so a flat
+ *  budget silently truncates the longer the route gets: a 19-step route was given the same 2,000
+ *  tokens as a 3-step one. Scaled by step count, with a ceiling so a pathological route cannot
+ *  ask for an unbounded answer. */
+function routeReviewTokens(stepCount: number): number {
+  return Math.min(16_000, Math.max(2_000, 1_200 + 600 * Math.max(1, stepCount)));
+}
+
 async function requestRouteReview(question: string, labels: RouteSpeciesLabel[][], audit: RouteAudit, options: InspectOptions, stepProse: string[] = []): Promise<RouteReview | null> {
+  const budget = routeReviewTokens(audit.steps.length);
+  const started = Date.now();
+  let raw = '';
   try {
-    const raw = await completeText({
+    raw = await completeText({
       system: ROUTE_REVIEW_SYSTEM,
       user: buildRouteReviewRequest(question, labels, audit, stepProse),
       temperature: 0,
-      maxTokens: 2000,
+      maxTokens: budget,
+      // Explicit, so this call does not inherit whatever reasoning the profile happens to carry:
+      // the budget above is for the review, and a model that spends it thinking returns nothing.
+      reasoning: 'off',
       ...(options.signal ? { signal: options.signal } : {}),
     }, options.model ?? null);
-    return parseRouteReview(raw);
-  } catch {
+    const review = parseRouteReview(raw);
+    // A review that produced nothing readable is indistinguishable, in the report, from a review
+    // that found nothing wrong — and that is how a dead check looked healthy for two sessions.
+    // Say it out loud instead.
+    if (!review) {
+      console.warn(`[routeReview] no review parsed: ${raw.trim().length} chars from ${options.model?.model ?? 'the configured model'}`
+        + ` after ${((Date.now() - started) / 1000).toFixed(1)}s, budget ${budget} tokens, ${audit.steps.length} steps`
+        + (raw.trim() ? `; reply began ${JSON.stringify(raw.trim().slice(0, 120))}` : '; the reply was empty'));
+    }
+    return review;
+  } catch (error) {
+    console.warn(`[routeReview] call failed after ${((Date.now() - started) / 1000).toFixed(1)}s`
+      + ` (budget ${budget} tokens, ${audit.steps.length} steps): ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
@@ -527,7 +565,7 @@ export async function resolveNamedRoute(
   modelAnswer: string,
   options: InspectOptions = {},
 ): Promise<RouteResolutionOutcome> {
-  const legacy: RouteResolutionOutcome = { answer: finalAnswer, steps: [], labels: [], consistent: true, corrections: [], authorStructures: [], legacy: true };
+  const legacy: RouteResolutionOutcome = { answer: finalAnswer, steps: [], labels: [], consistent: true, corrections: [], resolutionSources: [], authorStructures: [], legacy: true };
   if (options.enabled === false) return legacy;
   const provider = resolveProvider();
   if (!provider) return legacy;
@@ -632,6 +670,7 @@ export async function resolveNamedRoute(
     const steps = buildRouteSteps(resolvedByStep);
     const labels: RouteSpeciesLabel[][] = resolvedByStep.map((step) => step.filter((entry) => entry.smiles).map((entry) => ({ role: entry.role, byproduct: entry.byproduct, name: entry.name, smiles: entry.smiles! })));
     const authorStructures = resolvedByStep.flat().filter((entry) => entry.status === 'fallback' && entry.smiles).map((entry) => `${entry.name} — \`${entry.smiles}\``);
+    const resolutionSources = resolvedByStep.flat().map((entry) => ({ status: entry.status, ...(entry.source ? { source: entry.source } : {}) }));
     const annotated = `${annotateSpeciesSmiles(finalAnswer, resolvedByStep).trimEnd()}\n`;
     return {
       answer: annotated,
@@ -640,6 +679,7 @@ export async function resolveNamedRoute(
       consistent: critical.length === 0,
       corrections,
       authorStructures,
+      resolutionSources,
       ...(critical.length ? { clarification: formatUnresolvedNameClarification(critical, options.target), unresolved: critical } : {}),
       legacy: false,
     };
@@ -942,7 +982,7 @@ export async function appendRouteReportAndDrawings(
     // Paint the deterministic report and drawings before the reviewer returns. The transport
     // replaces the provisional stream with this returned answer, so the route only waits on
     // the reviewer when the reviewer is the last thing outstanding.
-    if (options.onDeterministic) options.onDeterministic(`${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit, labels, null, true)}\n${drawings}`);
+    if (options.onDeterministic) options.onDeterministic(`${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit, labels, null, true, overrides.unresolved ?? [])}\n${drawings}`);
     // The lookup already carries its drawings; this only formats. Best-effort throughout. The
     // step support (textbook passage per reaction class, ORD alternatives for a failed or
     // unprecedented step) needs the lookup's classes, so it follows it, still beside the review.
@@ -967,7 +1007,7 @@ export async function appendRouteReportAndDrawings(
     // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
     const stockPromise = options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => '');
     const review = await reviewPromise;
-    const report = formatRouteAudit(audit, labels, review);
+    const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
     const precedentText = await precedentSection;
     const support = await supportPromise;
     // A step's high-severity clashes ride along in its fix prompt, as evidence.
