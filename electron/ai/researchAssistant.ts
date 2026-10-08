@@ -789,7 +789,10 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
       contextChars: JSON.stringify(context).length, passages: Array.isArray(context.pasajes_relevantes) ? context.pasajes_relevantes.length : 0,
       works: Array.isArray(context.obras) ? context.obras.length : 0, documents: Array.isArray(context.obras) ? context.obras.length : 0 };
   }
-  return { system, user: serializeUser(), stats, generationOptions, local, citationRequired: buildCitationOutputContract(JSON.stringify(context)) != null };
+  // A skill (chemistry route/synthesis) is a construction task, not a corpus-grounded literature
+  // answer: the citation contract above is already null when a skill is active, so the enforcement
+  // flag must match — otherwise the route gets citation retries/refusals it was never told to satisfy.
+  return { system, user: serializeUser(), stats, generationOptions, local, citationRequired: skills.length ? false : (buildCitationOutputContract(JSON.stringify(context)) != null) };
 }
 
 /** Canonical Spanish exports retained for Nodi's shared citation contract. */
