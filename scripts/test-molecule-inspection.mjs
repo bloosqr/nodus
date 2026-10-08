@@ -165,7 +165,7 @@ test('a malformed route audit degrades to no audit instead of junk', () => {
   assert.equal(normalizeRouteAudit({ steps: [{}] }), null);
 });
 
-test('a long route audit keeps every step (a solid-phase peptide synthesis runs past 16)', () => {
+test('a long route audit keeps every step (a route of dozens of steps runs past 16)', () => {
   // The package checks up to 96 steps; an audit cut shorter than the route is refused as misaligned,
   // which once left every route over 16 steps unchecked.
   const step = (index) => ({ index, reaction: 'CCO>>CC=O', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
