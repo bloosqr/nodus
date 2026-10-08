@@ -13,8 +13,8 @@ import { chatAssetOwner, chatAssetVersion } from '../chatAssets';
 import { getConversation } from '../db/chatRepo';
 import { executeChatSkills } from './chatSkillExecution';
 import { authorizeNotebookRequest, validateNotebookRequest, requestNotebookScope, hasResearchSourceRestriction, rememberNotebookTurn, registerNotebookRun } from './researchNotebookService';
-import { researchModelContextWindow } from './aiClient';
-import { researchAnswerTokens } from '@shared/researchRetrievalBudget';
+import { researchModelContextWindow, researchRequestUpperBound } from './aiClient';
+import { researchAnswerTokens, researchPromptUpperBound } from '@shared/researchRetrievalBudget';
 import { documentedMaxOutput } from '@shared/providerContextWindows';
 import { researchContextLayers } from '@shared/researchContextLayers';
 import { ResearchCorpusRun } from './researchCorpusRun';
@@ -201,8 +201,8 @@ interface PromptBuild {
   system: string;
   user: string;
   stats: ResearchContextStats;
-  /** Generation budget, sized down to the model's window for local providers. */
-  maxTokens: number;
+  /** Freeze the output and thinking reserve used while selecting evidence. */
+  generationOptions: Awaited<ReturnType<typeof researchGenerationOptions>>;
   /** Whether the effective model is a local server (enables citation-label repair). */
   local: boolean;
   /** Academic corpus answers must contain at least one verifiable source link. */
@@ -309,13 +309,13 @@ export async function answerResearchChat(request: ResearchChatRequest): Promise<
 async function answerResearchChatTurn(request: ResearchChatRequest, signal: AbortSignal): Promise<ResearchChatResponse> {
   if (request.concilium) return streamResearchChat(request, () => {}, signal);
   const execution = skillExecution(request);
-  const { system, user, stats, maxTokens, local, citationRequired: needsCitation } = await buildResearchChatPrompt(request, execution.skills, undefined, signal);
+  const attachments = await prepareResearchAttachments(request, 'research', request.model);
+  const { system, user, stats, generationOptions, local, citationRequired: needsCitation } = await buildResearchChatPrompt(request, execution.skills, undefined, signal, attachments);
   // A route-fix correction answers the checker, not the literature: it makes no new claims and
   // must not be held to the citation contract, or a valid correction is thrown away for citing
   // nothing. The original request still supplied the target and context.
   const citationRequired = needsCitation && !isRouteFixPrompt(execution.question ?? '');
-  const attachments = await prepareResearchAttachments(request, 'research', request.model);
-  const opts = { corpusContext: !!requestNotebookScope(request) && !attachments.images?.length, system: system + attachments.system, user: user + attachments.text, images: attachments.images, englishImagePrompts: execution.skills.some(skill => skillHasCapability(skill, 'image')), temperature: 0.2, ...await researchGenerationOptions(request, maxTokens, local, signal), signal };
+  const opts = { corpusContext: !!requestNotebookScope(request) && !attachments.images?.length, system: system + attachments.system, user: user + attachments.text, images: attachments.images, englishImagePrompts: execution.skills.some(skill => skillHasCapability(skill, 'image')), temperature: 0.2, ...generationOptions, signal };
   let answer = '';
   for (let attempt = 0; attempt < CHAT_CITATION_ATTEMPTS; attempt += 1) {
     signal.throwIfAborted();
@@ -371,7 +371,8 @@ async function streamResearchChatTurn(
 ): Promise<ResearchChatResponse> {
   const execution = skillExecution(request);
   if (council?.member) execution.skills = [];
-  const { system, user, stats, maxTokens, local, citationRequired: needsCitation } = await buildResearchChatPrompt(request, execution.skills, council, signal);
+  const attachments = request.attachmentIds?.length ? await researchActivityStep('attachments', 'read', () => prepareResearchAttachments(request, 'research', request.model)) : await prepareResearchAttachments(request, 'research', request.model);
+  const { system, user, stats, generationOptions, local, citationRequired: needsCitation } = await buildResearchChatPrompt(request, execution.skills, council, signal, attachments);
   validateNotebookRequest(request);
   // A route-fix correction answers the checker, not the literature; do not hold it to the
   // citation contract (see answerResearchChat).
@@ -380,8 +381,7 @@ async function streamResearchChatTurn(
   const evidence = JSON.parse(user);
   delete evidence.council_assessments;
   const sourceContext = council?.assessments ? JSON.stringify(evidence) : user;
-  const attachments = request.attachmentIds?.length ? await researchActivityStep('attachments', 'read', () => prepareResearchAttachments(request, 'research', request.model)) : await prepareResearchAttachments(request, 'research', request.model);
-  const opts = { corpusContext: !!requestNotebookScope(request) && !attachments.images?.length, system: system + attachments.system, user: user + attachments.text, images: attachments.images, englishImagePrompts: execution.skills.some(skill => skillHasCapability(skill, 'image')), temperature: 0.2, ...await researchGenerationOptions(request, maxTokens, local, signal), signal };
+  const opts = { corpusContext: !!requestNotebookScope(request) && !attachments.images?.length, system: system + attachments.system, user: user + attachments.text, images: attachments.images, englishImagePrompts: execution.skills.some(skill => skillHasCapability(skill, 'image')), temperature: 0.2, ...generationOptions, signal };
   const write = () => researchActivityStep('response', 'write', () => withResearchAttachmentFallback(attachments, opts, options => completeTextStream(options, onDelta, request.model, signal)), request.model?.model);
   // Streamed thinking is provisional; the retry repaints from nothing.
   let answer = await retryOnceWhenCutOff(write, { isCutOff: error => error instanceof AiError && error.code === 'output_truncated', beforeRetry: () => onDelta('', 'replace'), signal });
@@ -562,7 +562,7 @@ const WEB_DISABLED_INSTRUCTION = 'The user asked for an internet search, but web
 /** Every layer of the context balloon off: nothing was consulted, and the reader must know. */
 const NO_SOURCES_INSTRUCTION = 'The user switched off every source in this chat: no ideas, documents or web pages were consulted. Answer from general knowledge, say so plainly at the start of the answer in the answer language, and cite nothing. ';
 
-async function buildResearchChatPrompt(request: ResearchChatRequest, skills = enabledChatSkills('assistant'), council?: { member?: boolean; assessments?: ConciliumResult; corpus?: { context: SectionPayload; stats: ResearchContextStats }; windowCap?: number }, signal?: AbortSignal): Promise<PromptBuild> {
+async function buildResearchChatPrompt(request: ResearchChatRequest, skills = enabledChatSkills('assistant'), council?: { member?: boolean; assessments?: ConciliumResult; corpus?: { context: SectionPayload; stats: ResearchContextStats }; windowCap?: number }, signal?: AbortSignal, attachments?: { system: string; text: string }): Promise<PromptBuild> {
   signal?.throwIfAborted();
   // Resolve the effective model up front so a local target can size the whole payload
   // (context + history + output) to its real, small window instead of overflowing.
@@ -639,12 +639,13 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   // The model's own output ceiling, so the budget can scale with the window without asking for
   // more than the provider will emit.
   let maxTokens = researchAnswerTokens(window, skills.length > 0, documentedMaxOutput(model.provider, model.model));
+  if (compact) maxTokens = Math.min(maxTokens, LOCAL_MAX_OUTPUT_TOKENS);
+  const generationOptions = await researchGenerationOptions({ ...request, model }, maxTokens, local, signal);
   let contextBudget = MAX_TOTAL_CONTEXT_CHARS;
   if (window != null) {
     const margin = Math.max(96, Math.round(window * 0.05));
-    if (compact) maxTokens = Math.min(maxTokens, LOCAL_MAX_OUTPUT_TOKENS);
     // Chars the whole prompt (system + history + context + JSON scaffolding) may use.
-    const promptChars = Math.max(0, window - maxTokens - margin) * LOCAL_CHARS_PER_TOKEN;
+    const promptChars = Math.max(0, window - generationOptions.maxTokens - margin) * LOCAL_CHARS_PER_TOKEN;
     // Reserve what system + history + the JSON wrapper already consume; the rest is the
     // corpus context's budget. Never below the floor — the shrinker then guarantees fit.
     const reserved = system.length + JSON.stringify(messages).length + (assessments?.length ?? 0) + (moleculeDossiers.length ? JSON.stringify(moleculeDossiers).length : 0) + (routeEvidence ? JSON.stringify(routeEvidence).length : 0) + 400;
@@ -663,7 +664,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
       contextChars: JSON.stringify(context).length,
       truncated: false,
     };
-    return { system, user, stats, maxTokens, local, citationRequired: false };
+    return { system, user, stats, generationOptions, local, citationRequired: false };
   }
 
   // A notebook's own limits, or the user's, are kept; otherwise the chat's agent limits apply.
@@ -674,22 +675,21 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   let context: SectionPayload;
   let stats: ResearchContextStats;
   if (notebookScope && council?.corpus) {
-    context = council.corpus.context; stats = council.corpus.stats;
+    context = structuredClone(council.corpus.context); stats = council.corpus.stats;
   } else if (notebookScope) {
     const run = new ResearchCorpusRun(notebookScope, { ...retrieval,
       evidenceTokens: Math.max(256, Math.min(retrieval.evidenceTokens, Math.floor(contextBudget / LOCAL_CHARS_PER_TOKEN))) }, signal);
     run.layers = researchContextLayers(request.selection, true);
     run.budget.decisionTokenLimit = RESEARCH_CHAT_AGENT_DECISION_BYTES;
-    // The budget counts bytes as a conservative bound on tokens, so the reservation is in bytes
-    // and the window is converted to bytes to match. Mixing the two reserved a route turn's
-    // 33,000-byte system prompt against a token window, which left no evidence allowance at all
-    // and so no retrieval round (see constrainToWindow).
+    // Use the final request's bound, including its actual answer + thinking output.
+    // Keep room for source metadata, citations and provider-injected instructions.
     if (window) {
-      const promptBytes = new TextEncoder().encode(system + JSON.stringify(messages)).length;
-      const outputBytes = Math.ceil((maxTokens + 4096) * LOCAL_CHARS_PER_TOKEN);
+      const reserved = researchPromptUpperBound(system + (attachments?.system ?? ''), JSON.stringify({
+        conversacion: messages, council_assessments: assessments, estructura_objetivo_verificada: moleculeDossiers,
+        [SYNTHESIS_EVIDENCE_KEY]: routeEvidence, application_output_contract: council?.member ? undefined : chatSkillsOutputContract(skills),
+      }) + (attachments?.text ?? ''), generationOptions.maxTokens) + 4096;
       run.budget.constrainToWindow(window,
-        Math.max(Math.ceil(window * LOCAL_CHARS_PER_TOKEN * 0.75), promptBytes + outputBytes),
-        LOCAL_CHARS_PER_TOKEN);
+        Math.max(Math.ceil(window * 0.75), reserved));
     }
     const depth = webDepth(retrieval);
     run.web = new ResearchWebGrant(request.webSearch ?? getSettings().researchWebSearch ?? 'auto', depth, retrievalQuestion, signal, request.model,
@@ -762,23 +762,31 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   }
   validateNotebookRequest(request);
 
-  const contextJson = JSON.stringify(context);
-  const citationContract = skills.length ? null : buildCitationOutputContract(contextJson);
-  const user = JSON.stringify(
+  const serializeUser = () => JSON.stringify(
     {
       contexto_modular_seleccionado: context,
       conversacion: messages,
       ...(assessments ? { council_assessments: assessments } : {}),
       ...(moleculeDossiers.length ? { estructura_objetivo_verificada: moleculeDossiers } : {}),
       ...(routeEvidence ? { [SYNTHESIS_EVIDENCE_KEY]: routeEvidence } : {}),
-      ...(citationContract ? { contrato_de_salida_obligatorio: citationContract } : {}),
+      ...(skills.length ? {} : { contrato_de_salida_obligatorio: buildCitationOutputContract(JSON.stringify(context)) ?? undefined }),
       application_output_contract: council?.member ? undefined : chatSkillsOutputContract(skills),
     },
     null,
     2
   );
-
-  return { system, user, stats, maxTokens, local, citationRequired: buildCitationOutputContract(contextJson) != null };
+  if (corpusWindow && window != null) {
+    // Evidence's text bound cannot predict JSON escaping, citation URLs or source
+    // metadata. Fit the serialized request as well, keeping whole evidence items
+    // and rebuilding the citation contract from only the items actually sent.
+    const fitted = enforceContextBudget(context, window, () => researchRequestUpperBound({
+      system: system + (attachments?.system ?? ''), user: serializeUser() + (attachments?.text ?? ''), maxTokens: generationOptions.maxTokens,
+      englishImagePrompts: skills.some(skill => skillHasCapability(skill, 'image')) }));
+    if (fitted.truncated) stats = { ...stats, truncated: true,
+      contextChars: JSON.stringify(context).length, passages: Array.isArray(context.pasajes_relevantes) ? context.pasajes_relevantes.length : 0,
+      works: Array.isArray(context.obras) ? context.obras.length : 0, documents: Array.isArray(context.obras) ? context.obras.length : 0 };
+  }
+  return { system, user: serializeUser(), stats, generationOptions, local, citationRequired: buildCitationOutputContract(JSON.stringify(context)) != null };
 }
 
 /** Canonical Spanish exports retained for Nodi's shared citation contract. */

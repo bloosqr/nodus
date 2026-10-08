@@ -37,10 +37,6 @@ import { extractCitationRefs } from './citationSanitize';
 import { getDocumentaryPassageDetail } from '../citations/documentaryCitations';
 import { getScopedLegacyPassageDetail } from '../citations/scopedLegacyCitations';
 
-/** The budget counts UTF-8 bytes as a conservative bound on tokens; this converts a model's
- *  token window into that unit. The research chat uses the same ratio. */
-const BUDGET_CHARS_PER_TOKEN = 3.2;
-
 /** Research Chat's agent: the turn's plan and how many independent sources a finish needs.
  * Deep Research, the Dictionary and notebook reads leave it unset and keep their loop. */
 export interface ResearchChatAgent {
@@ -569,11 +565,9 @@ export function bindAcademicCorpusRun(deps: DeepResearchDeps, request: DeepResea
       run.validate();
       const window = await (windowPromise ??= model ? researchModelContextWindow(resolveModelRef(model)) : Promise.resolve({ tokens: 32768, known: false }));
       // Reserve three quarters for instructions, planning/history, tool framing
-      // and output; every actual completion checks its complete final envelope. The reservation
-      // is in the budget's own unit (bytes bounding tokens), so the share is taken of the window
-      // once converted.
-      run.budget.constrainToWindow(window.tokens,
-        Math.ceil(window.tokens * BUDGET_CHARS_PER_TOKEN * 0.75), BUDGET_CHARS_PER_TOKEN);
+      // and output; every actual completion checks its complete final envelope using
+      // the same byte-as-token bound. No characters/token conversion applies here.
+      run.budget.constrainToWindow(window.tokens, Math.ceil(window.tokens * 0.75));
       const result = await withResearchRequestBudget(window.tokens, () => { run.budget.partial = true; }, () => value(...args));
       run.validate(); return result;
     };

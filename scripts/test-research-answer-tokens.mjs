@@ -75,6 +75,10 @@ test('the answer budget plus its thinking reserve stays inside what the model wi
     // A model whose ceiling is not recorded is left alone rather than guessed at.
     assert.equal(withinModelOutput(141_072, 'deepseek', 'deepseek-flash'), 141_072);
     assert.equal(withinModelOutput(141_072, 'anthropic', 'claude-made-up-9'), 141_072);
+    assert.equal(withinModelOutput(42_043, 'openai', 'gpt-4o'), 16_384);
+    assert.equal(withinModelOutput(42_043, 'openai', 'unknown-model', 10_000), 10_000,
+      'content-sized requests supply a conservative fallback for unrecorded ceilings');
+    assert.equal(withinModelOutput(8000, 'openai', 'unknown-model', 10_000), 8000);
     // And the call site applies it to the sum, not to the answer budget alone.
     const generation = fs.readFileSync(path.join(import.meta.dirname, '../electron/ai/researchGenerationOptions.ts'), 'utf8');
     assert.match(generation, /withinModelOutput\(maxTokens \+ thinkingOutputAllowance\(/, 'the clamp wraps the sum');

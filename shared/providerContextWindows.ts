@@ -143,6 +143,13 @@ const DOCUMENTED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
  * table existed.
  */
 const DOCUMENTED_MAX_OUTPUT: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  // https://developers.openai.com/api/docs/models/gpt-4o
+  // The older 2024-05-13 snapshot has a different ceiling; do not match by prefix.
+  openai: {
+    'gpt-4o': 16_384,
+    'gpt-4o-2024-08-06': 16_384,
+    'gpt-4o-2024-11-20': 16_384,
+  },
   // https://platform.claude.com/docs/en/about-claude/models — 128K output across the 4.6+ family.
   // Values this large require a streaming request; a non-streaming call hits the HTTP timeout
   // first. Research Chat streams, so it can use them.

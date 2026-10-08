@@ -1,13 +1,15 @@
 import { validateRetrievalSettings, type RetrievalSettings } from './researchCorpus';
 import { documentedMaxOutput } from './providerContextWindows';
 
+/** The same conservative envelope used by the final provider request check. Text is
+ * counted as UTF-8 bytes bounding tokens; output is already expressed in tokens. */
+export function researchPromptUpperBound(system: string, user: string, output: number): number {
+  return new TextEncoder().encode(system).length + new TextEncoder().encode(user).length + output + 1024;
+}
+
 /** A run-owned budget, passed to every probe and section, never reset per query.
  * UTF-8 bytes conservatively bound tokenizer output without guessing a language's
  * characters/token ratio. The presets are initial operating limits, not calibrated. */
-/** The least evidence allowance a turn keeps, matching the floors its callers already apply when
- *  they size a budget. Small enough to fit any window that can hold a prompt at all. */
-export const MIN_EVIDENCE_TOKENS = 256;
-
 export class ResearchRetrievalBudget {
   readonly settings: RetrievalSettings;
   usedEvidenceTokens = 0;
@@ -21,22 +23,12 @@ export class ResearchRetrievalBudget {
   constructor(settings: RetrievalSettings, public evidenceTokenLimit = settings.evidenceTokens, public decisionTokenLimit = settings.evidenceTokens) {
     this.settings = validateRetrievalSettings(settings);
   }
-  /** Fit the evidence allowance into what the window leaves.
-   *
-   *  Everything this class counts is UTF-8 bytes, as a conservative bound on tokens (see above),
-   *  so the window has to be converted to the same unit before subtracting: comparing a byte
-   *  count against a token window overstated the prompt by roughly the bytes-per-token ratio,
-   *  and on a large system prompt the reservation came out bigger than the whole window. The
-   *  allowance was then 0, `nextRound` compared 0 >= 0, and no retrieval round could ever start,
-   *  so the turn answered with no corpus evidence and reported only that it had found none.
-   *
-   *  `charsPerToken` is the caller's own estimate, so one ratio is used for the whole turn. A
-   *  tight-but-real window keeps the floor and degrades; a prompt that genuinely does not fit
-   *  gets nothing, which is what the caller's own overflow check will report. */
-  constrainToWindow(windowTokens: number, reservedBytes: number, charsPerToken: number): void {
-    const windowBytes = Math.floor(windowTokens * charsPerToken);
-    const room = windowBytes - reservedBytes;
-    const limit = room > 0 ? Math.max(MIN_EVIDENCE_TOKENS, room) : 0;
+  /** Fit evidence under the final request's byte-as-token bound. `reserved` includes
+   * instructions, serialized history/metadata, output tokens and framing. Multiplying
+   * the window by a characters/token estimate would admit evidence the final check
+   * refuses. Even a small positive remainder must not be enlarged to a floor. */
+  constrainToWindow(windowTokens: number, reserved: number): void {
+    const limit = Math.max(0, Math.floor(windowTokens - reserved));
     if (limit < this.evidenceTokenLimit) { this.evidenceTokenLimit = limit; this.partial = true; }
   }
   reserveDecision(system: string, user: string, output: number): boolean {
@@ -104,9 +96,10 @@ export function researchAnswerTokens(window: number | null | undefined, withSkil
  *  a 128,000-token ceiling before the answer budget was allowed to scale with the window.
  *
  *  Trimming the sum takes it out of the reserve first, which is the right order: the reserve is
- *  room the model MAY use for thinking, while the answer budget is what the turn needs to say. A
- *  model whose ceiling is not documented is left alone rather than guessed at. */
-export function withinModelOutput(total: number, provider: string, model: string): number {
-  const ceiling = documentedMaxOutput(provider, model);
-  return ceiling == null ? total : Math.min(total, ceiling);
+ *  room the model MAY use for thinking, while the answer budget is what the turn needs to say.
+ *  Callers that size output from content must supply their previous operating limit
+ *  as `unknownCeiling`, so an unknown model never gets an unbounded increase. */
+export function withinModelOutput(total: number, provider: string, model: string, unknownCeiling = total): number {
+  const ceiling = documentedMaxOutput(provider, model) ?? unknownCeiling;
+  return Math.min(total, ceiling);
 }
