@@ -21,7 +21,7 @@ import { ResearchCorpusRun } from './researchCorpusRun';
 import { RESEARCH_CHAT_AGENT_DECISION_BYTES, RESEARCH_CHAT_AGENT_SETTINGS, RESEARCH_CHAT_LIGHT_AGENT_SETTINGS, researchScopeForPrompt, validateRetrievalSettings, compactResearchTraversal } from '@shared/researchCorpus';
 import { planResearchTurn, literalResearchTurnPlan } from './researchTurnPlanner';
 import { inspectResearchMolecules, appendStructureAudit, appendRouteReportAndDrawings, resolveNamedRoute, chemistryRunner } from './moleculeInspection';
-import { countRouteSteps, findStepNamedSpecies, formatAuthorStructureNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeFixPromptForHistory, routeReportsForHistory } from '@shared/moleculeInspection';
+import { countRouteSteps, findStepNamedSpecies, formatAuthorStructureNote, formatResolutionSourceNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeFixPromptForHistory, routeReportsForHistory } from '@shared/moleculeInspection';
 import { SYNTHESIS_TEMPLATE_ADDENDUM, looksLikeSynthesisRequest } from '@shared/synthesisPrompt';
 import { reviseRouteWithEvidence, revisionUserMessage, routeEvidencePassEnabled } from './routeEvidencePass';
 import { SYNTHESIS_EVIDENCE_KEY, SYNTHESIS_EVIDENCE_SYSTEM_RULE, synthesisEvidencePayload, synthesisRetrievalQuery } from '@shared/synthesisEvidence';
@@ -289,7 +289,10 @@ async function auditAnswer(answer: string, execution: ReturnType<typeof skillExe
     const routed = await appendRouteReportAndDrawings(withStructures, resolved.answer, { ...options, target: execution.target }, { steps: resolved.steps, labels: resolved.labels, unresolved: resolved.unresolved ?? [] });
     const correctionNote = formatNameCorrectionNote(resolved.corrections);
     const structureNote = formatAuthorStructureNote(resolved.authorStructures);
-    const notes = [correctionNote, structureNote].filter(Boolean).join('\n\n');
+    // Where every structure came from. A run that cannot say this cannot tell an offline
+    // dictionary hit from a network lookup or from the model's own drawing of the molecule.
+    const sourceNote = formatResolutionSourceNote(resolved.resolutionSources);
+    const notes = [correctionNote, structureNote, sourceNote].filter(Boolean).join('\n\n');
     const withNotes = notes ? `${routed.trimEnd()}\n\n${notes}\n` : routed;
     return resolved.clarification ? `${withNotes.trimEnd()}\n\n${resolved.clarification}\n` : withNotes;
   } finally {

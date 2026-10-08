@@ -346,6 +346,9 @@ export interface RouteResolutionOutcome {
   /** Species the model supplied as structures because no name would resolve, as prose, so the
    *  caller discloses that their structure came from the model, not a reference. */
   authorStructures: string[];
+  /** Every species' resolution status and source, so a run can record where each structure came
+   *  from. The author-supplied ones are the category silent wrongness hides in. */
+  resolutionSources: Array<{ status: string; source?: string }>;
   /** True when the installed package has no resolve-names tool, so the caller falls back to
    *  the legacy reaction-line path. */
   legacy: boolean;
@@ -540,7 +543,7 @@ export async function resolveNamedRoute(
   modelAnswer: string,
   options: InspectOptions = {},
 ): Promise<RouteResolutionOutcome> {
-  const legacy: RouteResolutionOutcome = { answer: finalAnswer, steps: [], labels: [], consistent: true, corrections: [], authorStructures: [], legacy: true };
+  const legacy: RouteResolutionOutcome = { answer: finalAnswer, steps: [], labels: [], consistent: true, corrections: [], resolutionSources: [], authorStructures: [], legacy: true };
   if (options.enabled === false) return legacy;
   const provider = resolveProvider();
   if (!provider) return legacy;
@@ -632,6 +635,7 @@ export async function resolveNamedRoute(
     const steps = buildRouteSteps(resolvedByStep);
     const labels: RouteSpeciesLabel[][] = resolvedByStep.map((step) => step.filter((entry) => entry.smiles).map((entry) => ({ role: entry.role, byproduct: entry.byproduct, name: entry.name, smiles: entry.smiles! })));
     const authorStructures = resolvedByStep.flat().filter((entry) => entry.status === 'fallback' && entry.smiles).map((entry) => `${entry.name} — \`${entry.smiles}\``);
+    const resolutionSources = resolvedByStep.flat().map((entry) => ({ status: entry.status, ...(entry.source ? { source: entry.source } : {}) }));
     const annotated = `${annotateSpeciesSmiles(finalAnswer, resolvedByStep).trimEnd()}\n`;
     return {
       answer: annotated,
@@ -640,6 +644,7 @@ export async function resolveNamedRoute(
       consistent: critical.length === 0,
       corrections,
       authorStructures,
+      resolutionSources,
       ...(critical.length ? { clarification: formatUnresolvedNameClarification(critical, options.target), unresolved: critical } : {}),
       legacy: false,
     };
@@ -923,7 +928,7 @@ export async function appendRouteReportAndDrawings(
     // Paint the deterministic report and drawings before the reviewer returns. The transport
     // replaces the provisional stream with this returned answer, so the route only waits on
     // the reviewer when the reviewer is the last thing outstanding.
-    if (options.onDeterministic) options.onDeterministic(`${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit, labels, null, true)}\n${drawings}`);
+    if (options.onDeterministic) options.onDeterministic(`${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit, labels, null, true, overrides.unresolved ?? [])}\n${drawings}`);
     // The lookup already carries its drawings; this only formats. Best-effort throughout. The
     // step support (textbook passage per reaction class, ORD alternatives for a failed or
     // unprecedented step) needs the lookup's classes, so it follows it, still beside the review.
@@ -947,7 +952,7 @@ export async function appendRouteReportAndDrawings(
     // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
     const stockPromise = options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => '');
     const review = await reviewPromise;
-    const report = formatRouteAudit(audit, labels, review);
+    const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
     const precedentText = await precedentSection;
     const support = await supportPromise;
     // A step's high-severity clashes ride along in its fix prompt, as evidence.
