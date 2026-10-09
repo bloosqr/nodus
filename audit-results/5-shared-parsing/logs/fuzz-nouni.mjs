@@ -10,7 +10,7 @@ const WRAP = [['', ''], ['**', '**'], ['`', '`'], ['__', '__'], ['- ', ''], ['  
 const SEP = ['; ', ';', ' ; ', ', ', '\n', '；', ' and '];
 const COLON = [':', '：', ' :', ':  '];
 const HEAD = (n) => pick([`## Step ${n} — Oxidation`, `### Step ${n}: aldol`, `**Step ${n} — Reduction**`, `**Step ${n}: hydrolysis.** The ester is hydrolysed.`, `Step ${n}. Bromination`, `${n}. **Esterification.** Heat.`, `## Alternative for Step ${n}`, `**Target structure**`]);
-const PROSE = () => pick(['The alcohol is oxidised.', 'This step is racemic.', 'A Wagner–Meerwein shift occurs; the product is a mixture of diastereomers.', 'Reagents and conditions: PCC, CH2Cl2, rt, 2 h; then workup.', 'See [Clayden, p. 1](nodus://passage/p1).', '', '   ', '\t\t', ' '.repeat(Math.floor(rnd() * 400))]);
+const PROSE = () => pick(['The alcohol is oxidised.', 'This step is racemic.', 'A Wagner-Meerwein shift occurs; the product is a mixture of diastereomers.', 'Reagents and conditions: PCC, CH2Cl2, rt, 2 h; then workup.', 'See [Clayden, p. 1](nodus://passage/p1).', '', '   ', '\t\t', ' '.repeat(Math.floor(rnd() * 400))]);
 const BLOCK = () => pick(['```nodus-view\n{"view":"<svg>' + 'y '.repeat(Math.floor(rnd() * 300)) + '</svg>"}\n```', '<svg width="10">' + 'z'.repeat(Math.floor(rnd() * 200)) + '</svg>', '<svg unclosed', '```\ncode Reactants: x\n```', '| a | Reactants: b |']);
 function answer() {
   const steps = 1 + Math.floor(rnd() * 6);
