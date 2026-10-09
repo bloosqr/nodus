@@ -27,6 +27,15 @@ export interface ResearchSourceScope {
   edgeIds: Set<string>;
 }
 
+/** The works a source filter admits, or null when it does not restrict. `resolveResearchSourceScope`
+ *  without the idea, theme, author and edge sets, which a caller wanting only the works paid for:
+ *  ~0.24 s on a 14,000-work library, several times per research turn (scope checks). */
+export function resolveResearchSourceWorkIds(value?: ResearchSourceFilter): Set<string> | null {
+  const filter = normalizeResearchSourceFilter(value);
+  if (!filter.enabled) return null;
+  return new Set(matchingResearchWorkIds(listResearchContextSources(), filter));
+}
+
 export function resolveResearchSourceScope(value?: ResearchSourceFilter, strictProvenance = false): ResearchSourceScope | null {
   const filter = normalizeResearchSourceFilter(value);
   if (!filter.enabled) return null;
