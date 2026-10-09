@@ -624,6 +624,27 @@ async function limitsFor(vault: VaultSummary, token: string): Promise<RemoteMuta
   }
 }
 
+/**
+ * Image tables whose bytes travel on the asset channel, and the column that holds them.
+ *
+ * Every receiver of these rows requires the image's hash in `assets`: the owner's inbox
+ * (inboxPoller hydrateImageMutations) and other replicas (pullRelayOperations) throw on a
+ * row without it, and neither acknowledges past a throw. A desktop writer sent them with
+ * the bytes stripped and no `assets`, so one edited illustration stopped the owner from
+ * collecting anything else, from anyone, for good.
+ */
+const IMAGE_MUTATION_COLUMNS: Record<string, string> = { world_images: 'blob', map_images: 'blob', decorative_images: 'image_blob' };
+
+function readImageBytes(db: Database.Database, table: string, column: string, rowKey: string): Buffer | null {
+  let key: unknown[];
+  try { key = JSON.parse(rowKey) as unknown[]; } catch { return null; }
+  const identity = identityColumns(table, undefined, db);
+  if (identity.length !== key.length) return null;
+  const where = identity.map((name) => `${quoteIdentifier(name)} IS ?`).join(' AND ');
+  const row = db.prepare(`SELECT ${quoteIdentifier(column)} AS data FROM ${quoteIdentifier(table)} WHERE ${where}`).get(...key) as { data: unknown } | undefined;
+  return Buffer.isBuffer(row?.data) && row.data.length > 0 ? row.data : null;
+}
+
 /** Read the live row a queued entry points at, so what is sent is never a stale copy. */
 function readRow(db: Database.Database, table: string, rowKey: string): Record<string, unknown> | null {
   let key: unknown[];
@@ -742,6 +763,41 @@ export async function drainOutbox(vaultId: string): Promise<void> {
         return;
       }
     }
+    let assets: { hash: string }[] | null = null;
+    const imageColumn = entry.op === 'upsert' ? IMAGE_MUTATION_COLUMNS[entry.table_name] : undefined;
+    if (imageColumn) {
+      const image = readImageBytes(db, entry.table_name, imageColumn, entry.row_key);
+      if (!image) {
+        markOutboxRejected(db, [entry.id], 'Esta imagen todavía no tiene sus bytes en este equipo y no puede enviarse sin ellos.');
+        continue;
+      }
+      const imageHash = createHash('sha256').update(image).digest('hex');
+      const assetEndpoint = `${normalizeUrl(vault.remote.url)}/api/v1/spaces/${encodeURIComponent(vault.remote.spaceId)}/assets/${imageHash}`;
+      try {
+        const present = await request(assetEndpoint, { method: 'HEAD', headers: { authorization: `Bearer ${token}` } });
+        if (!present.ok) {
+          const upload = await request(assetEndpoint, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/octet-stream', 'content-length': String(image.length) },
+            body: image,
+          });
+          if (upload.status === 413 || upload.status === 415) {
+            // Deterministic: this server will never take these bytes. Kept and explained.
+            const detail = await upload.json().catch(() => ({})) as { error_description?: string };
+            markOutboxRejected(db, [entry.id], detail.error_description || `El servidor no acepta esta imagen (HTTP ${upload.status}).`);
+            continue;
+          }
+          if (!upload.ok) {
+            runtime.lastError = `El servidor rechazó una imagen (HTTP ${upload.status}).`;
+            return;
+          }
+        }
+      } catch (error) {
+        runtime.lastError = error instanceof Error ? error.message : String(error);
+        return;
+      }
+      assets = [{ hash: imageHash }];
+    }
     const mutation = {
       id: entry.id,
       clientId: clientIdFor(vaultId),
@@ -756,6 +812,7 @@ export async function drainOutbox(vaultId: string): Promise<void> {
       hlc: entry.hlc,
       ...(documentHash ? { documentHash } : {}),
       ...(blobHash ? { blobHash } : {}),
+      ...(assets ? { assets } : {}),
     };
 
     // Measured here, where the row is in hand. A Deep Research report is one row carrying its
