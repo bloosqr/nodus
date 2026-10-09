@@ -1080,6 +1080,8 @@ async function restoreAllVaultsFromFile(
     }
 
     const machineLocal = captureMachineLocalSettings();
+    // Its connections would keep reading (and holding on disk) the files replaced below.
+    await stopVectorScanWorker();
     closeDb();
     for (const { entry, tmp } of staged) {
       applyMachineLocalSettings(tmp, machineLocal.get(entry.id) ?? null);
