@@ -155,6 +155,17 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
     } finally { evidence.gatherSynthesisEvidence = recorded; ai.embed = async () => null; ai.embedMany = embedMany; ai.researchModelContextWindow = researchWindow; }
   });
 
+  test('a run of corrections keeps the route request in the replayed conversation', async () => {
+    // The history window is twelve messages; six correction rounds used to push the request (and
+    // every constraint the chips do not repeat: starting materials, scale, stereochemistry) out of it.
+    const fix = { role: 'user', content: 'Correction needed for the synthesis route above. Fix the rejected step.' };
+    const messages = [request.messages[0]];
+    for (let i = 0; i < 8; i++) messages.push({ role: 'assistant', content: 'Step 1 draft' }, fix);
+    const payload = await build({ ...request, messages });
+    assert.equal(payload.conversacion[0].content, request.messages[0].content);
+    assert.equal(payload.conversacion.at(-1).content, fix.content);
+  });
+
   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
     const controller = new AbortController();
     let started;
