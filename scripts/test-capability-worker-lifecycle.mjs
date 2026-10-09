@@ -64,3 +64,21 @@ test('removing or updating a plugin stops the workers it started', async () => {
   }
   await survivor.stop();
 });
+
+test('what a worker logs reaches the main log', async () => {
+  const runtime = { capabilityId: 'nodus:probe', plugin: { id: 'probe', version: '1.0.0', digest: 'b'.repeat(64) }, manifest: {}, entryPath: '/isolated/worker.cjs', permissions: {} };
+  const handle = new lib.CapabilityWorkerHandle(runtime, { bootstrapPath: '/isolated/bootstrap.cjs', services: async () => null });
+  const pending = handle.call('health', {});
+  const child = globalThis.__lifecycleChildren.at(-1);
+  ready(child, 'nodus:probe'); await tick();
+  const written = [];
+  const saved = console.warn;
+  console.warn = (...args) => written.push(args.join(' '));
+  try {
+    child.emit('message', { type: 'log', level: 'warn', message: 'local reference mirror unavailable', detail: { code: 1 } });
+  } finally { console.warn = saved; }
+  child.emit('message', { type: 'result', callId: child.messages.find(message => message.type === 'call').callId, ok: true, value: 'ok' });
+  await pending;
+  await handle.stop();
+  assert.ok(written.some(line => line.includes('nodus:probe') && line.includes('local reference mirror unavailable')), `logged: ${JSON.stringify(written)}`);
+});
