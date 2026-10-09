@@ -1,0 +1,28 @@
+TAP version 13
+# Subtest: a refused intermediate link fails the route check header
+ok 1 - a refused intermediate link fails the route check header
+  ---
+  duration_ms: 3.039751
+  type: 'test'
+  ...
+# Subtest: a refused intermediate link is offered back as a correction
+ok 2 - a refused intermediate link is offered back as a correction
+  ---
+  duration_ms: 1.117067
+  type: 'test'
+  ...
+# Subtest: a route whose links all hold is unchanged
+ok 3 - a route whose links all hold is unchanged
+  ---
+  duration_ms: 0.574203
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 159.334821

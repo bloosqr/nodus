@@ -1,0 +1,142 @@
+# Repository: github.com/bloosqr/nodus — apply to audit/2026-10-09 with: git apply audit-results/5-shared-parsing/02-broken-links-pass-the-route.patch
+diff --git a/electron/ai/moleculeInspection.ts b/electron/ai/moleculeInspection.ts
+index 105a1f3c..8be82195 100644
+--- a/electron/ai/moleculeInspection.ts
++++ b/electron/ai/moleculeInspection.ts
+@@ -8,6 +8,7 @@ import {
+   classifyCoProducts,
+   countRouteSteps,
+   isBareSmilesName,
++  brokenRouteLinks,
+   isolatedSteps,
+   stepDeclaresRacemic,
+   stepDeclaresRearrangement,
+@@ -815,6 +816,7 @@ function routePasses(audit: RouteAudit): boolean {
+   return audit.steps.length > 0
+     && audit.steps.every((step) => !routeStepFailure(step))
+     && !isolatedSteps(audit).length
++    && !brokenRouteLinks(audit).length
+     && audit.target?.reason !== 'not-formed'
+     && audit.target?.reason !== 'stereo-mismatch';
+ }
+@@ -830,7 +832,8 @@ function routePasses(audit: RouteAudit): boolean {
+  *  it only on a route that passed is both the clearer answer and the cheaper one.
+  *
+  *  The gate is deterministic and does not wait for the model review: every step passes, no step is
+- *  disconnected, and the target is formed with the stereochemistry asked for. */
++ *  disconnected, every intermediate is carried as the same structure, and the target is formed
++ *  with the stereochemistry asked for. */
+ async function printFinalReport(
+   runner: Runner,
+   provider: CapabilityProvider,
+diff --git a/scripts/test-route-link-verdict.mjs b/scripts/test-route-link-verdict.mjs
+new file mode 100644
+index 00000000..16d47b72
+--- /dev/null
++++ b/scripts/test-route-link-verdict.mjs
+@@ -0,0 +1,63 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++
++const dir = await mkdtemp(path.join(os.tmpdir(), 'route-link-verdict-'));
++await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
++const { normalizeRouteAudit, formatRouteAudit, formatNamedRouteFixPrompts } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
++test.after(() => rm(dir, { recursive: true, force: true }));
++
++const R = 'C[C@@H](O)CC';
++const S = 'C[C@H](O)CC';
++const species = (canonicalSmiles, name, extra = {}) => ({ input: canonicalSmiles, canonicalSmiles, formula: 'C4H10O', name, ...extra });
++const step = (index, reactants, products) => ({ index, reaction: 'x>>y', ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants, agents: [], products });
++const labels = [
++  [{ role: 'reactant', byproduct: false, name: 'butan-2-one', smiles: 'CCC(C)=O' }, { role: 'product', byproduct: false, name: '(2R)-butan-2-ol', smiles: R }],
++  [{ role: 'reactant', byproduct: false, name: '(2R)-butan-2-ol', smiles: R }, { role: 'product', byproduct: false, name: '(2R)-2-methoxybutane', smiles: 'CC[C@@H](C)OC' }],
++  [{ role: 'reactant', byproduct: false, name: '(2S)-butan-2-ol', smiles: S }, { role: 'product', byproduct: false, name: 'target', smiles: 'CC[C@H](C)OC(C)=O' }],
++];
++
++// What chemistry-studio's route audit returns when step 3 consumes the other enantiomer of what an
++// earlier step made: the link is refused as constitution-only and `continuous` is false, but the
++// link is still an edge, so no step is isolated.
++const audit = () => normalizeRouteAudit({
++  continuous: false,
++  blocked: ['Step 1 → 3: the intermediate has the same constitution but different stereochemistry or charge.'],
++  isolated: [],
++  steps: [
++    step(0, [species('CCC(C)=O', 'butan-2-one')], [species(R, '(2R)-butan-2-ol')]),
++    step(1, [species(R, '(2R)-butan-2-ol')], [species('CC[C@@H](C)OC', '(2R)-2-methoxybutane')]),
++    step(2, [species(S, '(2S)-butan-2-ol')], [species('CC[C@H](C)OC(C)=O', 'target')]),
++  ],
++  links: [
++    { from: 0, to: 1, ok: true, reason: 'carried', carried: [{ canonicalSmiles: R, formula: 'C4H10O', heavyAtoms: 5 }] },
++    { from: 0, to: 2, ok: false, reason: 'constitution-only', carried: [], skeletonOnly: [{ product: R, reactant: S, skeletonSmiles: 'CCC(C)O' }] },
++  ],
++});
++
++test('a refused intermediate link fails the route check header', () => {
++  const report = formatRouteAudit(audit(), labels);
++  assert.match(report, /Step 1 → 3 FAIL — same constitution/, 'the premise: the continuity line already says FAIL');
++  assert.doesNotMatch(report, /Route checked: balanced and connected/);
++  assert.match(report, /\*\*Route check failed\*\* — .*intermediate link\(s\) do not carry the same structure \(step 1 → 3\)/);
++  assert.doesNotMatch(report, /\nBalanced and connected: every intermediate is carried over\./);
++});
++
++test('a refused intermediate link is offered back as a correction', () => {
++  const chips = formatNamedRouteFixPrompts(labels, audit());
++  assert.notEqual(chips, '', 'a route the checker refused gets a fix chip');
++  assert.match(chips, /Step 1 → 3: step 3 consumes a different stereoisomer or charge state/);
++});
++
++test('a route whose links all hold is unchanged', () => {
++  const ok = audit();
++  ok.links = ok.links.slice(0, 1);
++  ok.blocked = [];
++  ok.continuous = true;
++  assert.match(formatRouteAudit(ok, labels), /Route checked: balanced and connected/);
++  assert.equal(formatNamedRouteFixPrompts(labels, ok), '');
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..72783e3f 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -1925,6 +1925,16 @@ export function isolatedSteps(audit: RouteAudit): number[] {
+   });
+ }
+ 
++/** Links between steps the checker refused: a later step consumes a different stereoisomer or
++ *  charge state of what an earlier one makes, or a declared intermediate is not the same structure
++ *  on both sides. The package counts these against `continuous`, and the continuity rule tells the
++ *  model such a route is rejected; neither step is isolated by it, so `isolatedSteps` alone never
++ *  sees one. Every verdict reads this, so the header, the chips and the drawing gate agree. A link
++ *  reported as carried is never broken: the package sets `ok` from that reason. */
++export function brokenRouteLinks(audit: RouteAudit): RouteLinkAudit[] {
++  return audit.links.filter((link) => !link.ok && link.reason !== 'carried');
++}
++
+ const sideTrace = (species: RouteSpeciesSummary[], names?: Map<string, string>): string => species.map((entry) => {
+   const name = names?.get(entry.input) ?? names?.get(entry.canonicalSmiles) ?? entry.name;
+   const identity = entry.formula || entry.canonicalSmiles;
+@@ -2232,6 +2242,8 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
+   if (assembled.length) reasons.push(`${assembled.length === 1 ? 'a step' : 'steps'} cannot be assembled from a single substrate molecule (${assembled.map((index) => `step ${index}`).join(', ')})`);
+   if (skeletal.length) reasons.push(`${skeletal.length === 1 ? 'a step makes or breaks a bond' : 'steps make or break bonds'} its reactants cannot (${skeletal.map((index) => `step ${index}`).join(', ')})`);
+   if (isolated.length) reasons.push(`${isolated.length} step(s) are disconnected from the rest of the route`);
++  const broken = brokenRouteLinks(audit);
++  if (broken.length) reasons.push(`${broken.length} intermediate link(s) do not carry the same structure (${broken.map((link) => `step ${link.from + 1} → ${link.to + 1}`).join(', ')})`);
+   if (audit.target?.reason === 'not-formed') reasons.push('no step forms the requested target');
+   else if (audit.target?.reason === 'stereo-mismatch') reasons.push('the target is formed only with the wrong stereochemistry');
+   if (reviewProblems.length) reasons.push(`a route review raised ${reviewProblems.length} problem(s)`);
+@@ -2651,6 +2663,11 @@ function namedRouteProblems(labels: RouteSpeciesLabel[][], audit: RouteAudit): s
+       ? `- Step ${index + 1} is disconnected: none of its species is made by an earlier step or used by a later one.${duplicate}`
+       : `- Step ${index + 1} is disconnected: none of its species is made by an earlier step or used by a later one. Insert the missing step where it belongs, or write the carried species with the same IUPAC name in both steps.`);
+   }
++  for (const link of brokenRouteLinks(audit)) {
++    if (link.reason === 'constitution-only') problems.push(`- Step ${link.from + 1} → ${link.to + 1}: step ${link.to + 1} consumes a different stereoisomer or charge state of the intermediate step ${link.from + 1} makes. Carry it with exactly the name step ${link.from + 1} gives it, or add the step that changes its form.`);
++    else if (link.reason === 'declared-mismatch') problems.push(`- The intermediate declared as entering step ${link.to + 1} is not the same structure on both sides. Name it identically in step ${link.from + 1}'s Products and step ${link.to + 1}'s Reactants.`);
++    else if (link.reason === 'no-overlap') problems.push(`- Step ${link.from + 1} → ${link.to + 1}: no intermediate is carried over. Make a product of step ${link.from + 1} a reactant of step ${link.to + 1}, with the same name.`);
++  }
+   const target = audit.target;
+   if (target && audit.steps.every((step) => step.ok)) {
+     const wanted = target.canonicalSmiles ?? target.input;
