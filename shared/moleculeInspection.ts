@@ -1510,7 +1510,9 @@ export function routeConversationState(turns: ReadonlyArray<{ role: string; cont
   let asked = -1;
   for (let index = 0; index < list.length; index += 1) {
     const turn = list[index];
-    if (turn?.role === 'user' && typeof turn.content === 'string' && looksLikeSynthesisRequest(turn.content)) asked = index;
+    // A correction chip names the synthesis and its rules name reagents, so a short one reads as a
+    // request; it is never the conversation's request.
+    if (turn?.role === 'user' && typeof turn.content === 'string' && !isRouteFixPrompt(turn.content) && looksLikeSynthesisRequest(turn.content)) asked = index;
   }
   if (asked < 0) return { request: null, delivered: false };
   const delivered = list.slice(asked + 1).some((turn) => turn?.role === 'assistant' && countRouteSteps(typeof turn.content === 'string' ? turn.content : '') > 0);

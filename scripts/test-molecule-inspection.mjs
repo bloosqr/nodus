@@ -2362,3 +2362,12 @@ test('the step line and the route verdict cannot disagree about which step faile
     }
   }
 });
+
+test('a correction chip is never taken as the conversation route request', () => {
+  const request = 'Propose a laboratory synthesis of benzocaine (SMILES: CCOC(=O)c1ccc(N)cc1) starting from toluene.';
+  const chip = fixPayload(formatMissingSpeciesPrompt('CCOC(=O)c1ccc(N)cc1')).prompt;
+  const turns = [{ role: 'user', content: request }, { role: 'assistant', content: '### Step 1\nNitrate toluene.\n\n### Step 2\nOxidise.' }, { role: 'user', content: chip }];
+  assert.equal(routeConversationState(turns).request, request, 'the chip is not the request');
+  const followUp = [...turns, { role: 'assistant', content: 'prose' }, { role: 'user', content: 'Can you use a milder oxidant?' }];
+  assert.equal(routeConversationState(followUp).request, request, 'nor after a human follow-up');
+});
