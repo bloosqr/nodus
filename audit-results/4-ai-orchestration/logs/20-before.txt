@@ -1,0 +1,4 @@
+opening searches: 0 batched request(s), 3 single embedding request(s)
+✖ the opening queries are embedded in one request (226.085452ms)
+ℹ pass 0
+ℹ fail 1

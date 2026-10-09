@@ -1,0 +1,121 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Research step bounds: the plan and supervisor calls time out at 30 s on cloud models; the query-embedding client no longer retries inside the app's own retries.
+diff --git a/electron/ai/aiClient.ts b/electron/ai/aiClient.ts
+index 76138bbe..5be59509 100644
+--- a/electron/ai/aiClient.ts
++++ b/electron/ai/aiClient.ts
+@@ -423,6 +423,14 @@ export function completionTimeoutMs(model: ModelRef): number {
+   return runsOnDevice(model.provider) ? ON_DEVICE_COMPLETION_TIMEOUT_MS : CLOUD_COMPLETION_TIMEOUT_MS;
+ }
+ 
++/** A research turn's own short JSON calls (its plan, each supervisor decision): a few hundred
++ *  output tokens, each with a fallback. A cloud provider that stalls one held the turn for the
++ *  full completion timeout, three minutes, before that fallback ran. On-device models keep theirs. */
++export function researchStepTimeoutMs(model?: ModelRef | null): number | undefined {
++  // No model configured: the call itself reports that, not this bound.
++  try { return runsOnDevice(resolveModel(model).provider) ? undefined : 30_000; } catch { return undefined; }
++}
++
+ /**
+  * Size max_tokens to a local model's real context window, refusing up front when the
+  * prompt itself won't fit. Returns the max_tokens to use; throws an actionable AiError
+@@ -2435,6 +2443,11 @@ async function requestEmbeddings(
+     apiKey: key,
+     baseURL: endpoint,
+     defaultHeaders: openAiClientHeaders({ provider }),
++    // withProviderRetries owns 429/5xx recovery: the SDK's own two retries inside each of its
++    // attempts made one 503 nine requests, and its ten-minute default, retried twice, let a
++    // stalled endpoint hold a chat search for half an hour. The Gemini path above is bounded alike.
++    maxRetries: 0,
++    timeout: completionTimeoutMs({ provider, model: modelId }),
+   });
+   try {
+     const res = await withProviderRetries(freeTier, () => runEmbeddingRequest(async () => {
+diff --git a/electron/ai/researchActionCoordinator.ts b/electron/ai/researchActionCoordinator.ts
+index d4bbfef8..b36b34f5 100644
+--- a/electron/ai/researchActionCoordinator.ts
++++ b/electron/ai/researchActionCoordinator.ts
+@@ -1,6 +1,6 @@
+ import type { ModelRef } from '@shared/types';
+ import { validResearchAction, type ResearchAction } from '@shared/researchActions';
+-import { completeJson } from './aiClient';
++import { completeJson, researchStepTimeoutMs } from './aiClient';
+ import { researchActivityStep } from './researchActivity';
+ import type { ResearchCorpusRun } from './researchCorpusRun';
+ 
+@@ -153,7 +153,7 @@ async function superviseResearch(run: ResearchCorpusRun, question: string, unind
+     let decision;
+     try {
+       decision = await researchActivityStep('tools', 'resolve', () => completeJson({ system: SYSTEM, user, maxTokens: 384,
+-        temperature: 0, noRetry: true, corpusContext: true, signal: run.signal }, (value): value is ResearchAction => validResearchAction(value, web, !!run.agent), model));
++        temperature: 0, noRetry: true, corpusContext: true, signal: run.signal, timeoutMs: researchStepTimeoutMs(model) }, (value): value is ResearchAction => validResearchAction(value, web, !!run.agent), model));
+     } catch {
+       run.validate(); run.budget.partial = true; run.limitations.add('research_decision_unavailable'); return;
+     }
+diff --git a/electron/ai/researchTurnPlanner.ts b/electron/ai/researchTurnPlanner.ts
+index 1775c15e..23467765 100644
+--- a/electron/ai/researchTurnPlanner.ts
++++ b/electron/ai/researchTurnPlanner.ts
+@@ -1,5 +1,5 @@
+ import type { ModelRef, ResearchChatMessage } from '@shared/types';
+-import { completeJson } from './aiClient';
++import { completeJson, researchStepTimeoutMs } from './aiClient';
+ import { researchActivityStep } from './researchActivity';
+ 
+ /** What one Research Chat turn has to find, rewritten from the conversation. A follow-up
+@@ -84,7 +84,7 @@ export async function planResearchTurn(messages: ResearchChatMessage[], model?:
+   const conversation = messages.slice(-6).map(message => ({ role: message.role, text: prose(message.content, message.role === 'user' ? 1000 : 600) })).filter(turn => turn.text);
+   try {
+     const plan = await researchActivityStep('tools', 'plan', () => completeJson({ system: SYSTEM, user: JSON.stringify({ conversation, latest: prose(latest, 1000) }),
+-      maxTokens: 500, temperature: 0, noRetry: true, corpusContext: true, signal }, validPlan, model));
++      maxTokens: 500, temperature: 0, noRetry: true, corpusContext: true, signal, timeoutMs: researchStepTimeoutMs(model) }, validPlan, model));
+     return {
+       goal: plan.goal.trim(), queries: plan.queries.map(query => query.trim()).slice(0, 4),
+       authors: (plan.authors ?? []).map(author => author.trim()), titles: (plan.titles ?? []).map(title => title.trim()),
+diff --git a/scripts/test-research-step-bounds.mjs b/scripts/test-research-step-bounds.mjs
+new file mode 100644
+index 00000000..8b928ca0
+--- /dev/null
++++ b/scripts/test-research-step-bounds.mjs
+@@ -0,0 +1,42 @@
++// A research turn's short calls are bounded: the plan and each supervisor decision do not wait out
++// the three-minute completion timeout, and one query embedding against a failing endpoint is
++// retried by the app's own retry policy only, not again by the SDK inside each of its attempts.
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import http from 'node:http';
++import os from 'node:os';
++import path from 'node:path';
++import { createRequire } from 'node:module';
++import test from 'node:test';
++import { installRuntimeHooks, repoRoot } from './lib/tsRuntimeHooks.mjs';
++
++const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-research-step-bounds-'));
++installRuntimeHooks(scratch);
++const require = createRequire(import.meta.url);
++const ai = require(path.join(repoRoot, 'electron/ai/aiClient.ts'));
++test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
++
++test('one query embedding against a 503 endpoint is retried by the app, not also by the SDK', async () => {
++  let hits = 0;
++  const server = http.createServer((req, res) => { hits++; req.resume(); res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '0' }); res.end('{"error":{"message":"busy"}}'); });
++  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
++  const endpoint = `http://127.0.0.1:${server.address().port}/v1`;
++  const t0 = Date.now();
++  try {
++    await ai.embed('methyl 4-nitrobenzoate', undefined, { config: { provider: 'custom', modelId: 'm', endpoint } }).catch(() => null);
++  } finally { server.close(); }
++  console.log(`${hits} HTTP attempt(s) in ${Date.now() - t0} ms`);
++  assert.ok(hits <= 3, `${hits} HTTP attempts for one embedding`);
++});
++
++test('the turn plan carries a short timeout on a cloud model', async () => {
++  const planner = require(path.join(repoRoot, 'electron/ai/researchTurnPlanner.ts'));
++  const json = ai.completeJson;
++  let seen;
++  ai.completeJson = async (opts) => { seen = opts; throw Error('no model in this test'); };
++  try {
++    await planner.planResearchTurn([{ role: 'user', content: 'What does the library say about Fischer esterification?' }], { provider: 'openai', model: 'gpt-test' });
++  } finally { ai.completeJson = json; }
++  assert.ok(seen, 'the planner asked the model');
++  assert.ok(seen.timeoutMs && seen.timeoutMs <= 60_000, `plan timeout ${seen.timeoutMs ?? 'unset (the 180 s completion default)'}`);
++});
