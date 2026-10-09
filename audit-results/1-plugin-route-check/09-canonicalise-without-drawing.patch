@@ -1,0 +1,97 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply AFTER 03-route-audit-summarise-once.patch (uses its summaryOnly read); the diff is against audit/2026-10-09 + patch 03.
+diff --git a/plugins/chemistry-studio/src/deps.ts b/plugins/chemistry-studio/src/deps.ts
+index dffde47..93c9f16 100644
+--- a/plugins/chemistry-studio/src/deps.ts
++++ b/plugins/chemistry-studio/src/deps.ts
+@@ -58,10 +58,11 @@ const validate = async (request: ChemistryValidationRequest, signal?: AbortSigna
+ };
+ 
+ /** Read-only batch inspection. One subworker load parses every SMILES, and a species that
+- *  cannot be parsed comes back as an error entry instead of failing the whole batch. */
+-const inspectBatch = async (smiles: string[], signal?: AbortSignal): Promise<ChemistryInspectionResult[]> => {
++ *  cannot be parsed comes back as an error entry instead of failing the whole batch. A caller that
++ *  needs only the canonical SMILES says so, and the batch skips the layouts and the drawing. */
++const inspectBatch = async (smiles: string[], signal?: AbortSignal, options: { canonicalOnly?: boolean } = {}): Promise<ChemistryInspectionResult[]> => {
+   signal?.throwIfAborted();
+-  const result = await host().subworker.run({ entry: 'validator.js', input: { batch: smiles }, timeoutMs: 120_000 });
++  const result = await host().subworker.run({ entry: 'validator.js', input: { batch: smiles, ...(options.canonicalOnly ? { canonicalOnly: true } : {}) }, timeoutMs: 120_000 });
+   return (result as { results?: ChemistryInspectionResult[] })?.results ?? [];
+ };
+ 
+diff --git a/plugins/chemistry-studio/src/validator.ts b/plugins/chemistry-studio/src/validator.ts
+index ab714ab..87cab61 100644
+--- a/plugins/chemistry-studio/src/validator.ts
++++ b/plugins/chemistry-studio/src/validator.ts
+@@ -12,7 +12,7 @@ import type { ChemistryInspectionResult, ChemistryValidationRequest } from './en
+ declare const process: NodeJS.Process & { parentPort?: { on(event: 'message', listener: (event: { data: unknown }) => void): void; postMessage(value: unknown): void } };
+ 
+ process.parentPort?.on('message', event => {
+-  const data = event.data as ChemistryValidationRequest & { batch?: string[]; route?: RouteAuditInput; budget?: ChemistryCapBudget };
++  const data = event.data as ChemistryValidationRequest & { batch?: string[]; canonicalOnly?: boolean; route?: RouteAuditInput; budget?: ChemistryCapBudget };
+   // A batch is the read-only inspector: parse many SMILES in one process, and report a
+   // species that cannot be parsed as its own error instead of failing the batch.
+   if (Array.isArray(data?.batch)) {
+@@ -20,7 +20,7 @@ process.parentPort?.on('message', event => {
+       const results: ChemistryInspectionResult[] = [];
+       for (const smiles of data.batch!) {
+         try {
+-          const checked = await validateChemicalReferences({ references: [smiles], inspect: true });
++          const checked = await validateChemicalReferences({ references: [smiles], inspect: true, ...(data.canonicalOnly ? { summaryOnly: true } : {}) });
+           results.push({ smiles, ok: true, graph: checked.graph });
+         } catch (error) {
+           results.push({ smiles, ok: false, error: error instanceof Error ? error.message : 'Chemical validation failed.' });
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index d89dd08..ff38f20 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -512,7 +512,9 @@ async function canonicalizeResolutions(resolutions: SpeciesNameResolution[], cac
+   const canonical = new Map<string, string>();
+   if (inputs.length) {
+     try {
+-      const checked = await chemistryDependencies().inspectBatch(inputs, signal);
++      // Only the canonical form is read, so the batch draws nothing: 2.1 s → 0.4 s for a route's
++      // 32 names at about 50 heavy atoms each.
++      const checked = await chemistryDependencies().inspectBatch(inputs, signal, { canonicalOnly: true });
+       for (const entry of checked) {
+         if (entry.ok && entry.graph?.canonicalSmiles) canonical.set(entry.smiles, entry.graph.canonicalSmiles);
+       }
+@@ -655,7 +657,7 @@ async function attachCanonical(entries: SpeciesStructureName[], signal: AbortSig
+   const smiles = [...new Set(entries.map((entry) => entry.smiles).filter(Boolean))];
+   if (!smiles.length) return;
+   try {
+-    const checked = await chemistryDependencies().inspectBatch(smiles, signal);
++    const checked = await chemistryDependencies().inspectBatch(smiles, signal, { canonicalOnly: true });
+     const byInput = new Map(checked.filter((entry) => entry.ok && entry.graph).map((entry) => [entry.smiles, entry.graph!]));
+     for (const entry of entries) {
+       const graph = byInput.get(entry.smiles);
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 3f1bdd8..5521cd8 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -100,7 +100,7 @@ function stubHost(options = {}) {
+           const results = [];
+           for (const smiles of request.input.batch) {
+             try {
+-              const checked = await lib.validateChemicalReferences({ references: [smiles], inspect: true });
++              const checked = await lib.validateChemicalReferences({ references: [smiles], inspect: true, ...(request.input.canonicalOnly ? { summaryOnly: true } : {}) });
+               results.push({ smiles, ok: true, graph: checked.graph });
+             } catch (error) {
+               results.push({ smiles, ok: false, error: error instanceof Error ? error.message : 'Chemical validation failed.' });
+@@ -3112,3 +3112,17 @@ test('a stereocentre the route check names is numbered in the string the author
+   assert.match(message, /\((?:S|R)\) at atom 1\b|\batom 1 of /, message);
+   assert.doesNotMatch(message, /at atom 4\b/, message);
+ });
++
++test('resolve-names canonicalises without drawing, and the inspector still returns a full graph', async () => {
++  const batches = [];
++  const host = ethanolHost();
++  const run = host.subworker.run;
++  host.subworker.run = async (request) => { batches.push(request.input); return run(request); };
++  const worker = lib.createWorker(host);
++  const names = (await worker.invoke({ invocationId: 'cn1', toolId: 'resolve-names', locale: 'en', input: { names: ['ethanol'] } })).artifacts[0].data.results;
++  assert.equal(names[0].smiles, 'CCO');
++  assert.equal(batches.at(-1).canonicalOnly, true, 'the canonicalisation batch asks for the canonical form only');
++  const dossier = (await worker.invoke({ invocationId: 'cn2', toolId: 'inspect', locale: 'en', input: { smiles: ['C[C@H](N)C(=O)O'] } })).artifacts[0];
++  assert.equal(batches.at(-1).canonicalOnly, undefined, 'the inspector asks for the whole graph');
++  assert.ok(dossier.data.atoms.some((atom) => atom.cip === 'S'));
++});
