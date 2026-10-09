@@ -90,6 +90,21 @@ export class DocumentaryStore {
     // convertLegacyVectors() rewrites them.
     const passageColumns = new Set((this.db.prepare('PRAGMA table_info(documentary_passages)').all() as { name: string }[]).map(column => column.name));
     if (!passageColumns.has('vector')) this.db.exec('ALTER TABLE documentary_passages ADD COLUMN vector BLOB');
+    // A write counter per revision, for the retrieval worker's vector cache
+    // (documentaryVectorCache.ts): any insert, update or delete of a revision's passages moves it.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS documentary_vector_generations (index_key TEXT PRIMARY KEY, generation INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS documentary_vector_generation_insert AFTER INSERT ON documentary_passages BEGIN
+        INSERT INTO documentary_vector_generations VALUES (NEW.index_key,1) ON CONFLICT(index_key) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS documentary_vector_generation_update AFTER UPDATE ON documentary_passages BEGIN
+        INSERT INTO documentary_vector_generations VALUES (OLD.index_key,1) ON CONFLICT(index_key) DO UPDATE SET generation=generation+1;
+        INSERT INTO documentary_vector_generations VALUES (NEW.index_key,1) ON CONFLICT(index_key) DO UPDATE SET generation=generation+1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS documentary_vector_generation_delete AFTER DELETE ON documentary_passages BEGIN
+        INSERT INTO documentary_vector_generations VALUES (OLD.index_key,1) ON CONFLICT(index_key) DO UPDATE SET generation=generation+1;
+      END;
+    `);
   }
   /** Rewrite the next `limit` legacy JSON vectors after `afterRowid` as blobs and return
    * the cursor to continue from, or null once none remain. A cursor, not a count: counting
@@ -330,8 +345,27 @@ export class DocumentaryStore {
   }
   semanticSearch(query: number[], indexKeys: string[], limit: number, threshold = -1): ReturnType<DocumentaryStore['lexicalSearch']> {
     if (!indexKeys.length || !query.length || limit <= 0) return [];
+    if (!this.registerSimilarity(query)) return [];
+    // Materialized so the similarity is computed once per passage (a flattened subquery
+    // computed it again for the ORDER BY) and the sort carries ids, not texts and vectors.
+    return this.db.prepare(`WITH scored AS MATERIALIZED (
+      SELECT id,documentary_similarity(vector,vector_json) similarity FROM documentary_passages
+      WHERE (vector IS NOT NULL OR vector_json IS NOT NULL) AND index_key IN (SELECT value FROM json_each(?)))
+      SELECT p.id,p.document_id,p.index_key,p.text,p.locator_json FROM scored JOIN documentary_passages p ON p.id=scored.id
+      WHERE scored.similarity>=? ORDER BY scored.similarity DESC,scored.id LIMIT ?`).all(JSON.stringify(indexKeys), threshold, limit) as ReturnType<DocumentaryStore['lexicalSearch']>;
+  }
+  /** Each scored passage of `indexKeys` at or above `threshold`, unordered: the scores
+   *  `semanticSearch` ranks by, for a caller that ranks them with others. */
+  semanticScores(query: number[], indexKeys: string[], threshold = -1): Array<{ id: string; similarity: number }> {
+    if (!indexKeys.length || !query.length || !this.registerSimilarity(query)) return [];
+    return this.db.prepare(`WITH scored AS MATERIALIZED (
+      SELECT id,documentary_similarity(vector,vector_json) similarity FROM documentary_passages
+      WHERE (vector IS NOT NULL OR vector_json IS NOT NULL) AND index_key IN (SELECT value FROM json_each(?)))
+      SELECT id,similarity FROM scored WHERE similarity>=?`).all(JSON.stringify(indexKeys), threshold) as Array<{ id: string; similarity: number }>;
+  }
+  private registerSimilarity(query: number[]): boolean {
     const norm = Math.sqrt(query.reduce((sum, value) => sum + value * value, 0));
-    if (!norm) return [];
+    if (!norm) return false;
     this.db.function('documentary_similarity', (blob: Uint8Array | null, json: string | null) => {
       const vector: ArrayLike<number> = blob ? decodeDocumentaryVector(blob) : JSON.parse(json!) as number[];
       if (vector.length !== query.length) return -2;
@@ -344,13 +378,7 @@ export class DocumentaryStore {
       if (!Number.isFinite(magnitude)) return -2;
       return magnitude ? dot / (norm * Math.sqrt(magnitude)) : -2;
     });
-    // Materialized so the similarity is computed once per passage (a flattened subquery
-    // computed it again for the ORDER BY) and the sort carries ids, not texts and vectors.
-    return this.db.prepare(`WITH scored AS MATERIALIZED (
-      SELECT id,documentary_similarity(vector,vector_json) similarity FROM documentary_passages
-      WHERE (vector IS NOT NULL OR vector_json IS NOT NULL) AND index_key IN (SELECT value FROM json_each(?)))
-      SELECT p.id,p.document_id,p.index_key,p.text,p.locator_json FROM scored JOIN documentary_passages p ON p.id=scored.id
-      WHERE scored.similarity>=? ORDER BY scored.similarity DESC,scored.id LIMIT ?`).all(JSON.stringify(indexKeys), threshold, limit) as ReturnType<DocumentaryStore['lexicalSearch']>;
+    return true;
   }
   adjacentPassages(id: string, indexKeys: string[], radius = 1): ReturnType<DocumentaryStore['lexicalSearch']> {
     if (!indexKeys.length || radius < 0 || radius > 3) return [];
