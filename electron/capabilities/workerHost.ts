@@ -298,7 +298,10 @@ export class CapabilityWorkerHandle {
           else pending.reject(message.code === 'cancelled' ? new DOMException(message.error, 'AbortError') : new Error(message.error));
           return;
         }
-        if (message.type === 'log') { this.options.onLog?.(this.runtime, message); return; }
+        // Written to the main log when nobody asked for them: no caller ever passed `onLog`, and a
+        // worker has no other way out (its stdio is ignored), so every line a capability logged
+        // about a fallback it took was dropped here.
+        if (message.type === 'log') { (this.options.onLog ?? writeWorkerLog)(this.runtime, message); return; }
         if (message.type === 'host-call') void this.serveHostCall(message.callId, message.channel, message.method, message.payload, message.parentCallId);
       });
       child.once('error', error => { fail(new Error(String(error))); this.teardown(new Error(String(error))); });
@@ -354,6 +357,12 @@ export class CapabilityWorkerHandle {
     this.pending.clear();
     try { child?.kill(); } catch { /* already gone */ }
   }
+}
+
+function writeWorkerLog(runtime: TrustedWorkerRuntime, entry: CapabilityWorkerLog): void {
+  if (entry.level === 'debug') return;
+  const detail = entry.detail && Object.keys(entry.detail).length ? ` ${JSON.stringify(entry.detail)}` : '';
+  console[entry.level](`${new Date().toISOString()} [capability] ${runtime.capabilityId} ${entry.message}${detail}`);
 }
 
 const handles = new Map<string, CapabilityWorkerHandle>();
