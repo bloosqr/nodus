@@ -1,4 +1,4 @@
-# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 03 applied first. Apply from the repository root with: git apply 05-subworker-pool-and-max.patch
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-04 applied first. Apply from the repository root with: git apply 05-subworker-pool-and-max.patch
 diff --git a/electron/capabilities/runner.ts b/electron/capabilities/runner.ts
 index 77427d4e..0d980bab 100644
 --- a/electron/capabilities/runner.ts

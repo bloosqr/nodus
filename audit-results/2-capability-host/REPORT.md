@@ -14,3 +14,5 @@ Added (still partial):
 
 - 04 / 04b: persistent Python interpreters (host + plugin). One answer's Python traffic 19.7 s → 10.0 s (logs/04-bench-python-answer.txt).
 - 05: validator subworker kept between calls, `subworkers.max` enforced. One route-check round's subworker traffic 8.4–9.3 s → 0.72 s warm (logs/05-bench-subworker-round.txt).
+
+Added (still partial): 06 (worker stop predicates never matched), 07 (per-call cancellation), 08/08b (tool concurrency), 09/09b (worker reuse per conversation scope), 10 (process-lived endpoint refusals). Integrated benchmark: logs/integrated-rounds.txt (51.1 s → 24.8 s).

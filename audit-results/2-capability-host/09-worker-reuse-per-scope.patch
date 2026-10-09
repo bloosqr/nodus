@@ -1,0 +1,324 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-08 applied first. Apply from the repository root with: git apply 09-worker-reuse-per-scope.patch
+diff --git a/electron/ai/moleculeInspection.ts b/electron/ai/moleculeInspection.ts
+index 105a1f3c..df2cdc12 100644
+--- a/electron/ai/moleculeInspection.ts
++++ b/electron/ai/moleculeInspection.ts
+@@ -92,6 +92,10 @@ interface InspectOptions {
+   /** A runner shared across the whole post-answer phase, so the capability worker is opened
+    *  once. When absent each phase opens and closes its own. */
+   runner?: Runner;
++  /** The conversation's capability scope: every runner opened with it shares one worker per
++   *  capability, so the evidence gather, the checks and the correction rounds of an answer find
++   *  the worker — and the references it already looked up — still running. */
++  scope?: string;
+   /** Called with the deterministic report and drawings as soon as they exist, before the
+    *  route review lands, so the reply can show them without waiting on the reviewer. */
+   onDeterministic?: (text: string) => void;
+@@ -194,6 +198,7 @@ export function chemistryRunner(options: InspectOptions): { runner: Runner; disp
+     pins: pinCapabilitiesForTurn(),
+     signal: options.signal,
+     ...(options.owner ? { owner: options.owner } : {}),
++    ...(options.scope ? { scope: options.scope } : {}),
+     runCoreStages: async (text) => text,
+   });
+   return { runner, dispose: async () => { await runner.dispose?.(); } };
+diff --git a/electron/ai/researchAssistant.ts b/electron/ai/researchAssistant.ts
+index c60d32bf..f7b25fc3 100644
+--- a/electron/ai/researchAssistant.ts
++++ b/electron/ai/researchAssistant.ts
+@@ -212,6 +212,10 @@ interface PromptBuild {
+ 
+ const CHAT_CITATION_ATTEMPTS = 3;
+ 
++/** The capability scope of a conversation: its answers' chemistry runners share one worker. */
++const capabilityScope = (request: ResearchChatRequest): string | undefined =>
++  request.conversationId ? `research:${getActiveVault().id}:${request.conversationId}` : undefined;
++
+ function skillExecution(request: ResearchChatRequest) {
+   const vaultId = getActiveVault().id;
+   const owner = request.conversationId ? chatAssetOwner('assistant', request.conversationId, vaultId) : undefined;
+@@ -238,7 +242,7 @@ function skillExecution(request: ResearchChatRequest) {
+   const fixSkills = routeTurn ? capabilityChatSkills('nodus:chemistry') : [];
+   const invoked = [...invokedChatSkills(request.skillIds), ...fixSkills]
+     .filter((skill, index, all) => !standing.some(item => item.id === skill.id) && all.findIndex(item => item.id === skill.id) === index);
+-  return { skills: [...standing, ...invoked], evidenceScope: chemistryEvidenceScope(request), question: userMessages.at(-1), request: lastRequest ?? userMessages.at(-1), target: requestedTargetFor(userMessages), model: request.model, owner, routeTurn, version: owner ? chatAssetVersion(owner) : 0,
++  return { skills: [...standing, ...invoked], evidenceScope: chemistryEvidenceScope(request), question: userMessages.at(-1), request: lastRequest ?? userMessages.at(-1), target: requestedTargetFor(userMessages), model: request.model, owner, scope: capabilityScope(request), routeTurn, version: owner ? chatAssetVersion(owner) : 0,
+     isCurrent: () => getActiveVault().id === vaultId && (!request.conversationId || !!getConversation(request.conversationId)) };
+ }
+ 
+@@ -248,7 +252,7 @@ async function withRouteEvidence(answer: string, execution: ReturnType<typeof sk
+   const question = execution.question ?? '';
+   const chemistry = execution.skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry'));
+   if (!routeEvidencePassEnabled() || !chemistry || isRouteFixPrompt(question) || !looksLikeSynthesisRequest(question)) return answer;
+-  return reviseRouteWithEvidence(answer, { model: execution.model, evidenceScope: execution.evidenceScope, target: execution.target, question: execution.request ?? question, signal, locale: getSettings().promptLanguage ?? 'en' },
++  return reviseRouteWithEvidence(answer, { model: execution.model, evidenceScope: execution.evidenceScope, scope: execution.scope, target: execution.target, question: execution.request ?? question, signal, locale: getSettings().promptLanguage ?? 'en' },
+     async brief => finalizeAnswer(await completeTextStream({ ...opts, user: revisionUserMessage(opts.user, answer, brief) }, () => {}, execution.model, signal), local, sourceContext));
+ }
+ 
+@@ -277,7 +281,7 @@ async function auditAnswer(answer: string, execution: ReturnType<typeof skillExe
+   // step drawings) take seconds more and repaint the answer when they finish.
+   if (onDeterministic && skilled !== answer) onDeterministic(skilled);
+   const chemistryEnabled = execution.skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry'));
+-  const base = { model: execution.model, evidenceScope: execution.evidenceScope, locale: getSettings().promptLanguage ?? 'en', enabled: chemistryEnabled, owner: execution.owner, signal, question: execution.request ?? execution.question, ...(onDeterministic ? { onDeterministic } : {}) };
++  const base = { model: execution.model, evidenceScope: execution.evidenceScope, scope: execution.scope, locale: getSettings().promptLanguage ?? 'en', enabled: chemistryEnabled, owner: execution.owner, signal, question: execution.request ?? execution.question, ...(onDeterministic ? { onDeterministic } : {}) };
+   // One capability runner for the whole phase: the resolve pass warms the worker's reference
+   // cache and the route audit reuses it, so a route opens one worker, not three.
+   const session = chemistryEnabled ? chemistryRunner(base) : null;
+@@ -630,7 +634,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
+   // ontology (people, kinship, events, documents, evidence), not the idea graph.
+   const genealogy = getActiveVault().type === 'genealogy';
+   const chemistryEnabled = skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry'));
+-  const moleculeDossiers = genealogy || !chemistryEnabled ? [] : await inspectResearchMolecules(question, { model, locale: promptLanguage, signal });
++  const moleculeDossiers = genealogy || !chemistryEnabled ? [] : await inspectResearchMolecules(question, { model, locale: promptLanguage, signal, scope: capabilityScope(request) });
+   // What this conversation is doing about a route, read from the whole authorized history rather
+   // than from the latest message. A human follow-up ("you can solve this directly") is neither a
+   // fresh request nor one of the application's fix chips, so deciding from the latest message
+@@ -650,7 +654,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
+   // fix chip", which a human follow-up satisfies, so on its own it anchors the evidence to the
+   // follow-up sentence instead of to the target.
+   const routeQuestion = route.request ?? originalRequest ?? question;
+-  const gathered = chemistryRoute && !council?.member ? await gatherSynthesisEvidence(routeQuestion, { model, locale: promptLanguage, signal, evidenceScope: chemistryEvidenceScope(request), vaultId: getActiveVault().id }) : null;
++  const gathered = chemistryRoute && !council?.member ? await gatherSynthesisEvidence(routeQuestion, { model, locale: promptLanguage, signal, evidenceScope: chemistryEvidenceScope(request), vaultId: getActiveVault().id, scope: capabilityScope(request) }) : null;
+   const routeEvidence = synthesisEvidencePayload(gathered);
+   const retrievalQuestion = chemistryRoute ? synthesisRetrievalQuery(routeQuestion, gathered) : question;
+   const assessments = council?.assessments ? conciliumAssessments(council.assessments, window == null ? 12_000 : Math.max(256, Math.floor(window * LOCAL_CHARS_PER_TOKEN * 0.2 / council.assessments.members.length))) : undefined;
+diff --git a/electron/ai/routeEvidencePass.ts b/electron/ai/routeEvidencePass.ts
+index 75afc18e..920b039f 100644
+--- a/electron/ai/routeEvidencePass.ts
++++ b/electron/ai/routeEvidencePass.ts
+@@ -14,6 +14,8 @@ interface RouteEvidenceOptions {
+   signal?: AbortSignal;
+   locale?: string;
+   evidenceScope?: ChemistryEvidenceScope;
++  /** The conversation's capability scope (see moleculeInspection's InspectOptions). */
++  scope?: string;
+ }
+ 
+ /** Per-step evidence pass (route quality, option A): after the first draft of a new route,
+diff --git a/electron/ai/synthesisEvidence.ts b/electron/ai/synthesisEvidence.ts
+index ce9affb8..2e742745 100644
+--- a/electron/ai/synthesisEvidence.ts
++++ b/electron/ai/synthesisEvidence.ts
+@@ -80,6 +80,8 @@ interface EvidenceOptions {
+   locale?: string;
+   signal?: AbortSignal;
+   owner?: string;
++  /** The conversation's capability scope (see moleculeInspection's InspectOptions). */
++  scope?: string;
+ }
+ 
+ function disconnectProvider() {
+diff --git a/electron/capabilities/runner.ts b/electron/capabilities/runner.ts
+index e81b8b2e..c4f55a29 100644
+--- a/electron/capabilities/runner.ts
++++ b/electron/capabilities/runner.ts
+@@ -1,6 +1,5 @@
+ import type { VisionSession } from './vision/service';
+ import path from 'node:path';
+-import { randomUUID } from 'node:crypto';
+ import fs from 'node:fs';
+ import type { ModelRef } from '@shared/types';
+ import { serializeChatVisualPart } from '@shared/chatSkills';
+@@ -11,7 +10,7 @@ import { validateViewDocument, type ViewDocumentV1 } from '../../packages/capabi
+ import type { WorkerArtifactV1 } from '../../packages/capability-api/src/artifacts';
+ import type { ChatAstNode } from '../../packages/capability-api/src/chat';
+ import type { ChatModelBudgetV1 } from '../../packages/capability-api/src/worker';
+-import { acquireCapabilityWorker, stopCapabilityWorkers, type TrustedWorkerRuntime } from './workerHost';
++import { acquireCapabilityWorker, leaseCapabilityScope, type TrustedWorkerRuntime } from './workerHost';
+ import { createCapabilityHostServices, type CapabilityServiceAdapters } from './hostServices';
+ import { resolveTrustedCapability } from './pluginStoreV2';
+ import { serializeArtifactReference, storeCapabilityArtifact } from './artifactStore';
+@@ -49,6 +48,11 @@ export interface TrustedTurnContext {
+   locale: string;
+   model?: ModelRef | null;
+   pins: TurnPins;
++  /** Runners naming the same scope share their capability workers (see `leaseCapabilityScope`):
++   *  one answer's phases, and the correction rounds after it, then reuse one process with its
++   *  module caches instead of starting a cold one per phase. Absent, the runner's workers are
++   *  its own and stop when it is disposed. */
++  scope?: string;
+   signal?: AbortSignal;
+   beforeInvoke?: () => void;
+   beforePaidCall?: () => void;
+@@ -143,7 +147,7 @@ export function createCapabilityAdapters(context: TrustedTurnContext): Capabilit
+ export function createTrustedCapabilityRunner(context: TrustedTurnContext): TrustedCapabilityRunner {
+   // Computed once per turn, not per call: the model does not change inside a turn.
+   const budget = chatModelBudget(context.model);
+-  const scopeKey = randomUUID();
++  const { scopeKey, release } = leaseCapabilityScope(context.scope);
+   const services = createCapabilityHostServices(createCapabilityAdapters(context));
+   const workerFor = (provider: CapabilityProvider) => {
+     const runtime = runtimeFor(provider, context.pins);
+@@ -159,7 +163,7 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
+     });
+ 
+   return {
+-    dispose: () => stopCapabilityWorkers(key => key.endsWith(`#${scopeKey}`)),
++    dispose: release,
+     async invoke({ provider, toolId, input, nodeId }) {
+       const tool = provider.tools.find(candidate => candidate.id === toolId);
+       if (!tool) throw new Error(`${provider.id} has no tool ${toolId}.`);
+diff --git a/electron/capabilities/workerHost.ts b/electron/capabilities/workerHost.ts
+index e7e85d42..5e55fcfd 100644
+--- a/electron/capabilities/workerHost.ts
++++ b/electron/capabilities/workerHost.ts
+@@ -382,6 +382,63 @@ export async function stopPluginWorkers(pluginId: string): Promise<void> {
+   await stopCapabilityWorkers(owned);
+ }
+ 
++/** A scope's workers are shared by every runner that names it — an answer's evidence gather, its
++ *  route checks and its correction rounds — and live while one of them is open, then this long,
++ *  so the next phase finds the process, its module caches and its request pacing still there. */
++const SCOPE_IDLE_MS = 10 * 60_000;
++/** A scope older than this starts afresh at its next lease rather than carrying a worker's
++ *  caches indefinitely. */
++const SCOPE_MAX_AGE_MS = 60 * 60_000;
++/** Idle scopes kept at once; the oldest is stopped first. */
++const SCOPE_IDLE_MAX = 4;
++
++interface ScopeLease { key: string; count: number; created: number; idle?: NodeJS.Timeout; idleSince?: number }
++const scopes = new Map<string, ScopeLease>();
++let scopeGeneration = 0;
++
++const stopScope = (lease: ScopeLease) => {
++  if (lease.idle) clearTimeout(lease.idle);
++  for (const [name, candidate] of scopes) if (candidate === lease) scopes.delete(name);
++  return stopCapabilityWorkers(key => key.endsWith(`#${lease.key}`));
++};
++
++/** Opens a lease on a scope's workers and returns the scope key to acquire them with, and the
++ *  release. Without a scope name the lease is the runner's own and its workers stop on release,
++ *  as every runner's did before scopes existed. */
++export function leaseCapabilityScope(scope?: string, options: { idleMs?: number } = {}): { scopeKey: string; release: () => Promise<void> } {
++  if (!scope) {
++    const lease: ScopeLease = { key: `runner-${++scopeGeneration}-${Date.now().toString(36)}`, count: 1, created: Date.now() };
++    let released = false;
++    return { scopeKey: lease.key, release: async () => { if (released) return; released = true; await stopScope(lease); } };
++  }
++  let lease = scopes.get(scope);
++  if (lease && !lease.count && Date.now() - lease.created > SCOPE_MAX_AGE_MS) { void stopScope(lease); lease = undefined; }
++  if (!lease) {
++    lease = { key: `scope-${++scopeGeneration}`, count: 0, created: Date.now() };
++    scopes.set(scope, lease);
++  }
++  if (lease.idle) { clearTimeout(lease.idle); lease.idle = lease.idleSince = undefined; }
++  lease.count += 1;
++  const held = lease;
++  let released = false;
++  return {
++    scopeKey: held.key,
++    release: async () => {
++      if (released) return;
++      released = true;
++      held.count -= 1;
++      if (held.count > 0) return;
++      const idleMs = options.idleMs ?? SCOPE_IDLE_MS;
++      if (idleMs <= 0) { await stopScope(held); return; }
++      held.idleSince = Date.now();
++      held.idle = setTimeout(() => { void stopScope(held); }, idleMs);
++      held.idle.unref?.();
++      const waiting = [...new Set(scopes.values())].filter(candidate => !candidate.count && candidate.idleSince !== undefined).sort((a, b) => a.idleSince! - b.idleSince!);
++      for (const oldest of waiting.slice(0, Math.max(0, waiting.length - SCOPE_IDLE_MAX))) await stopScope(oldest);
++    },
++  };
++}
++
+ export async function stopCapabilityWorkers(predicate?: (key: string) => boolean): Promise<void> {
+   for (const [key, handle] of [...handles]) {
+     if (predicate && !predicate(key)) continue;
+diff --git a/scripts/test-capability-worker-scope.mjs b/scripts/test-capability-worker-scope.mjs
+new file mode 100644
+index 00000000..47a848d9
+--- /dev/null
++++ b/scripts/test-capability-worker-scope.mjs
+@@ -0,0 +1,90 @@
++// Runners that name the same scope share their capability worker: an answer's evidence gather,
++// its route checks and its correction rounds find the same process — and whatever the capability
++// keeps in it — instead of a cold one per phase. Runs the real runner, workerHost and bootstrap in
++// real child processes; the package store and Electron's utility process are stand-ins.
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++import { createRequire } from 'node:module';
++import { build } from 'esbuild';
++
++const root = path.resolve(import.meta.dirname, '..');
++const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-worker-scope-'));
++process.on('exit', () => fs.rmSync(scratch, { recursive: true, force: true }));
++const preload = path.join(scratch, 'parent-port.cjs');
++fs.writeFileSync(preload, `
++const { EventEmitter } = require('node:events');
++const port = new EventEmitter();
++port.postMessage = message => process.send(message);
++process.on('message', message => port.emit('message', { data: message }));
++process.parentPort = port;
++`);
++await build({ entryPoints: [path.join(root, 'electron/capabilities/workerBootstrap.ts')], outfile: path.join(scratch, 'capabilityWorkerBootstrap.js'), bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' });
++
++const entry = path.join(scratch, 'capability.cjs');
++fs.writeFileSync(entry, `
++let calls = 0;
++module.exports = () => ({
++  health: async () => ({ status: 'ready' }), renderArtifact: async () => ({}), shutdown: async () => {},
++  async invoke() { calls += 1; return { calls, pid: process.pid }; },
++});
++`);
++const runtime = { capabilityId: 'nodus:probe', plugin: { id: 'probe', version: '1.0.0', digest: 'a'.repeat(64) }, manifest: {}, entryPath: entry, permissions: {} };
++globalThis.__probeRuntime = runtime;
++
++const STUBBED = /(^electron$)|(\/ai\/aiClient$)|(\/chatAssets$)|(\/pluginStoreV2$)|(\/artifactStore$)|(\/svgServices$)|(\/secrets\/safeStorageGate$)|(\/maps\/service$)|(\/vision\/service$)|(publicHost$)/;
++const bundle = path.join(scratch, 'runner.cjs');
++await build({
++  stdin: { contents: `export { createTrustedCapabilityRunner } from './electron/capabilities/runner'; export * from './electron/capabilities/workerHost';`, resolveDir: root, loader: 'ts' },
++  outfile: bundle, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent',
++  plugins: [{ name: 'stand-ins', setup(api) {
++    api.onResolve({ filter: /^@shared\// }, ({ path: value }) => ({ path: path.join(root, 'shared', `${value.slice(8)}.ts`) }));
++    api.onResolve({ filter: STUBBED }, args => ({ path: args.path, namespace: 'stub' }));
++    api.onLoad({ filter: /.*/, namespace: 'stub' }, args => ({ loader: 'js', contents:
++      args.path === 'electron' ? `
++        const { fork } = require('node:child_process');
++        exports.app = { getPath: () => ${JSON.stringify(scratch)} };
++        exports.utilityProcess = { fork(file) {
++          const child = fork(file, [], { serialization: 'advanced', execArgv: ['--require', ${JSON.stringify(preload)}], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
++          return { on: (e, l) => child.on(e, l), once: (e, l) => child.once(e, l), postMessage: m => child.send(m), kill: () => child.kill('SIGKILL') };
++        } };`
++      : args.path.endsWith('pluginStoreV2') ? 'exports.resolveTrustedCapability = () => globalThis.__probeRuntime; exports.pluginsRuntimesRoot = () => "/nowhere";'
++      : 'module.exports = new Proxy({}, { get: (_t, name) => name === "__esModule" ? false : () => { throw new Error(`stand-in: ${String(name)}`); } });' }));
++  } }],
++});
++const lib = createRequire(import.meta.url)(bundle);
++const provider = { id: 'nodus:probe', tools: [{ id: 'count', timeoutMs: 10_000, concurrency: 1 }], artifacts: [] };
++const runnerFor = scope => lib.createTrustedCapabilityRunner({ locale: 'en', pins: { revision: 0, pins: new Map() }, runCoreStages: async a => a, ...(scope ? { scope } : {}) });
++const count = runner => runner.invoke({ provider, toolId: 'count', input: {} });
++test.after(() => lib.stopCapabilityWorkers());
++
++test('runners of one scope share one worker, and what it holds, across phases', async () => {
++  // The evidence gather, then the route check of the same answer, each disposing its runner.
++  const evidence = runnerFor('research:vault:conversation-1');
++  const first = await count(evidence);
++  await evidence.dispose();
++  const check = runnerFor('research:vault:conversation-1');
++  const second = await count(check);
++  await check.dispose();
++  assert.equal(second.pid, first.pid, 'the route check started a fresh worker');
++  assert.equal(second.calls, first.calls + 1, 'the worker forgot what the evidence gather left in it');
++
++  // Another conversation gets its own.
++  const other = runnerFor('research:vault:conversation-2');
++  const elsewhere = await count(other);
++  await other.dispose();
++  assert.notEqual(elsewhere.pid, first.pid);
++});
++
++test('a runner without a scope keeps its worker to itself and stops it when disposed', async () => {
++  const a = runnerFor();
++  const first = await count(a);
++  await a.dispose();
++  const b = runnerFor();
++  const second = await count(b);
++  await b.dispose();
++  assert.notEqual(second.pid, first.pid);
++  assert.equal(second.calls, 1);
++});

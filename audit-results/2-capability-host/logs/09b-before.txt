@@ -1,0 +1,51 @@
+TAP version 13
+# Subtest: a name that found nothing is asked again by the next call to the same worker
+not ok 1 - a name that found nothing is asked again by the next call to the same worker
+  ---
+  duration_ms: 1105.678167
+  type: 'test'
+  location: '/home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3160:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3176:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: resolve-names answers a name this worker already resolved without asking the network again
+not ok 2 - resolve-names answers a name this worker already resolved without asking the network again
+  ---
+  duration_ms: 617.34767
+  type: 'test'
+  location: '/home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3179:1'
+  failureType: 'testCodeFailure'
+  error: 'the resolved name was asked again: pubchem/rest/pug/compound/name/3-methylhexan-2-one/cids/JSON?name_type=complete, opsin/opsin/ws/3-methylhexan-2-one.json, pubchem/rest/pug/compound/name/not-a-compound-xyz/cids/JSON?name_type=complete, opsin/opsin/ws/not-a-compound-xyz.json, subworker:validator.js'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3189:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2506.79632

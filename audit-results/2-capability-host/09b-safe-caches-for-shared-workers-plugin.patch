@@ -1,0 +1,189 @@
+# Repository: bloosqr/nodus-research-skill-marketplace — unified diff against branch audit/2026-10-09 with 04b,08b applied first. Apply from the repository root with: git apply 09b-safe-caches-for-shared-workers-plugin.patch
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index a4e5804..48a2b37 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -65,8 +65,10 @@ interface ChatNode { id: string; kind: 'prose' | 'fence'; fence?: string; conten
+ export default function createWorker(capabilityHost: CapabilityHost) {
+   bindHost(capabilityHost);
+   // One cache per worker: the resolve pass populates it and the route audit reuses it, so a
+-  // name is looked up over the network once per turn.
++  // name is looked up over the network once. The host may keep a worker for a whole conversation
++  // (its answers and their correction rounds), so only answers are kept, never a failed lookup.
+   const referenceCache: ReferenceCache = new Map();
++  const resolvedNames: ResolvedNames = new Map();
+ 
+   return {
+     async health() { return { status: 'ready' as const, dataVersion: DATA_VERSION }; },
+@@ -117,7 +119,7 @@ export default function createWorker(capabilityHost: CapabilityHost) {
+       // Sized against what this turn's model can hold; absent on an older host, which falls back
+       // to the floors each cap has always had.
+       const budget = chat?.budget;
+-      if (toolId === 'resolve-names') return resolveNames(input, referenceCache, budget);
++      if (toolId === 'resolve-names') return resolveNames(input, referenceCache, resolvedNames, budget);
+       if (toolId === 'resolve-structure') return nameStructures(input, budget);
+       if (toolId === 'inspect') return inspectMolecule(input);
+       if (toolId === 'verify-route') return verifySynthesisRoute(input, referenceCache, budget);
+@@ -343,9 +345,25 @@ async function inspectMolecule(input: { smiles?: string[] }) {
+ const NAME_CONCURRENCY = 4;
+ 
+ /** Names resolved in this worker, so the route label check reuses the first pass instead of
+- *  paying for a second network round trip. It is scoped to one worker instance — one turn —
+- *  so a later turn can never read a stale reference. */
++ *  paying for a second network round trip. Only structures are kept — a name that resolved to
++ *  nothing may have met a refusal or an outage, and must be asked again next time — and the
++ *  cache is bounded, because a worker can now serve a conversation rather than one turn. */
+ type ReferenceCache = Map<string, string[]>;
++const REFERENCE_CACHE_CAP = 4096;
++
++function rememberReference(cache: ReferenceCache, name: string, smiles: string[]): void {
++  if (!smiles.length) return;
++  cache.delete(name);
++  cache.set(name, smiles);
++  if (cache.size > REFERENCE_CACHE_CAP) cache.delete(cache.keys().next().value!);
++}
++
++/** Names `resolve-names` has resolved in this worker, as it answered them. A correction round
++ *  sends back most of the names of the round before; each costs PubChem round trips at a pace of
++ *  at least 200 ms a request, and longer under throttling. Only resolutions are kept, never an
++ *  "unresolved" (which also covers a network failure); bounded, oldest first out. */
++type ResolvedNames = Map<string, SpeciesNameResolution>;
++const RESOLVED_NAMES_CAP = 4096;
+ 
+ const PUBCHEM_ORIGIN = 'https://pubchem.ncbi.nlm.nih.gov';
+ 
+@@ -524,7 +542,7 @@ async function canonicalizeResolutions(resolutions: SpeciesNameResolution[], cac
+   for (const entry of resolutions) {
+     if (entry.status !== 'resolved' || !entry.smiles) continue;
+     entry.smiles = canonical.get(entry.smiles) ?? entry.smiles;
+-    cache.set(entry.name, [entry.smiles]);
++    rememberReference(cache, entry.name, [entry.smiles]);
+   }
+ }
+ 
+@@ -558,7 +576,7 @@ async function localReferencesFor(input: { pubchemDir?: unknown; opsinDir?: unkn
+   }
+ }
+ 
+-async function resolveNames(input: { names?: string[]; pubchemDir?: string; opsinDir?: string; localOnly?: boolean }, cache: ReferenceCache, budget?: ChemistryCapBudget) {
++async function resolveNames(input: { names?: string[]; pubchemDir?: string; opsinDir?: string; localOnly?: boolean }, cache: ReferenceCache, resolvedNames: ResolvedNames, budget?: ChemistryCapBudget) {
+   const limit = maxNames(budget);
+   const list = Array.isArray(input?.names) ? input.names : [];
+   const cleaned = [...new Set(list
+@@ -569,23 +587,40 @@ async function resolveNames(input: { names?: string[]; pubchemDir?: string; opsi
+     .map((entry) => entry.trim().slice(0, MAX_CHEMICAL_NAME)))].slice(0, limit);
+   if (!cleaned.length) throw new Error(`Provide between one and ${limit} chemical names.`);
+   const base = chemistryDependencies();
+-  const local = await localReferencesFor(input, cleaned, []);
++  const results: Array<SpeciesNameResolution | undefined> = new Array(cleaned.length);
++  const todo: number[] = [];
++  cleaned.forEach((name, index) => {
++    const known = resolvedNames.get(name);
++    if (known) results[index] = { ...known };
++    else todo.push(index);
++  });
++  const local = await localReferencesFor(input, todo.map((index) => cleaned[index]), []);
+   const deps = { ...base, fetch: input?.localOnly === true ? localOnlyFetch : breakerFetch(base.fetch), ...local };
+   const signal = host().signal;
+-  const results: Array<SpeciesNameResolution | undefined> = new Array(cleaned.length);
+   let cursor = 0;
+   const run = async () => {
+     for (;;) {
+-      const index = cursor;
++      const next = cursor;
+       cursor += 1;
+-      if (index >= cleaned.length) return;
++      if (next >= todo.length) return;
+       signal.throwIfAborted();
++      const index = todo[next];
+       results[index] = await resolveSpeciesName(cleaned[index], deps, signal);
+     }
+   };
+-  await Promise.all(Array.from({ length: Math.min(NAME_CONCURRENCY, cleaned.length) }, run));
++  await Promise.all(Array.from({ length: Math.min(NAME_CONCURRENCY, todo.length) }, run));
++  const fresh = todo.map((index) => results[index]).filter((entry): entry is SpeciesNameResolution => entry !== undefined);
++  await canonicalizeResolutions(fresh, cache, signal);
++  for (const entry of fresh) {
++    if (entry.status !== 'resolved') continue;
++    resolvedNames.set(entry.name, { ...entry });
++    if (resolvedNames.size > RESOLVED_NAMES_CAP) resolvedNames.delete(resolvedNames.keys().next().value!);
++  }
++  for (const index of cleaned.keys()) {
++    const entry = results[index];
++    if (entry?.status === 'resolved' && entry.smiles && !todo.includes(index)) rememberReference(cache, entry.name, [entry.smiles]);
++  }
+   const resolved = results.filter((entry): entry is SpeciesNameResolution => entry !== undefined);
+-  await canonicalizeResolutions(resolved, cache, signal);
+   const unresolved = resolved.filter((entry) => entry.status !== 'resolved').length;
+   const summary = unresolved
+     ? `${resolved.length - unresolved} of ${resolved.length} name(s) resolved`
+@@ -689,6 +724,8 @@ async function resolveRouteLabels(
+   if (!Array.isArray(raw)) return out;
+   const deps = chemistryDependencies();
+   let resolved = 0;
++  // Names that found nothing in THIS call: asked once here, and again by the next call.
++  const missed = new Set<string>();
+   for (let index = 0; index < Math.min(stepCount, raw.length); index += 1) {
+     const list = Array.isArray(raw[index]) ? raw[index]! : [];
+     for (const entry of list.slice(0, perStep)) {
+@@ -699,11 +736,12 @@ async function resolveRouteLabels(
+       if (!role || !name || !smiles) continue;
+       // A name the resolve pass already looked up is reused here: the reference is the same
+       // network answer, and the label check only needs to compare canonical graphs.
+-      let nameSmiles = cache.get(name);
++      let nameSmiles = cache.get(name) ?? (missed.has(name) ? [] : undefined);
+       if (nameSmiles === undefined) {
+         nameSmiles = resolved < total ? await resolveNameReferences(name, deps, signal) : [];
+         resolved += 1;
+-        cache.set(name, nameSmiles);
++        if (nameSmiles.length) rememberReference(cache, name, nameSmiles);
++        else missed.add(name);
+       }
+       out[index].push({ role, byproduct: entry.byproduct === true, name, smiles, nameSmiles });
+     }
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index d53aee4..e1df9d6 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3156,3 +3156,41 @@ test('each tool declares at least the concurrency the application runs it at', (
+   assert.ok(declared['check-stock'] >= 2);
+   assert.ok(declared.inspect >= 2);
+ });
++
++test('a name that found nothing is asked again by the next call to the same worker', async () => {
++  // The host may keep one worker for a whole conversation. A lookup that failed — a refusal, an
++  // outage — must not stand as "this name has no structure" for every later round.
++  let online = false;
++  const host = stubHost({ fetch: (endpointId, target) => online && endpointId === 'opsin' && target.includes('/opsin/ws/') ? { status: 'SUCCESS', smiles: 'CCCC(C)C(C)=O' } : undefined });
++  const worker = lib.createWorker(host);
++  const check = id => worker.invoke({ invocationId: id, toolId: 'verify-route', locale: 'en', input: {
++    steps: ['CCCC(C)C(C)=O.[BH4-].[Na+].CO>>CCCC(C)C(C)O.[Na+].[BH3-]OC'],
++    labels: [[{ role: 'reactant', name: '3-methylhexan-2-one', smiles: 'CCCC(C)C(C)=O' }]],
++  } });
++  const offline = (await check('off')).artifacts[0].data;
++  assert.equal(offline.steps[0].reactants[0].nameOk, undefined, 'unchecked while the reference is unreachable');
++  online = true;
++  const before = host.calls.length;
++  const later = (await check('on')).artifacts[0].data;
++  assert.ok(host.calls.length > before, 'the name was looked up again');
++  assert.equal(later.steps[0].reactants[0].nameOk, true);
++});
++
++test('resolve-names answers a name this worker already resolved without asking the network again', async () => {
++  lib.resetPubchemPacing();
++  const host = stubHost({ fetch: (endpointId, target) => endpointId === 'opsin' && target.includes('/opsin/ws/') ? { status: 'SUCCESS', smiles: 'CCCC(C)C(C)=O' } : undefined });
++  const worker = lib.createWorker(host);
++  const first = (await worker.invoke({ invocationId: 'n1', toolId: 'resolve-names', locale: 'en', input: { names: ['3-methylhexan-2-one', 'not-a-compound-xyz'] } })).artifacts[0].data.results;
++  const asked = host.calls.length;
++  assert.ok(asked > 0);
++  const second = (await worker.invoke({ invocationId: 'n2', toolId: 'resolve-names', locale: 'en', input: { names: ['3-methylhexan-2-one', 'not-a-compound-xyz'] } })).artifacts[0].data.results;
++  assert.deepEqual(second[0], first[0], 'the same resolution, source and formula');
++  const again = host.calls.slice(asked);
++  assert.ok(again.every(call => !call.includes('3-methylhexan-2-one')), `the resolved name was asked again: ${again.join(', ')}`);
++  assert.equal(second[1].status, first[1].status, 'an unresolved name is answered as before');
++  // A fresh worker knows nothing.
++  const fresh = lib.createWorker(host);
++  const before = host.calls.length;
++  await fresh.invoke({ invocationId: 'n3', toolId: 'resolve-names', locale: 'en', input: { names: ['3-methylhexan-2-one'] } });
++  assert.ok(host.calls.length > before);
++});

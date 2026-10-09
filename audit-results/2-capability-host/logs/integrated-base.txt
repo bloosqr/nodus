@@ -1,0 +1,8 @@
+base       evidence gather (disconnections: target, then 3 side by side)                          2.03 s
+base       round 1: resolve → name structures → structure check → verify-route (sequential)       9.30 s
+base       round 1: precedent ×2, support, compatibility, stock (side by side)                    3.73 s
+base       round 2: resolve → name structures → structure check → verify-route (sequential)       9.43 s
+base       round 2: precedent ×2, support, compatibility, stock (side by side)                    3.62 s
+base       round 3: resolve → name structures → structure check → verify-route (sequential)       8.96 s
+base       round 3: precedent ×2, support, compatibility, stock (side by side)                    3.68 s
+base       TOTAL                                                                                  40.75 s · 114 network requests (all answered 404 locally)

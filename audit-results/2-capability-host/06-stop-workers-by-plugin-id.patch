@@ -1,0 +1,212 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-05 applied first. Apply from the repository root with: git apply 06-stop-workers-by-plugin-id.patch
+diff --git a/electron/capabilities/updates.ts b/electron/capabilities/updates.ts
+index 5a8f8a69..f615b048 100644
+--- a/electron/capabilities/updates.ts
++++ b/electron/capabilities/updates.ts
+@@ -5,7 +5,7 @@ import { fetchCapabilityCatalog, installCatalogEntry, readCachedCatalog, type Ca
+ import { listInstalledPluginsV2, readPluginStateV2, writePluginAutoUpdate, type InstalledPluginStateV2 } from './pluginStoreV2';
+ import { rebuildCapabilityRegistry } from './registry';
+ import { runPluginDataMigrations } from './migrationRunner';
+-import { stopCapabilityWorkers } from './workerHost';
++import { stopPluginWorkers } from './workerHost';
+ 
+ /** Keeping installed packages current, without ever deciding on the user's behalf.
+  *
+@@ -87,7 +87,7 @@ export async function checkForCapabilityUpdates(options: CapabilityUpdateOptions
+         continue;
+       }
+       // The old process is running the old bytes; it goes before the new version is used.
+-      await stopCapabilityWorkers(key => key.includes(state.id));
++      await stopPluginWorkers(state.id);
+       await runPluginDataMigrations(state.id);
+       materializeTrustedPluginSkills(state.id);
+       results.push({ pluginId: state.id, state: 'updated', from, to: entry.version });
+diff --git a/electron/capabilities/workerHost.ts b/electron/capabilities/workerHost.ts
+index 7b2252e0..1d0543cc 100644
+--- a/electron/capabilities/workerHost.ts
++++ b/electron/capabilities/workerHost.ts
+@@ -4,6 +4,7 @@ import { LIMITS, TRUSTED_PROTOCOL } from '../../packages/capability-api/src/limi
+ import { validateWorkerToHost, type HostChannel, type HostToWorkerMessage, type WorkerMethod } from '../../packages/capability-api/src/protocol';
+ import type { CapabilityManifestV2 } from '../../packages/capability-api/src/manifest';
+ import type { TrustedPermissionSetV2 } from '../../packages/capability-api/src/permissions';
++import { stopCapabilitySubworkers } from './subworkerPool';
+ 
+ /** Runs one trusted capability in its own utility process.
+  *
+@@ -279,9 +280,15 @@ export class CapabilityWorkerHandle {
+ const handles = new Map<string, CapabilityWorkerHandle>();
+ 
+ /** One live worker per capability and digest. A package that updates gets a new key, so
+- *  a turn already running against the old digest keeps the process it started with. */
++ *  a turn already running against the old digest keeps the process it started with.
++ *
++ *  The key starts with the PLUGIN id. It used to start with the capability id
++ *  (`nodus:chemistry@…`), while every caller that retires a package's workers — approve, discard,
++ *  roll back, remove, update — asked for the keys that contain the plugin id (`chemistry-studio`),
++ *  so none of them ever stopped anything: the old version's processes outlived its update and
++ *  its removal. */
+ export function acquireCapabilityWorker(runtime: TrustedWorkerRuntime, options: CapabilityWorkerHandleOptions): CapabilityWorkerHandle {
+-  const key = `${runtime.capabilityId}@${runtime.plugin.version}+${runtime.plugin.digest}${options.scopeKey ? `#${options.scopeKey}` : ''}`;
++  const key = `${runtime.plugin.id}/${runtime.capabilityId}@${runtime.plugin.version}+${runtime.plugin.digest}${options.scopeKey ? `#${options.scopeKey}` : ''}`;
+   const existing = handles.get(key);
+   if (existing) return existing;
+   const handle = new CapabilityWorkerHandle(runtime, options);
+@@ -289,6 +296,13 @@ export function acquireCapabilityWorker(runtime: TrustedWorkerRuntime, options:
+   return handle;
+ }
+ 
++/** Every worker and kept subworker of one plugin, whatever version, digest or turn. */
++export async function stopPluginWorkers(pluginId: string): Promise<void> {
++  const owned = (key: string) => key.startsWith(`${pluginId}/`);
++  stopCapabilitySubworkers(owned);
++  await stopCapabilityWorkers(owned);
++}
++
+ export async function stopCapabilityWorkers(predicate?: (key: string) => boolean): Promise<void> {
+   for (const [key, handle] of [...handles]) {
+     if (predicate && !predicate(key)) continue;
+diff --git a/electron/ipc/capabilities.ts b/electron/ipc/capabilities.ts
+index 7f20ee9d..2d2221e8 100644
+--- a/electron/ipc/capabilities.ts
++++ b/electron/ipc/capabilities.ts
+@@ -5,7 +5,7 @@ import { validateViewDocument } from '../../packages/capability-api/src/views';
+ import { capabilityRegistry, onCapabilityRegistryChanged, rebuildCapabilityRegistry, type CapabilityProvider } from '../capabilities/registry';
+ import { contractFences } from '../../packages/capability-api/src/chat';
+ import { approvePendingPluginV2, discardPendingPluginV2, listInstalledPluginsV2, pendingPluginPermissions, removePluginV2, resolveTrustedCapability, rollbackPluginV2 } from '../capabilities/pluginStoreV2';
+-import { acquireCapabilityWorker, stopCapabilityWorkers } from '../capabilities/workerHost';
++import { acquireCapabilityWorker, stopPluginWorkers } from '../capabilities/workerHost';
+ import { createCapabilityHostServices } from '../capabilities/hostServices';
+ import { writeCapabilitySecret } from '../capabilities/hostServices';
+ import { createCapabilityAdapters } from '../capabilities/runner';
+@@ -239,7 +239,7 @@ export function registerCapabilitiesIpc(context: IpcContext): void {
+ 
+   h('capabilities:approvePlugin', async (_event, pluginId: string) => {
+     const state = approvePendingPluginV2(pluginId);
+-    await stopCapabilityWorkers(key => key.includes(pluginId));
++    await stopPluginWorkers(pluginId);
+     rebuildCapabilityRegistry();
+     await activateAfterMigration(pluginId);
+     return listInstalledPluginsV2().find(candidate => candidate.id === pluginId) ?? state;
+@@ -248,7 +248,7 @@ export function registerCapabilitiesIpc(context: IpcContext): void {
+   /** The other half of asking: a refusal has to be able to undo the staging the question
+    *  needed, or declining would cost the user a package stuck half-installed. */
+   h('capabilities:discardPendingPlugin', async (_event, pluginId: string) => {
+-    await stopCapabilityWorkers(key => key.includes(pluginId));
++    await stopPluginWorkers(pluginId);
+     discardPendingPluginV2(pluginId);
+     rebuildCapabilityRegistry();
+     broadcastMigrationChanged();
+@@ -257,7 +257,7 @@ export function registerCapabilitiesIpc(context: IpcContext): void {
+ 
+   h('capabilities:rollbackPlugin', async (_event, pluginId: string) => {
+     const state = rollbackPluginV2(pluginId);
+-    await stopCapabilityWorkers(key => key.includes(pluginId));
++    await stopPluginWorkers(pluginId);
+     rebuildCapabilityRegistry();
+     materializeTrustedPluginSkills(pluginId);
+     broadcastMigrationChanged();
+@@ -276,7 +276,7 @@ export function registerCapabilitiesIpc(context: IpcContext): void {
+   }
+ 
+   h('capabilities:removePlugin', async (_event, pluginId: string, purgeData = false) => {
+-    await stopCapabilityWorkers(key => key.includes(pluginId));
++    await stopPluginWorkers(pluginId);
+     removePluginV2(pluginId, { purgeData });
+     rebuildCapabilityRegistry();
+     return listInstalledPluginsV2();
+diff --git a/scripts/test-capability-updates.mjs b/scripts/test-capability-updates.mjs
+index 4e30d4ef..4024bcd3 100644
+--- a/scripts/test-capability-updates.mjs
++++ b/scripts/test-capability-updates.mjs
+@@ -53,7 +53,8 @@ await build({
+             // The ladder itself is verified against real Electron elsewhere; here what
+             // matters is that an update runs it before the new version is announced.
+             ? `export const runPluginDataMigrations = async (id) => { globalThis.__migrated.push(id); globalThis.__recordDataVersion(id); };`
+-            : `export const stopCapabilityWorkers = async (match) => { globalThis.__stopped.push(String(match)); };`,
++            : `export const stopCapabilityWorkers = async (match) => { globalThis.__stopped.push(String(match)); };
++               export const stopPluginWorkers = async (pluginId) => { globalThis.__stopped.push(pluginId); };`,
+         loader: 'js',
+       }));
+       api.onResolve({ filter: /trustedKeys\.json$/ }, () => ({ path: 'trusted-keys', namespace: 'keys' }));
+@@ -190,7 +191,8 @@ test('an update is fetched, verified, migrated and announced', async () => {
+   assert.equal(state.active.version, '2.1.0');
+   assert.equal(state.previous.version, '2.0.0', 'the version it came from is kept, so going back is one click');
+   assert.equal(state.rollbackAvailable, true);
+-  assert.ok(globalThis.__stopped.length, 'the process running the old bytes is stopped before the new ones are used');
++  // By plugin id: a predicate over worker keys that never matched satisfied a check for "anything".
++  assert.deepEqual(globalThis.__stopped, ['legalize'], 'the process running the old bytes is stopped before the new ones are used');
+   assert.ok(globalThis.__migrated.includes('legalize'), 'the new version climbs its ladder before it is announced');
+   assert.equal(lib.capabilityIsAvailable('nodus:legal'), true);
+   assert.equal(lib.listChatSkills().find(skill => skill.plugin?.id === 'legalize').version, '2.1.0', 'updating also installs the bundled workflow');
+diff --git a/scripts/test-capability-worker-lifecycle.mjs b/scripts/test-capability-worker-lifecycle.mjs
+new file mode 100644
+index 00000000..f950aed0
+--- /dev/null
++++ b/scripts/test-capability-worker-lifecycle.mjs
+@@ -0,0 +1,66 @@
++// The lifecycle of a capability's worker process: what retires it, what one call's failure may do
++// to the others it is carrying, and which turn's services a call is answered with.
++import assert from 'node:assert/strict';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import test from 'node:test';
++import { fileURLToPath, pathToFileURL } from 'node:url';
++
++const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
++const tmp = await mkdtemp(path.join(os.tmpdir(), 'nodus-worker-lifecycle-'));
++const outfile = path.join(tmp, 'worker.mjs');
++globalThis.__lifecycleChildren = [];
++await build({ entryPoints: [path.join(root, 'electron/capabilities/workerHost.ts')], outfile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent',
++  plugins: [{ name: 'worker-process-fixture', setup(api) {
++    api.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }));
++    api.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: `
++      import { EventEmitter } from 'node:events';
++      export const utilityProcess = { fork() {
++        const child = new EventEmitter(); child.messages = []; child.killed = false;
++        child.postMessage = message => { child.messages.push(message); if (message.type === 'shutdown') queueMicrotask(() => child.emit('exit', 0)); };
++        child.kill = () => { child.killed = true; };
++        globalThis.__lifecycleChildren.push(child); return child;
++      } };
++    ` }));
++  } }],
++});
++const lib = await import(pathToFileURL(outfile));
++const tick = () => new Promise(resolve => setImmediate(resolve));
++const ready = (child, capabilityId) => child.emit('message', { type: 'ready', protocol: 1, capabilityId });
++test.after(() => rm(tmp, { recursive: true, force: true }));
++
++test('removing or updating a plugin stops the workers it started', async () => {
++  // As installed: the plugin id and the id of the capability it provides are different words.
++  const runtime = { capabilityId: 'nodus:chemistry', plugin: { id: 'chemistry-studio', version: '2.5.28', digest: 'a'.repeat(64) }, manifest: {}, entryPath: '/isolated/worker.cjs', permissions: {} };
++  const detached = lib.acquireCapabilityWorker(runtime, { bootstrapPath: '/isolated/bootstrap.cjs', services: async () => null });
++  const scoped = lib.acquireCapabilityWorker(runtime, { bootstrapPath: '/isolated/bootstrap.cjs', services: async () => null, scopeKey: 'turn-1' });
++  for (const handle of [detached, scoped]) {
++    const pending = handle.call('health', {});
++    const child = globalThis.__lifecycleChildren.at(-1);
++    ready(child, 'nodus:chemistry'); await tick();
++    const call = child.messages.find(message => message.type === 'call');
++    child.emit('message', { type: 'result', callId: call.callId, ok: true, value: 'ok' });
++    await pending;
++  }
++  assert.ok(detached.alive && scoped.alive);
++  // Exactly what the remove, rollback, approve and update paths ask for.
++  if (typeof lib.stopPluginWorkers === 'function') await lib.stopPluginWorkers('chemistry-studio');
++  else await lib.stopCapabilityWorkers(key => key.includes('chemistry-studio'));
++  assert.equal(detached.alive, false, 'the settings/health worker of the removed plugin is still running');
++  assert.equal(scoped.alive, false, 'a turn worker of the removed plugin is still running');
++  // Another plugin whose id merely contains this one's is left alone.
++  const other = { ...runtime, capabilityId: 'nodus:legal', plugin: { ...runtime.plugin, id: 'chemistry-studio-extra' } };
++  const survivor = lib.acquireCapabilityWorker(other, { bootstrapPath: '/isolated/bootstrap.cjs', services: async () => null });
++  const pending = survivor.call('health', {});
++  const child = globalThis.__lifecycleChildren.at(-1);
++  ready(child, 'nodus:legal'); await tick();
++  child.emit('message', { type: 'result', callId: child.messages.find(message => message.type === 'call').callId, ok: true, value: 'ok' });
++  await pending;
++  if (typeof lib.stopPluginWorkers === 'function') {
++    await lib.stopPluginWorkers('chemistry-studio');
++    assert.ok(survivor.alive, 'a different plugin was stopped');
++  }
++  await survivor.stop();
++});

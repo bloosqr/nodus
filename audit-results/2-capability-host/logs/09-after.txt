@@ -1,0 +1,27 @@
+TAP version 13
+# 2026-10-09T06:49:19.789Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# 2026-10-09T06:49:19.791Z [capability] nodus:probe count ok in 0.0s of a 10s budget
+# 2026-10-09T06:49:19.843Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# Subtest: runners of one scope share one worker, and what it holds, across phases
+ok 1 - runners of one scope share one worker, and what it holds, across phases
+  ---
+  duration_ms: 114.76229
+  type: 'test'
+  ...
+# 2026-10-09T06:49:19.913Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# 2026-10-09T06:49:19.981Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# Subtest: a runner without a scope keeps its worker to itself and stops it when disposed
+ok 2 - a runner without a scope keeps its worker to itself and stops it when disposed
+  ---
+  duration_ms: 143.764995
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 504.86771

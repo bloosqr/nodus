@@ -1,0 +1,12 @@
+old-host+new-plugin TOTAL                                                                                  51.12 s · 108 reference requests (answered locally from a synthetic table)
+  audit identical to base: true
+new-host+old-plugin TOTAL                                                                                  41.61 s · 108 reference requests (answered locally from a synthetic table)
+  audit identical to base: true
+new-host+plugin-without-09b evidence gather (disconnections: target, then 3 side by side)                          1.67 s
+new-host+plugin-without-09b round 1: resolve → name structures → structure check → verify-route (sequential)       8.52 s
+new-host+plugin-without-09b round 1: precedent ×2, support, compatibility, stock (side by side)                    2.96 s
+new-host+plugin-without-09b round 2: resolve → name structures → structure check → verify-route (sequential)       7.63 s
+new-host+plugin-without-09b round 2: precedent ×2, support, compatibility, stock (side by side)                    2.07 s
+new-host+plugin-without-09b round 3: resolve → name structures → structure check → verify-route (sequential)       7.40 s
+new-host+plugin-without-09b round 3: precedent ×2, support, compatibility, stock (side by side)                    2.33 s
+new-host+plugin-without-09b TOTAL                                                                                  32.58 s · 108 reference requests (answered locally from a synthetic table)

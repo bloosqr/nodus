@@ -1,0 +1,70 @@
+TAP version 13
+# Subtest: an update is fetched, verified, migrated and announced
+ok 1 - an update is fetched, verified, migrated and announced
+  ---
+  duration_ms: 79.50461
+  type: 'test'
+  ...
+# Subtest: a package already at the catalog version is left alone
+ok 2 - a package already at the catalog version is left alone
+  ---
+  duration_ms: 36.161725
+  type: 'test'
+  ...
+# Subtest: automatic updates off means nothing is installed without being asked
+ok 3 - automatic updates off means nothing is installed without being asked
+  ---
+  duration_ms: 30.120924
+  type: 'test'
+  ...
+# Subtest: an update that wants more than was approved waits for a person
+ok 4 - an update that wants more than was approved waits for a person
+  ---
+  duration_ms: 29.386846
+  type: 'test'
+  ...
+# Subtest: a catalog offering an older version cannot walk a package backwards
+ok 5 - a catalog offering an older version cannot walk a package backwards
+  ---
+  duration_ms: 23.816492
+  type: 'test'
+  ...
+# Subtest: a version number republished over different bytes is refused
+ok 6 - a version number republished over different bytes is refused
+  ---
+  duration_ms: 22.033635
+  type: 'test'
+  ...
+# Subtest: an unreachable source is not a failed update
+ok 7 - an unreachable source is not a failed update
+  ---
+  duration_ms: 20.24273
+  type: 'test'
+  ...
+# Subtest: uninstalling keeps the work, removes the credentials, and a reinstall finds its place
+ok 8 - uninstalling keeps the work, removes the credentials, and a reinstall finds its place
+  ---
+  duration_ms: 28.936108
+  type: 'test'
+  ...
+# Subtest: an explicit purge is the only thing that takes the data
+ok 9 - an explicit purge is the only thing that takes the data
+  ---
+  duration_ms: 24.287953
+  type: 'test'
+  ...
+# Subtest: bundled workflows wait for migrations, then survive updates and rollback with local edits
+ok 10 - bundled workflows wait for migrations, then survive updates and rollback with local edits
+  ---
+  duration_ms: 38.155802
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 658.038565

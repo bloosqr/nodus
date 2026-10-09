@@ -1,0 +1,43 @@
+TAP version 13
+# 2026-10-09T06:49:20.468Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# 2026-10-09T06:49:20.528Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# Subtest: runners of one scope share one worker, and what it holds, across phases
+not ok 1 - runners of one scope share one worker, and what it holds, across phases
+  ---
+  duration_ms: 131.319489
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-worker-scope.mjs:63:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the route check started a fresh worker
+    
+    9711 !== 9704
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 9704
+  actual: 9711
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-worker-scope.mjs:71:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# 2026-10-09T06:49:20.595Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# 2026-10-09T06:49:20.654Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# Subtest: a runner without a scope keeps its worker to itself and stops it when disposed
+ok 2 - a runner without a scope keeps its worker to itself and stops it when disposed
+  ---
+  duration_ms: 125.909627
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 468.713742

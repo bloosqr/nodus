@@ -1,0 +1,157 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-07 applied first. Apply from the repository root with: git apply 08-tool-concurrency-admission.patch
+diff --git a/electron/capabilities/runner.ts b/electron/capabilities/runner.ts
+index ccd1a0e3..e81b8b2e 100644
+--- a/electron/capabilities/runner.ts
++++ b/electron/capabilities/runner.ts
+@@ -172,22 +172,33 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
+       // unverified fallback — so the budget is almost never spent on chemistry, and a timeout
+       // without a timing line is undiagnosable. Logged on failure always, and on success only when
+       // the call used more than half its budget, so an ordinary route stays quiet.
+-      const started = performance.now();
+-      const startedWall = Date.now();
++      // Restarted when the call is admitted: time queued behind the same tool is reported beside
++      // the budget, not as part of it.
++      let started = performance.now();
++      let startedWall = Date.now();
++      let queued = '';
+       // Always, so a run's log carries the per-tool cost a later analysis can total. Suppressing
+       // the quick successes left the dominant cost of a turn unmeasurable from its own log.
+       const report = (outcome: string, detail = '') => {
+         const spent = performance.now() - started;
+         const wallSpent = Date.now() - startedWall;
+         const drift = Math.abs(wallSpent - spent) > Math.max(250, spent * 0.1) ? ` · CLOCK STEPPED: wall says ${(wallSpent / 1000).toFixed(1)}s` : '';
+-        console.info(`${new Date().toISOString()} [capability] ${provider.id} ${toolId} ${outcome} in ${(spent / 1000).toFixed(1)}s of a ${(tool.timeoutMs / 1000).toFixed(0)}s budget${detail}${drift}`);
++        console.info(`${new Date().toISOString()} [capability] ${provider.id} ${toolId} ${outcome} in ${(spent / 1000).toFixed(1)}s of a ${(tool.timeoutMs / 1000).toFixed(0)}s budget${queued}${detail}${drift}`);
+       };
+       try {
+         const result = await handle.call<Awaited<ReturnType<TrustedCapabilityRunner['invoke']>>>('invoke', {
+           invocationId: `i${Math.random().toString(36).slice(2, 10)}`,
+           toolId, input, locale: context.locale,
+           chat: { question: context.question, nodeId, ...(budget ? { budget } : {}) },
+-        }, { timeoutMs: tool.timeoutMs, signal: context.signal, services });
++        }, {
++          timeoutMs: tool.timeoutMs, signal: context.signal, services,
++          queue: { key: `invoke:${toolId}`, limit: tool.concurrency },
++          onAdmitted: waited => {
++            started = performance.now();
++            startedWall = Date.now();
++            if (waited >= 50) queued = ` · queued ${(waited / 1000).toFixed(1)}s`;
++          },
++        });
+         report('ok');
+         return result;
+       } catch (error) {
+diff --git a/electron/capabilities/workerHost.ts b/electron/capabilities/workerHost.ts
+index fef007cc..e7e85d42 100644
+--- a/electron/capabilities/workerHost.ts
++++ b/electron/capabilities/workerHost.ts
+@@ -5,6 +5,7 @@ import { validateWorkerToHost, type HostChannel, type HostToWorkerMessage, type
+ import type { CapabilityManifestV2 } from '../../packages/capability-api/src/manifest';
+ import type { TrustedPermissionSetV2 } from '../../packages/capability-api/src/permissions';
+ import { stopCapabilitySubworkers } from './subworkerPool';
++import { Semaphore } from './hostLimits';
+ 
+ /** Runs one trusted capability in its own utility process.
+  *
+@@ -67,6 +68,11 @@ export interface CapabilityCallOptions {
+   signal?: AbortSignal;
+   /** The turn's services for this call's host calls; the handle's own when absent. */
+   services?: CapabilityHostServices;
++  /** Admission: at most `limit` calls with this key run at once in this worker (a tool's
++   *  manifest `concurrency`). The deadline starts when the call is admitted. */
++  queue?: { key: string; limit: number };
++  /** Called once the call is admitted, with how long it waited. */
++  onAdmitted?: (waitedMs: number) => void;
+ }
+ 
+ /** A start that failed before the worker said anything at all.
+@@ -104,6 +110,7 @@ export class CapabilityWorkerHandle {
+   private nextCallId = 0;
+   /** Callers waiting for this worker to finish starting. */
+   private starting = 0;
++  private readonly queues = new Map<string, Semaphore>();
+ 
+   constructor(private readonly runtime: TrustedWorkerRuntime, private readonly options: CapabilityWorkerHandleOptions) {}
+ 
+@@ -121,13 +128,27 @@ export class CapabilityWorkerHandle {
+    *  Exactly one, and only for work that may be repeated: a retry that hides a worker
+    *  which genuinely cannot come up, or that runs a tool twice, is worse than the error. */
+   async call<T>(method: WorkerMethod, payload: unknown, options: CapabilityCallOptions = {}): Promise<T> {
+-    try { return await this.attempt<T>(method, payload, options); }
+-    catch (error) {
+-      const retryable = error instanceof WorkerStartFailure
+-        || (error instanceof WorkerLostCall && REPEATABLE_METHODS.has(method));
+-      if (!retryable) throw error;
+-      return this.attempt<T>(method, payload, options);
+-    }
++    // A tool's declared concurrency is what this worker runs of it at once. It was declared in
++    // every manifest and enforced nowhere. Waiting is abortable and is not charged to the call's
++    // deadline, which `attempt` arms once the call has its slot and the worker is ready.
++    const waited = performance.now();
++    const release = options.queue ? await this.queueFor(options.queue).acquire(options.signal) : undefined;
++    options.onAdmitted?.(performance.now() - waited);
++    try {
++      try { return await this.attempt<T>(method, payload, options); }
++      catch (error) {
++        const retryable = error instanceof WorkerStartFailure
++          || (error instanceof WorkerLostCall && REPEATABLE_METHODS.has(method));
++        if (!retryable) throw error;
++        return await this.attempt<T>(method, payload, options);
++      }
++    } finally { release?.(); }
++  }
++
++  private queueFor(queue: { key: string; limit: number }): Semaphore {
++    let semaphore = this.queues.get(queue.key);
++    if (!semaphore) { semaphore = new Semaphore(queue.limit); this.queues.set(queue.key, semaphore); }
++    return semaphore;
+   }
+ 
+   private async attempt<T>(method: WorkerMethod, payload: unknown, options: CapabilityCallOptions): Promise<T> {
+diff --git a/scripts/test-capability-worker-calls.mjs b/scripts/test-capability-worker-calls.mjs
+index 5e27d98c..f0bf592e 100644
+--- a/scripts/test-capability-worker-calls.mjs
++++ b/scripts/test-capability-worker-calls.mjs
+@@ -50,11 +50,12 @@ module.exports = host => ({
+     // Read once, at the start, the way a capability reads it.
+     const signal = host.signal;
+     if (toolId === 'sleep') {
++      const started = Date.now();
+       await new Promise((resolve, reject) => {
+         const timer = setTimeout(resolve, input.ms);
+         signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+       });
+-      return { slept: input.ms, pid: process.pid };
++      return { slept: input.ms, pid: process.pid, started, ended: Date.now() };
+     }
+     if (toolId === 'ask-host') return { answer: await host.storage.state.get('who') };
+     throw new Error('unknown tool');
+@@ -99,3 +100,28 @@ test('a host call is answered with the services of the call that made it', async
+   assert.equal(second.answer, 'turn two');
+   assert.equal((await invoke(handle, 'ask-host', {})).answer, 'the handle');
+ });
++
++test('a tool runs no more invocations at once than its manifest concurrency, and a queued one keeps its whole budget', async () => {
++  const handle = handleFor();
++  const queue = { key: 'invoke:sleep', limit: 1 };
++  const answers = await Promise.all([
++    invoke(handle, 'sleep', { ms: 700 }, { queue }),
++    invoke(handle, 'sleep', { ms: 700 }, { queue }),
++    // Queued for at least 1.4 s, with a one-second budget for 0.1 s of work.
++    invoke(handle, 'sleep', { ms: 100 }, { queue, timeoutMs: 1_000 }),
++  ]);
++  const sorted = answers.sort((a, b) => a.started - b.started);
++  for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i].started >= sorted[i - 1].ended, 'two invocations of a concurrency-1 tool overlapped');
++  // A caller that gives up while queued never reaches the worker.
++  const controller = new AbortController();
++  const busy = invoke(handle, 'sleep', { ms: 600 }, { queue });
++  const queued = invoke(handle, 'sleep', { ms: 5_000 }, { queue, signal: controller.signal });
++  setTimeout(() => controller.abort(), 100);
++  const cancelledAt = Date.now();
++  await assert.rejects(queued, { name: 'AbortError' });
++  assert.ok(Date.now() - cancelledAt < 400, 'the cancellation waited for the slot');
++  await busy;
++  // Different tools do not wait for each other.
++  const [a, b] = await Promise.all([invoke(handle, 'sleep', { ms: 500 }, { queue }), invoke(handle, 'sleep', { ms: 500 }, { queue: { key: 'invoke:other', limit: 1 } })]);
++  assert.ok(b.started < a.ended && a.started < b.ended, 'calls to different tools were serialized');
++});

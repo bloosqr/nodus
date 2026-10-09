@@ -1,0 +1,17 @@
+base       evidence gather (disconnections: target, then 3 side by side)                          1.97 s
+base       round 1: resolve → name structures → structure check → verify-route (sequential)       12.95 s
+base       round 1: precedent ×2, support, compatibility, stock (side by side)                    3.91 s
+base       round 2: resolve → name structures → structure check → verify-route (sequential)       12.41 s
+base       round 2: precedent ×2, support, compatibility, stock (side by side)                    3.82 s
+base       round 3: resolve → name structures → structure check → verify-route (sequential)       12.44 s
+base       round 3: precedent ×2, support, compatibility, stock (side by side)                    3.58 s
+base       TOTAL                                                                                  51.08 s · 108 reference requests (answered locally from a synthetic table)
+patched    evidence gather (disconnections: target, then 3 side by side)                          1.48 s
+patched    round 1: resolve → name structures → structure check → verify-route (sequential)       8.55 s
+patched    round 1: precedent ×2, support, compatibility, stock (side by side)                    3.25 s
+patched    round 2: resolve → name structures → structure check → verify-route (sequential)       3.45 s
+patched    round 2: precedent ×2, support, compatibility, stock (side by side)                    2.05 s
+patched    round 3: resolve → name structures → structure check → verify-route (sequential)       3.62 s
+patched    round 3: precedent ×2, support, compatibility, stock (side by side)                    2.43 s
+patched    TOTAL                                                                                  24.83 s · 68 reference requests (answered locally from a synthetic table)
+route audits identical: true | steps 6 | continuous false false | nameOk true,,;true,;true,,;true,,;false,,;true, / true,,;true,;true,,;true,,;false,,;true,

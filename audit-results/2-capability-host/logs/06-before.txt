@@ -1,0 +1,32 @@
+TAP version 13
+# Subtest: removing or updating a plugin stops the workers it started
+not ok 1 - removing or updating a plugin stops the workers it started
+  ---
+  duration_ms: 5.611701
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-worker-lifecycle.mjs:34:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the settings/health worker of the removed plugin is still running
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-worker-lifecycle.mjs:51:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 200.638576
