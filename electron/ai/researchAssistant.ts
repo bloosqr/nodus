@@ -616,6 +616,10 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
       : index === latestQuestion ? m : { ...m, content: routeFixPromptForHistory(m.content) }))
     .filter((m) => m.content.trim())
     .slice(-MAX_HISTORY_MESSAGES);
+  // A run of corrections pushes the route's own request out of the window, and with it every
+  // constraint the chips do not repeat (the starting materials, the scale, the stereochemistry).
+  const routeAnchor = skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry')) ? routeConversationState(turns).request : null;
+  if (routeAnchor && !messages.some((m) => m.role === 'user' && m.content === routeAnchor)) messages = [{ role: 'user', content: routeAnchor }, ...messages];
 
   if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
     throw new Error('El chat necesita una pregunta del usuario.');
