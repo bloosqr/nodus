@@ -1,0 +1,38 @@
+TAP version 13
+# Subtest: a cumulated system is refused only when both of its ends could twist — carbodiimides pass
+ok 1 - a cumulated system is refused only when both of its ends could twist — carbodiimides pass
+  ---
+  duration_ms: 842.390265
+  type: 'test'
+  ...
+# Subtest: a reactant nothing accounts for is named, not silently refiled
+not ok 2 - a reactant nothing accounts for is named, not silently refiled
+  ---
+  duration_ms: 107.416993
+  type: 'test'
+  location: '/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:2904:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Make one edit to this step: move "the carbodiimide" to Agents, or name under Products the product it becomes\.$/. Input:
+    
+    '"the carbodiimide" was listed under Reactants, and the step balances only if it takes no part, so the check treated it as a condition. If that is right, list it under Agents. If it is genuinely consumed, then the product it becomes is missing from this step, and naming it is what makes the equation close.'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: '"the carbodiimide" was listed under Reactants, and the step balances only if it takes no part, so the check treated it as a condition. If that is right, list it under Agents. If it is genuinely consumed, then the product it becomes is missing from this step, and naming it is what makes the equation close.'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:2930:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1459.664005

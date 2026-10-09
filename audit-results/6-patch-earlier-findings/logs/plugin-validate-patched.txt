@@ -1,0 +1,18 @@
+
+> nodus-research-skill-marketplace@0.0.0 validate
+> node scripts/catalog.mjs --check && node scripts/validate-templates.mjs && node scripts/validate-workflows.mjs && node scripts/validate-plugins.mjs && npm run typecheck
+
+Validated 16 skill packages and 3 plugins; cataloged 19 skills in 10 categories.
+Validated 2 templates.
+Checked 2 workflow(s): the signing key is reachable from the signing job alone, and that job builds nothing.
+ok  alphagenome 2.0.0
+ok  chemistry-studio 2.5.28
+ok  legalize 2.0.0
+ok  math-studio 1.0.0
+ok  research-visuals 1.1.0
+
+6 capability/capabilities validated.
+
+> nodus-research-skill-marketplace@0.0.0 typecheck
+> tsc --noEmit -p plugins/chemistry-studio/tsconfig.json
+
