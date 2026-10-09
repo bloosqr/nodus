@@ -33,7 +33,14 @@ export class DocumentaryStore {
   readonly db: Database.Database;
   constructor(filename: string, readonly = false) {
     this.db = new Database(filename, { readonly, fileMustExist: readonly });
-    if (readonly) { this.db.pragma('busy_timeout = 5000'); return; }
+    if (readonly) {
+      this.db.pragma('busy_timeout = 5000');
+      // A semantic search reads every vector in scope, about 4 KB each: mapped, the pages are read
+      // in place instead of copied through a 2 MB page cache on every search.
+      this.db.pragma('mmap_size = 1073741824');
+      this.db.pragma('cache_size = -32768');
+      return;
+    }
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('busy_timeout = 5000');
     this.db.pragma('foreign_keys = ON');
@@ -328,9 +335,13 @@ export class DocumentaryStore {
     this.db.function('documentary_similarity', (blob: Uint8Array | null, json: string | null) => {
       const vector: ArrayLike<number> = blob ? decodeDocumentaryVector(blob) : JSON.parse(json!) as number[];
       if (vector.length !== query.length) return -2;
-      for (let index = 0; index < vector.length; index++) if (!Number.isFinite(vector[index])) return -2;
+      // A blob holds float32s, whose squares cannot overflow a double: any NaN or infinity in it
+      // makes the sum of squares non-finite, so one test after the loop rejects exactly the
+      // vectors a separate pass over every element did. Legacy JSON doubles keep that pass.
+      if (!blob) for (let index = 0; index < vector.length; index++) if (!Number.isFinite(vector[index])) return -2;
       let dot = 0, magnitude = 0;
       for (let index = 0; index < vector.length; index++) { dot += vector[index] * query[index]; magnitude += vector[index] ** 2; }
+      if (!Number.isFinite(magnitude)) return -2;
       return magnitude ? dot / (norm * Math.sqrt(magnitude)) : -2;
     });
     // Materialized so the similarity is computed once per passage (a flattened subquery
