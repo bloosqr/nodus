@@ -29,6 +29,7 @@ import {
   formatStructureAudit,
   formatUnresolvedNameClarification,
   implyRacemicTarget,
+  isConditionPhrase,
   normalizeMoleculeDossier,
   normalizeReactionPrecedent,
   normalizeRouteAudit,
@@ -619,7 +620,9 @@ export async function resolveNamedRoute(
       }
       for (const name of missing) if (!resolutions.has(name)) resolutions.set(name, { name, status: 'unresolved', feedback: 'No resolution was returned.' });
     };
-    await resolveAll(speciesByStep.flatMap((step) => step.map((entry) => entry.name)));
+    // A condition under Agents ("110 °C", "reflux") is no substance: it stays unresolved, as it
+    // would after the lookup, without spending a turn of the PubChem pacer on it.
+    await resolveAll(speciesByStep.flatMap((step) => step.filter((entry) => !(entry.role === 'agent' && isConditionPhrase(entry.name))).map((entry) => entry.name)));
 
     for (let attempt = 0; attempt < NAME_FEEDBACK_ATTEMPTS; attempt += 1) {
       const unresolved = unresolvedNames(speciesByStep, resolutions);

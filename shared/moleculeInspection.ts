@@ -1250,6 +1250,19 @@ export function isPlaceholderSpecies(name: string): boolean {
     || /^(?:unchanged|same as|ditto|various|etc\.?|multiple|several)\b/i.test(name.trim());
 }
 
+/** A condition the Agents line names in place of a substance: a temperature, a time, a pressure,
+ *  light or heat ("110 °C", "12 h", "reflux", "hν"). The contract invites them there ("or other
+ *  condition the step does not consume"), and no reference holds one, so looking one up only spends
+ *  a turn of the PubChem pacer (0.2 s, 1 s or 5 s each, one at a time) to learn that. Whole entries
+ *  only: "10% palladium on carbon" or "2 M hydrochloric acid" is a substance and is still resolved. */
+const CONDITION_QUANTITY = /^(?:[-−~≈<>≤≥]?\s*\d[\d.,]*\s*(?:[-–−]\s*\d[\d.,]*\s*)?(?:°\s*[CF]|K|h|hrs?|hours?|min|minutes?|days?|atm|bar|mbar|psi|torr|kPa|MPa|nm)(?![\p{L}\d])[\s,;]*)+$/iu;
+const CONDITION_WORD = /^(?:rt|r\.t\.|room temperature|ambient temperature|reflux(?:ing)?|at reflux|heat(?:ing)?|Δ|hν|h\s*ν|light|uv light|visible light|uv irradiation|irradiation|microwave(?: irradiation| heating)?|overnight|sonication|ultrasound|inert atmosphere)$/i;
+
+export function isConditionPhrase(name: string): boolean {
+  const value = name.trim();
+  return CONDITION_QUANTITY.test(value) || CONDITION_WORD.test(value);
+}
+
 /** A species name as the resolver feedback may return it: a short label with letters, and no
  *  markup or escaped syntax. A reply that smuggled an SVG, a JSON fragment or a newline into a
  *  name is not shown to the user as a "correction". */
