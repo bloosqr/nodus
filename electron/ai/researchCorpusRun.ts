@@ -15,7 +15,7 @@ import { assertResearchDocument, assertResearchDocumentPermission, documentsById
 import { resolveResearchSourceScope, scopedIdeaEvidencePassages } from './researchSourceScope';
 import { getResearchPreparationInventory, retrieveSharedDocumentaryEvidence } from './documentaryPreparation';
 import { retrieveHierarchical, selectPassageEvidence } from './hierarchicalRetrieval';
-import { embed, resolveModelRef, researchModelContextWindow } from './aiClient';
+import { embed, embedMany, resolveModelRef, researchModelContextWindow } from './aiClient';
 import { createResearchSectionCoverage } from './researchSectionCoverage';
 import { withResearchValidationThinking } from './thinkingEffort';
 import { withResearchRequestBudget } from './researchRequestBudget';
@@ -158,8 +158,11 @@ export class ResearchCorpusRun {
     // Each of the chat's opening queries widens the search, the first included; one that fails
     // (a retrieval timeout on a loaded machine) costs its own evidence, not the turn. A run with no
     // agent has only the one query, and its failure is still the run's.
+    // The opening queries are embedded in one request rather than one round trip each. A batch
+    // that fails leaves each search to embed its own query, as before.
+    const vectors = queries.length > 1 && (this.layers.ideas || this.layers.documents) ? await researchActivityStep('scope', 'embed', () => embedMany(queries, this.signal)).catch(() => []) : [];
     for (const [index, each] of queries.entries()) {
-      try { await this.retrieve(each, 1, limit); }
+      try { await this.retrieve(each, 1, limit, vectors[index]); }
       catch (error) {
         this.validate();
         if (/not_authorized|scope_changed/.test(error instanceof Error ? error.message : '') || (index === 0 && !this.agent)) throw error;
@@ -169,7 +172,7 @@ export class ResearchCorpusRun {
     // The supervisor's decisions read documents: nothing to decide with the documents off.
     if (this.layers.documents && !this.agent?.correction) await deepenResearch(this, query, model);
   }
-  async retrieve(query: string, expandRounds = 2, roundLimit?: number): Promise<void> {
+  async retrieve(query: string, expandRounds = 2, roundLimit?: number, embedded?: number[] | null): Promise<void> {
     this.validate();
     if (!this.budget.nextRound()) {
       this.traversal.push({ query, sources: this.scope.documents.map(document => document.id), candidates: 0, partial: true });
@@ -179,7 +182,7 @@ export class ResearchCorpusRun {
     if (!this.scope.documents.length) return;
     const { ideas: readIdeas, documents: readDocuments } = this.layers;
     if (!readIdeas && !readDocuments) { this.traversal.push({ query, sources: [], candidates: 0, partial: false }); return; }
-    const vector = await researchActivityStep('scope', 'embed', () => embed(query, this.signal)).catch(() => {
+    const vector = embedded !== undefined ? embedded : await researchActivityStep('scope', 'embed', () => embed(query, this.signal)).catch(() => {
       this.limitations.add('embedding_provider_unavailable'); return null;
     });
     this.validate();
