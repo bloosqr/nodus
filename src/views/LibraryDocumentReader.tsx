@@ -17,7 +17,7 @@ import type {
 } from '@shared/types';
 import { ASSISTANT_CONTEXTS, type PendingAssistantNavigationTarget } from '../navigation';
 import { FindInPage } from '../components/FindInPage';
-import { Markdown, type MarkdownReaderCitation } from '../components/Markdown';
+import { Markdown, type MarkdownCitation, type MarkdownReaderCitation } from '../components/Markdown';
 import { ModelPicker } from '../components/ModelPicker';
 import { NodiViewContextSource } from '../components/NodiViewContextSource';
 import { SourceCitationModal, type CitationTarget } from '../components/SourceCitationModal';
@@ -625,7 +625,9 @@ export function LibraryDocumentReader({
     const measure = () => {
       frame = 0;
       const max = Math.max(1, scroller.scrollHeight - scroller.clientHeight);
-      setProgress(Math.min(100, Math.max(0, (scroller.scrollTop / max) * 100)));
+      // Whole percent: the bar animates its width and the label shows an integer. An unrounded
+      // value changed on every scroll frame and re-rendered the whole reader at 60 fps.
+      setProgress(Math.round(Math.min(100, Math.max(0, (scroller.scrollTop / max) * 100))));
       localStorage.setItem(readingPositionKey(reader.storageId), String(Math.round(scroller.scrollTop)));
       const top = scroller.getBoundingClientRect().top + 120;
       const headings = Array.from(documentRef.current?.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6') ?? []);
@@ -754,6 +756,13 @@ export function LibraryDocumentReader({
       window.setTimeout(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }), 0);
     }
   };
+
+  // Stable callbacks for the saved chat answers: fresh closures here defeated ChatMarkdown's
+  // memo, so every reader render (each scroll frame, each streamed delta) re-parsed them all.
+  const openReaderCitationRef = useRef(openReaderCitation);
+  openReaderCitationRef.current = openReaderCitation;
+  const chatReaderCitation = useCallback((target: MarkdownReaderCitation) => openReaderCitationRef.current(target), []);
+  const chatCitation = useCallback((next: MarkdownCitation) => setCitation(next), []);
 
   const openDocumentChat = () => {
     if (window.innerWidth < 1024) setOutlineOpen(false);
@@ -1120,7 +1129,7 @@ export function LibraryDocumentReader({
                 <div ref={chatMessagesRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-live="polite">
                   {!chatMessages.length && !chatSending && <div className="rounded-xl border border-dashed border-indigo-500/20 bg-indigo-500/5 px-4 py-6 text-center"><p className="text-xs leading-5 text-neutral-500">{t('Pregunta por la tesis, un concepto o la relación entre tus subrayados.')}</p></div>}
                   {chatMessages.map((message) => <article key={message.id} className={message.role === 'user' ? 'ml-5 rounded-xl bg-indigo-600/20 px-3 py-2.5 text-xs leading-5 text-indigo-100' : `mr-1 rounded-xl border px-3 py-2.5 text-xs leading-5 ${message.error ? 'border-red-500/25 bg-red-500/5 text-red-300' : 'border-neutral-800 bg-neutral-950/45 text-neutral-300'}`}>
-                    {message.role === 'assistant' && !message.error ? <ChatMarkdown content={message.content} onCitation={(next) => setCitation(next)} onReaderCitation={openReaderCitation} className="text-xs leading-5" /> : <p className="whitespace-pre-wrap">{message.content}</p>}
+                    {message.role === 'assistant' && !message.error ? <ChatMarkdown content={message.content} onCitation={chatCitation} onReaderCitation={chatReaderCitation} className="text-xs leading-5" /> : <p className="whitespace-pre-wrap">{message.content}</p>}
                     {message.role === 'assistant' && message.id === chatStoppedId ? <ChatAbortedNotice /> : null}
                   </article>)}
                   {chatSending && <article data-testid="library-reader-chat-stream" className="mr-1 rounded-xl border border-neutral-800 bg-neutral-950/45 px-3 py-2.5 text-xs leading-5 text-neutral-300">{chatStreaming ? <ChatMarkdown streaming content={chatStreaming} verify={false} className="text-xs leading-5" /> : <span className="flex items-center gap-2 text-neutral-500"><Spinner /> {t('Leyendo el documento…')}</span>}</article>}
