@@ -1146,7 +1146,7 @@ test('the report, the drawings and the corrections share one step verdict', () =
 
 test('the shared rules keep a workup as its own step, as the review requires', () => {
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A workup — an acidification, basification or quench .* is always its own step/);
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below and the one target chemistry-plan/);
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below: the application derives/);
   assert.match(ROUTE_CONTINUITY_SYSTEM_RULE, /In a route, do not write a reaction SMILES/, 'single-reaction drawings stay allowed');
 });
 
@@ -1431,7 +1431,7 @@ test('the report, the drawings and the corrections share one step verdict', () =
 
 test('the shared rules keep a workup as its own step, as the review requires', () => {
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A workup — an acidification, basification or quench .* is always its own step/);
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below and the one target chemistry-plan/);
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below: the application derives/);
   assert.match(ROUTE_CONTINUITY_SYSTEM_RULE, /In a route, do not write a reaction SMILES/, 'single-reaction drawings stay allowed');
 });
 
