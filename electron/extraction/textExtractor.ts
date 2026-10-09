@@ -397,7 +397,13 @@ export async function extractPdfStreaming(
           // fraction of `totalPages` made the bar's percentage fall back from 100% to
           // 1/K. The label still ticks page by page.
           opts.onProgress?.({ phase: 'ocr', detail: `OCR p. ${page}/${totalPages}`, pct: null });
-        }
+        },
+        // A page OCR could not read keeps the pass going; the document is still marked
+        // incomplete, so it is not cached and a later scan tries that page again.
+        { onPageError: (page, error) => {
+          ocrFailed = true;
+          console.warn(`[extractPdfStreaming] OCR failed on p. ${page}: ${error instanceof Error ? error.message : String(error)}`);
+        } },
       );
       opts.signal?.throwIfAborted();
       for (const [p, result] of map) {
