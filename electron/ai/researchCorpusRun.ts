@@ -11,7 +11,7 @@ import { getDb } from '../db/database';
 import { getResearchNotebook } from '../db/researchNotebooksRepo';
 import { researchCorpusInventory } from './researchCorpusInventory';
 import { resolveResearchNotebook, resolveAcademicResearchScope } from './researchNotebookService';
-import { assertResearchDocument, assertResearchDocumentPermission, researchFingerprint } from './researchCorpusScope';
+import { assertResearchDocument, assertResearchDocumentPermission, documentsById, researchFingerprint } from './researchCorpusScope';
 import { resolveResearchSourceScope, scopedIdeaEvidencePassages } from './researchSourceScope';
 import { getResearchPreparationInventory, retrieveSharedDocumentaryEvidence } from './documentaryPreparation';
 import { retrieveHierarchical, selectPassageEvidence } from './hierarchicalRetrieval';
@@ -108,9 +108,9 @@ export class ResearchCorpusRun {
     this.signal?.throwIfAborted();
     if (getActiveVault().id !== this.scope.vaultId) throw new Error('research_scope_changed');
     if (this.scope.notebookId && getResearchNotebook(this.scope.notebookId)?.revision !== this.scope.notebookRevision) throw new Error('research_scope_changed');
-    const current = researchCorpusInventory().documents;
-    for (const document of this.scope.documents) (this.pinRevisions ? assertResearchDocumentPermission : assertResearchDocument)(this.scope, document.id, current.find(item => item.id === document.id));
-    if (this.pinRevisions && this.scope.documents.some(document => current.find(item => item.id === document.id)?.revision !== document.revision)) {
+    const current = documentsById(researchCorpusInventory().documents);
+    for (const document of this.scope.documents) (this.pinRevisions ? assertResearchDocumentPermission : assertResearchDocument)(this.scope, document.id, current.get(document.id));
+    if (this.pinRevisions && this.scope.documents.some(document => current.get(document.id)?.revision !== document.revision)) {
       // Shared evidence and scoped legacy receipts are immutable. Graph analyses are not;
       // discard their cached copies instead of reading a silently newer revision.
       this.ideas.clear();

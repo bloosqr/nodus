@@ -15,7 +15,7 @@ import { DocumentaryStore, type DocumentaryChunk } from '../db/documentaryStore'
 import { schemeCleaningFor, type SchemeCleaning } from './schemeCleaning';
 import { documentaryChunks } from './documentaryChunking';
 import { researchCorpusInventory } from './researchCorpusInventory';
-import { assertResearchDocumentPermission, researchFingerprint } from './researchCorpusScope';
+import { assertResearchDocumentPermission, documentsById, researchFingerprint } from './researchCorpusScope';
 import { getLibraryReaderRawContent } from '../libraryReader/libraryReaderStore';
 import { getGlobalLibraryItem } from '../library/libraryService';
 import { currentEmbeddingConfig } from '../db/ideasRepo';
@@ -754,7 +754,10 @@ export function notifyResearchCorpusChanged(): void {
           const policy = repo.policy(vault.id);
           if (!policy.futureAdditions) return;
           const inventory = researchCorpusInventory().documents.filter(document => document.workId && !document.noteId && !document.conversationAttachment);
-          const documents = inventory.filter(document => !policy.known.includes(document.id)
+          // A Set, not `known.includes`: that was one linear scan per library document, on a timer —
+          // 12% of the main thread's busy time in a nine-turn trace (2026-10-09).
+          const known = new Set(policy.known);
+          const documents = inventory.filter(document => !known.has(document.id)
             || (policy.authorized[document.id] !== undefined && policy.authorized[document.id] !== document.revision));
           if (documents.length) await prepareResearchDocuments(documents.map(document => document.id));
           const updated = repo.policy(vault.id);
@@ -817,15 +820,27 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
   const vectorKeys: string[] = [];
   const indexedDocuments = new Set<string>();
   const incompleteAttachments = new Set<string>();
+  // Per document of the scope, this ran a linear find over the inventory and parsed each revision's
+  // identity up to three times, serialising the same embedding parameters once per row: ~11% of the
+  // main thread's busy time in a nine-turn trace (2026-10-09). An index, one parse per row, and one
+  // serialisation of the constant compare exactly the same things.
+  const inventoryById = documentsById(inventory.documents);
+  const parsedIdentities = new Map<object, DocumentaryIndexIdentity>();
+  const identityOf = (row: { identity_json: string }): DocumentaryIndexIdentity => {
+    let identity = parsedIdentities.get(row);
+    if (!identity) { identity = JSON.parse(row.identity_json) as DocumentaryIndexIdentity; parsedIdentities.set(row, identity); }
+    return identity;
+  };
+  const wantedParameters = JSON.stringify(parameters);
   const keys = scope.documents.flatMap(document => {
-    assertResearchDocumentPermission(scope, document.id, inventory.documents.find(item => item.id === document.id));
+    assertResearchDocumentPermission(scope, document.id, inventoryById.get(document.id));
     const groups = attachmentRevisions(document);
-    const identities = groups.flatMap(group => group.filter(row => row.lexical_ready).map(row => JSON.parse(row.identity_json) as DocumentaryIndexIdentity));
+    const identities = groups.flatMap(group => group.filter(row => row.lexical_ready).map(identityOf));
     if (unpreparedResearchAttachmentIds(document, identities).length) incompleteAttachments.add(document.id);
     return groups.flatMap(revisions => {
     const semantic = revisions.find(row => {
-      const identity: DocumentaryIndexIdentity = JSON.parse(row.identity_json);
-      return row.embedding_ready && identity.embedding?.model === config.model && identity.embedding?.provider === config.provider && identity.embedding?.dimensions === vector?.length && JSON.stringify(identity.embedding.parameters) === JSON.stringify(parameters);
+      const identity = identityOf(row);
+      return row.embedding_ready && identity.embedding?.model === config.model && identity.embedding?.provider === config.provider && identity.embedding?.dimensions === vector?.length && JSON.stringify(identity.embedding.parameters) === wantedParameters;
     });
     if (semantic) vectorKeys.push(semantic.index_key);
     const revision = revisions.find(row => row.lexical_ready && !row.embedding_ready) ?? revisions.find(row => row.lexical_ready);
@@ -844,10 +859,13 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
   const result = await new Promise<{ passages: ReturnType<DocumentaryStore['lexicalSearch']>; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }>((resolve, reject) => {
     let settled = false;
     const retrievalStarted = Date.now();
+    // Diagnostic, off unless asked for: the query text itself, so a trace can tell a repeated
+    // question from a rephrased one. It is the user's own words, so it is never logged by default.
+    const traceQuery = process.env.NODUS_TRACE_QUERIES === '1' ? ` · query ${JSON.stringify(query.slice(0, 240))}` : '';
     const finish = (error: Error | null, value?: { passages: ReturnType<DocumentaryStore['lexicalSearch']>; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }) => {
       if (settled) return;
       settled = true;
-      console.info(`${new Date().toISOString()} [documentary] retrieval ${read?.kind ?? 'search'} ${((Date.now() - retrievalStarted) / 1000).toFixed(1)}s · ${keys.length} lexical / ${vectorKeys.length} vector keys · ${value?.passages.length ?? 0} passages${error ? ` · ${error.message}` : ''}`);
+      console.info(`${new Date().toISOString()} [documentary] retrieval ${read?.kind ?? 'search'} ${((Date.now() - retrievalStarted) / 1000).toFixed(1)}s · ${keys.length} lexical / ${vectorKeys.length} vector keys · ${value?.passages.length ?? 0} passages${error ? ` · ${error.message}` : ''}${traceQuery}`);
       clearTimeout(deadline);
       finishSearch(error ? 'failed' : 'completed', value?.passages.length);
       for (const finishActivity of activities.values()) finishActivity(error ? 'failed' : 'completed');
