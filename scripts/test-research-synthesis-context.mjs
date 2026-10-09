@@ -199,6 +199,27 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
     } finally { ai.researchModelContextWindow = researchWindow; }
   });
 
+  test('a route correction searches its request again without planning or supervising the chip', async () => {
+    // The correction's retrieval question is its request's: the target and its reaction classes.
+    // Planning the chip's text and running the supervisor again bought the same evidence for a
+    // model call per decision, on every correction round.
+    const service = load('electron/ai/researchNotebookService.ts');
+    const researchWindow = ai.researchModelContextWindow;
+    const json = ai.completeJson;
+    let calls = 0;
+    ai.researchModelContextWindow = async () => ({ tokens: 400_000, known: true });
+    ai.completeJson = async () => { calls++; throw Error('no model in this test'); };
+    const warn = console.warn; console.warn = () => {};
+    try {
+      const fix = { role: 'user', content: 'Correction needed for the synthesis route above. Fix the rejected step.' };
+      const messages = [request.messages[0], { role: 'assistant', content: 'Step 1 draft' }, fix];
+      // The history an earlier answer's provenance would have authorized.
+      const payload = await build({ ...service.authorizeNotebookRequest({ ...request, selection: { ...selection, sourceFilter: { enabled: false } } }), messages });
+      assert.ok(payload.evidencia_para_la_ruta, 'the route evidence is still there');
+      assert.equal(calls, 0, `${calls} planning or supervisor call(s) on a correction`);
+    } finally { ai.researchModelContextWindow = researchWindow; ai.completeJson = json; console.warn = warn; }
+  });
+
   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
     const controller = new AbortController();
     let started;

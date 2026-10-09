@@ -46,6 +46,8 @@ export interface ResearchChatAgent {
   minSources: number;
   /** A small local window: shorter menus in every decision. */
   compact: boolean;
+  /** A route correction: the opening searches only, no supervisor. */
+  correction?: boolean;
 }
 
 /** Compatibility requests are explicit snapshots of the active vault. A notebook
@@ -165,7 +167,7 @@ export class ResearchCorpusRun {
       }
     }
     // The supervisor's decisions read documents: nothing to decide with the documents off.
-    if (this.layers.documents) await deepenResearch(this, query, model);
+    if (this.layers.documents && !this.agent?.correction) await deepenResearch(this, query, model);
   }
   async retrieve(query: string, expandRounds = 2, roundLimit?: number): Promise<void> {
     this.validate();

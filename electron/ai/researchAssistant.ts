@@ -673,7 +673,8 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   // A failed gather still surfaces where it is awaited below; here it only releases the wait.
   gathering.then(evidenceSoFar, () => evidenceSoFar(null));
   // The turn plan reads the conversation and nothing else, so its model call runs beside the gather.
-  const planned = !genealogy && requestNotebookScope(request) && !council?.corpus && (() => { const layers = researchContextLayers(request.selection, true); return layers.ideas || layers.documents; })()
+  // A route correction plans nothing (see `correction` below), so it starts no plan call early either.
+  const planned = !genealogy && !(chemistryRoute && isRouteFixPrompt(question)) && requestNotebookScope(request) && !council?.corpus && (() => { const layers = researchContextLayers(request.selection, true); return layers.ideas || layers.documents; })()
     ? planResearchTurn(messages, request.model, signal) : null;
   planned?.catch(() => undefined);
   const moleculeDossiers = await inspecting;
@@ -766,8 +767,14 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     // The chat is an agent: it plans the turn from the conversation, keeps what earlier
     // answers cited and looks in the catalogue before it lets the answer be written.
     const consulted = run.layers.ideas || run.layers.documents;
-    const plan = consulted ? await (planned ?? planResearchTurn(messages, request.model, signal)) : literalResearchTurnPlan(question);
-    run.agent = { plan, question, compact, minSources: ['definition', 'comparison', 'survey'].includes(plan.kind) ? 3 : 2 };
+    // A route correction searches what its request searched: the target and its reaction classes.
+    // Planning the chip's text only added searches for its rules, and the supervisor's reads are
+    // the request's own again; the passages earlier answers cited are carried below.
+    const correction = chemistryRoute && isRouteFixPrompt(question);
+    const plan = !consulted ? literalResearchTurnPlan(question)
+      : correction ? { ...literalResearchTurnPlan(retrievalQuestion), queries: retrievalQuestion.split('; ').slice(0, 4) }
+        : await (planned ?? planResearchTurn(messages, request.model, signal));
+    run.agent = { plan, question, compact, correction, minSources: ['definition', 'comparison', 'survey'].includes(plan.kind) ? 3 : 2 };
     if (run.layers.documents) run.seedPriorEvidence(messages.slice(0, -1));
     // A synthesis-route turn searches for the target and its reaction classes: the request
     // itself is mostly output rules, and a planned goal drawn from it retrieved passages on
