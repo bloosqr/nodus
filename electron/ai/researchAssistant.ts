@@ -762,7 +762,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     }
     const depth = webDepth(retrieval);
     run.web = new ResearchWebGrant(request.webSearch ?? getSettings().researchWebSearch ?? 'auto', depth, retrievalQuestion, signal, request.model,
-      Math.min(WEB_RESEARCH_LIMITS[depth].evidenceBytes, Math.max(0, Math.floor(contextBudget / 3))));
+      Math.min(WEB_RESEARCH_LIMITS[depth].evidenceBytes, Math.max(0, Math.floor(contextBudget / 3))), {}, question);
     // The chat is an agent: it plans the turn from the conversation, keeps what earlier
     // answers cited and looks in the catalogue before it lets the answer be written.
     const consulted = run.layers.ideas || run.layers.documents;
