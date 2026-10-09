@@ -105,3 +105,23 @@ test('an interpreter that exits without reading its input is reported by its exi
     assert.deepEqual(faults.map(error => error.code ?? error.message), []);
   } finally { process.off('uncaughtException', onFault); }
 });
+
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const waitFor = async (check, ms = 5_000) => { const end = Date.now() + ms; while (!check() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 25)); return check(); };
+
+test('cancelling a call also stops what the interpreter started', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  if (process.platform === 'win32') { t.skip('process groups are POSIX'); return; }
+  installRuntime();
+  const pidFile = path.join(scratch, 'helper.pid');
+  const controller = new AbortController();
+  const pending = run(`import subprocess, time\nhelper = subprocess.Popen(["sleep", "60"])\nopen(${JSON.stringify(pidFile)}, "w").write(str(helper.pid))\ntime.sleep(60)\n`, {}, controller.signal);
+  pending.catch(() => {});
+  assert.ok(await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').length > 0), 'the helper started');
+  const helper = Number(fs.readFileSync(pidFile, 'utf8'));
+  try {
+    controller.abort();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.ok(await waitFor(() => !alive(helper)), `the helper ${helper} outlived the cancelled call`);
+  } finally { try { process.kill(helper, 'SIGKILL'); } catch { /* gone */ } }
+});
