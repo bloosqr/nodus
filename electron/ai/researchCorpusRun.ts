@@ -141,14 +141,14 @@ export class ResearchCorpusRun {
     const queries = this.agent ? [...new Set([query, ...this.agent.plan.queries])].slice(0, 3) : [query];
     const opening = Math.floor((this.budget.evidenceTokenLimit - this.budget.usedEvidenceTokens) / 3 / queries.length);
     const limit = this.budget.settings.autoExpand && this.budget.settings.rounds > 1 ? Math.max(256, opening) : undefined;
-    await this.retrieve(queries[0], 1, limit);
-    // The plan's further queries widen the search; one that fails (a retrieval timeout on a
-    // loaded machine) costs its own evidence, not the turn.
-    for (const each of queries.slice(1)) {
+    // Each of the chat's opening queries widens the search, the first included; one that fails
+    // (a retrieval timeout on a loaded machine) costs its own evidence, not the turn. A run with no
+    // agent has only the one query, and its failure is still the run's.
+    for (const [index, each] of queries.entries()) {
       try { await this.retrieve(each, 1, limit); }
       catch (error) {
         this.validate();
-        if (/not_authorized|scope_changed/.test(error instanceof Error ? error.message : '')) throw error;
+        if (/not_authorized|scope_changed/.test(error instanceof Error ? error.message : '') || (index === 0 && !this.agent)) throw error;
         this.budget.partial = true; this.limitations.add('research_read_unavailable');
       }
     }
