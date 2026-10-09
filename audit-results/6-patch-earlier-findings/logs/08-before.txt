@@ -1,0 +1,61 @@
+TAP version 13
+# Subtest: a step that balanced only by refiling a declared reactant is a failing step
+not ok 1 - a step that balanced only by refiling a declared reactant is a failing step
+  ---
+  duration_ms: 5.354129
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-molecule-inspection.mjs:2254:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '"trifluoroacetic acid" was listed under Reactants, and the step balances only if it takes no part, so the check treated it as a condition. If that is right, list it under Agents. If it is genuinely consumed, then the product it becomes is missing from this step, and naming it is what makes the equation close.'
+    - 'balanced only after the checker refiled a declared reactant: "trifluoroacetic acid" was listed under Reactants, and the step balances only if it takes no part, so the check treated it as a condition. If that is right, list it under Agents. If it is genuinely consumed, then the product it becomes is missing from this step, and naming it is what makes the equation close.'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'balanced only after the checker refiled a declared reactant: "trifluoroacetic acid" was listed under Reactants, and the step balances only if it takes no part, so the check treated it as a condition. If that is right, list it under Agents. If it is genuinely consumed, then the product it becomes is missing from this step, and naming it is what makes the equation close.'
+  actual: '"trifluoroacetic acid" was listed under Reactants, and the step balances only if it takes no part, so the check treated it as a condition. If that is right, list it under Agents. If it is genuinely consumed, then the product it becomes is missing from this step, and naming it is what makes the equation close.'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-molecule-inspection.mjs:2269:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  ...
+# Subtest: the step line and the route verdict cannot disagree about which step failed
+not ok 2 - the step line and the route verdict cannot disagree about which step failed
+  ---
+  duration_ms: 3.433788
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-molecule-inspection.mjs:2316:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^- Step 1 FAIL — balanced only after the checker refiled a declared reactant\./. Input:
+    
+    '- Step 1 FAIL — balanced. water was listed under Reactants.  → '
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: '- Step 1 FAIL — balanced. water was listed under Reactants.  → '
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-molecule-inspection.mjs:2344:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 269.605469

@@ -1,0 +1,6 @@
+
+> nodus@5.8.0 typecheck
+> tsc --noEmit -p tsconfig.json && tsc --noEmit -p electron/tsconfig.json
+
+electron/researchAttachments.ts(8,23): error TS2307: Cannot find module 'xlsx' or its corresponding type declarations.
+electron/researchAttachments.ts(140,41): error TS7006: Parameter 'name' implicitly has an 'any' type.

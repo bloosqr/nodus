@@ -1,0 +1,796 @@
+TAP version 13
+# Subtest: no node:test suite re-runs itself under Electron with the runner context
+ok 1 - no node:test suite re-runs itself under Electron with the runner context
+  ---
+  duration_ms: 47.054501
+  type: 'test'
+  ...
+# Subtest: detects a line-wrapped SMILES and reassembles it
+ok 2 - detects a line-wrapped SMILES and reassembles it
+  ---
+  duration_ms: 3.180557
+  type: 'test'
+  ...
+# Subtest: ignores ordinary prose
+ok 3 - ignores ordinary prose
+  ---
+  duration_ms: 2.266739
+  type: 'test'
+  ...
+# Subtest: sentence punctuation glued to a SMILES is peeled off, not parsed as part of it
+ok 4 - sentence punctuation glued to a SMILES is peeled off, not parsed as part of it
+  ---
+  duration_ms: 0.53214
+  type: 'test'
+  ...
+# Subtest: a verified dossier survives normalization and formats its stereo
+ok 5 - a verified dossier survives normalization and formats its stereo
+  ---
+  duration_ms: 0.989029
+  type: 'test'
+  ...
+# Subtest: malformed artifact data is rejected rather than injected
+ok 6 - malformed artifact data is rejected rather than injected
+  ---
+  duration_ms: 0.279579
+  type: 'test'
+  ...
+# Subtest: the system rule names the authoritative field
+ok 7 - the system rule names the authoritative field
+  ---
+  duration_ms: 0.201128
+  type: 'test'
+  ...
+# Subtest: answer audit extracts every species from backticked reactions and quoted species
+ok 8 - answer audit extracts every species from backticked reactions and quoted species
+  ---
+  duration_ms: 0.890363
+  type: 'test'
+  ...
+# Subtest: answer audit reads only code spans, never free prose
+ok 9 - answer audit reads only code spans, never free prose
+  ---
+  duration_ms: 0.436902
+  type: 'test'
+  ...
+# Subtest: a bare bond or stereo fragment is not treated as a species
+ok 10 - a bare bond or stereo fragment is not treated as a species
+  ---
+  duration_ms: 0.382533
+  type: 'test'
+  ...
+# Subtest: a names-first step backticking its role labels does not report the labels as molecules
+ok 11 - a names-first step backticking its role labels does not report the labels as molecules
+  ---
+  duration_ms: 0.702566
+  type: 'test'
+  ...
+# Subtest: answer audit marks verified and unparseable species deterministically
+ok 12 - answer audit marks verified and unparseable species deterministically
+  ---
+  duration_ms: 0.412637
+  type: 'test'
+  ...
+# Subtest: step conditions are read from the prose and aligned with the reaction lines
+ok 13 - step conditions are read from the prose and aligned with the reaction lines
+  ---
+  duration_ms: 1.348731
+  type: 'test'
+  ...
+# Subtest: a malformed route audit degrades to no audit instead of junk
+ok 14 - a malformed route audit degrades to no audit instead of junk
+  ---
+  duration_ms: 0.361237
+  type: 'test'
+  ...
+# Subtest: a long route audit keeps every step (a route of dozens of steps runs past 16)
+ok 15 - a long route audit keeps every step (a route of dozens of steps runs past 16)
+  ---
+  duration_ms: 1.435389
+  type: 'test'
+  ...
+# Subtest: a route audit is normalized defensively and formatted deterministically
+ok 16 - a route audit is normalized defensively and formatted deterministically
+  ---
+  duration_ms: 2.080049
+  type: 'test'
+  ...
+# Subtest: a route review blocks the verdict and is shown as a model finding
+ok 17 - a route review blocks the verdict and is shown as a model finding
+  ---
+  duration_ms: 1.039735
+  type: 'test'
+  ...
+# Subtest: an advisory review finding is shown but never blocks the route
+ok 18 - an advisory review finding is shown but never blocks the route
+  ---
+  duration_ms: 0.898898
+  type: 'test'
+  ...
+# Subtest: an unreadable review is not a problem and never blocks
+ok 19 - an unreadable review is not a problem and never blocks
+  ---
+  duration_ms: 0.450335
+  type: 'test'
+  ...
+# Subtest: a review finding is kept whole or cut on a word boundary, never mid-word
+ok 20 - a review finding is kept whole or cut on a word boundary, never mid-word
+  ---
+  duration_ms: 0.337649
+  type: 'test'
+  ...
+# Subtest: the route review is told not to re-check balance and to allow one-pot cascades
+ok 21 - the route review is told not to re-check balance and to allow one-pot cascades
+  ---
+  duration_ms: 0.229429
+  type: 'test'
+  ...
+# Subtest: the continuity rule is names-first, never a reaction SMILES line
+ok 22 - the continuity rule is names-first, never a reaction SMILES line
+  ---
+  duration_ms: 0.236913
+  type: 'test'
+  ...
+# Subtest: the synthesis template is applied only to chemistry synthesis requests
+ok 23 - the synthesis template is applied only to chemistry synthesis requests
+  ---
+  duration_ms: 1.981735
+  type: 'test'
+  ...
+# Subtest: the template asks for names and roles only, and forbids the model from writing SMILES
+ok 24 - the template asks for names and roles only, and forbids the model from writing SMILES
+  ---
+  duration_ms: 0.337965
+  type: 'test'
+  ...
+# Subtest: a declared racemate is formatted as a caveat, not a refusal
+ok 25 - a declared racemate is formatted as a caveat, not a refusal
+  ---
+  duration_ms: 1.345308
+  type: 'test'
+  ...
+# Subtest: a step orphaned by a duplicate names the pair, not just the orphan
+ok 26 - a step orphaned by a duplicate names the pair, not just the orphan
+  ---
+  duration_ms: 2.14449
+  type: 'test'
+  ...
+# Subtest: a genuinely missing step still gets the original advice
+ok 27 - a genuinely missing step still gets the original advice
+  ---
+  duration_ms: 0.538138
+  type: 'test'
+  ...
+# Subtest: the requested target is read from the synthesis request
+ok 28 - the requested target is read from the synthesis request
+  ---
+  duration_ms: 1.783975
+  type: 'test'
+  ...
+# Subtest: a target written bare, the way a person types it, is found
+ok 29 - a target written bare, the way a person types it, is found
+  ---
+  duration_ms: 1.422029
+  type: 'test'
+  ...
+# Subtest: every generated correction prompt is recognised, a request is not
+ok 30 - every generated correction prompt is recognised, a request is not
+  ---
+  duration_ms: 0.885753
+  type: 'test'
+  ...
+# Subtest: the verified verdict only claims a formed target when one was checked
+ok 31 - the verified verdict only claims a formed target when one was checked
+  ---
+  duration_ms: 0.353175
+  type: 'test'
+  ...
+# Subtest: the route report shows the solved coefficients and flags a large balance
+ok 32 - the route report shows the solved coefficients and flags a large balance
+  ---
+  duration_ms: 0.498821
+  type: 'test'
+  ...
+# Subtest: the route review is given each species structure, not just its name
+ok 33 - the route review is given each species structure, not just its name
+  ---
+  duration_ms: 0.398713
+  type: 'test'
+  ...
+# Subtest: the route review is shown canonical SMILES, so an identical compound reads identically
+ok 34 - the route review is shown canonical SMILES, so an identical compound reads identically
+  ---
+  duration_ms: 0.260884
+  type: 'test'
+  ...
+# Subtest: the route review is told SMILES identity is canonical and the target check is deterministic
+ok 35 - the route review is told SMILES identity is canonical and the target check is deterministic
+  ---
+  duration_ms: 0.12016
+  type: 'test'
+  ...
+# Subtest: each step heading and its prose are read for the review, not just the species
+ok 36 - each step heading and its prose are read for the review, not just the species
+  ---
+  duration_ms: 1.511937
+  type: 'test'
+  ...
+# Subtest: the route review request carries each step description and says a named reaction is possible
+ok 37 - the route review request carries each step description and says a named reaction is possible
+  ---
+  duration_ms: 0.230291
+  type: 'test'
+  ...
+# Subtest: a step that cannot be assembled is FAIL and named in the verdict
+ok 38 - a step that cannot be assembled is FAIL and named in the verdict
+  ---
+  duration_ms: 1.292095
+  type: 'test'
+  ...
+# Subtest: the rules say a consumed species is a Reactant, never an Agent
+ok 39 - the rules say a consumed species is a Reactant, never an Agent
+  ---
+  duration_ms: 2.202859
+  type: 'test'
+  ...
+# Subtest: the route report shows the IUPAC names the answer gave
+ok 40 - the route report shows the IUPAC names the answer gave
+  ---
+  duration_ms: 0.443437
+  type: 'test'
+  ...
+# Subtest: a name that denotes another structure is reported, not silently accepted
+ok 41 - a name that denotes another structure is reported, not silently accepted
+  ---
+  duration_ms: 0.333407
+  type: 'test'
+  ...
+# Subtest: a step whose supplied name denotes another structure fails the check and is not drawn
+ok 42 - a step whose supplied name denotes another structure fails the check and is not drawn
+  ---
+  duration_ms: 0.374099
+  type: 'test'
+  ...
+# Subtest: the template asks for a systematic IUPAC name for every species and all four roles
+ok 43 - the template asks for a systematic IUPAC name for every species and all four roles
+  ---
+  duration_ms: 0.247514
+  type: 'test'
+  ...
+# Subtest: the step count comes from the headings or the role cycle
+ok 44 - the step count comes from the headings or the role cycle
+  ---
+  duration_ms: 1.182318
+  type: 'test'
+  ...
+# Subtest: a non-step section such as an alternative is neither counted nor grouped as a step
+ok 45 - a non-step section such as an alternative is neither counted nor grouped as a step
+  ---
+  duration_ms: 2.211537
+  type: 'test'
+  ...
+# Subtest: a prose summary heading and a species-list heading for the same step are one step
+ok 46 - a prose summary heading and a species-list heading for the same step are one step
+  ---
+  duration_ms: 0.575662
+  type: 'test'
+  ...
+# Subtest: named species are read per step, per role, without any SMILES
+ok 47 - named species are read per step, per role, without any SMILES
+  ---
+  duration_ms: 0.536055
+  type: 'test'
+  ...
+# Subtest: in-place annotation does not split a longer name or touch headings and prose
+ok 48 - in-place annotation does not split a longer name or touch headings and prose
+  ---
+  duration_ms: 0.390692
+  type: 'test'
+  ...
+# Subtest: a species written as a bare SMILES is recognised, but a systematic name is never mistaken for one
+ok 49 - a species written as a bare SMILES is recognised, but a systematic name is never mistaken for one
+  ---
+  duration_ms: 0.172842
+  type: 'test'
+  ...
+# Subtest: reaction lines are derived from resolved species, never the model
+ok 50 - reaction lines are derived from resolved species, never the model
+  ---
+  duration_ms: 0.297471
+  type: 'test'
+  ...
+# Subtest: precedent queries leave byproducts out, as the Open Reaction Database records the main product
+ok 51 - precedent queries leave byproducts out, as the Open Reaction Database records the main product
+  ---
+  duration_ms: 0.447553
+  type: 'test'
+  ...
+# Subtest: two salts sharing an ion each keep their own stoichiometry
+ok 52 - two salts sharing an ion each keep their own stoichiometry
+  ---
+  duration_ms: 0.254889
+  type: 'test'
+  ...
+# Subtest: the resolved SMILES is attached to the name in place, replacing any declared one
+ok 53 - the resolved SMILES is attached to the name in place, replacing any declared one
+  ---
+  duration_ms: 0.316624
+  type: 'test'
+  ...
+# Subtest: corrections are summarized for the user, and the feedback prompt parses
+ok 54 - corrections are summarized for the user, and the feedback prompt parses
+  ---
+  duration_ms: 0.945045
+  type: 'test'
+  ...
+# Subtest: an author-supplied structure is disclosed, and the feedback prompt offers the fallback
+ok 55 - an author-supplied structure is disclosed, and the feedback prompt offers the fallback
+  ---
+  duration_ms: 0.240164
+  type: 'test'
+  ...
+# Subtest: a route derived from names is corrected with a names-only chip set, never a SMILES
+ok 56 - a route derived from names is corrected with a names-only chip set, never a SMILES
+  ---
+  duration_ms: 0.777765
+  type: 'test'
+  ...
+# Subtest: every flagged step gets a chip, emitted last-first, and passing steps get none
+ok 57 - every flagged step gets a chip, emitted last-first, and passing steps get none
+  ---
+  duration_ms: 0.956949
+  type: 'test'
+  ...
+# Subtest: a review-only block still offers chips, with the review findings folded in
+ok 58 - a review-only block still offers chips, with the review findings folded in
+  ---
+  duration_ms: 1.647719
+  type: 'test'
+  ...
+# Subtest: the backwards correction names the requested target with its structure
+ok 59 - the backwards correction names the requested target with its structure
+  ---
+  duration_ms: 0.894365
+  type: 'test'
+  ...
+# Subtest: the first request and every correction carry the same species rules, once
+ok 60 - the first request and every correction carry the same species rules, once
+  ---
+  duration_ms: 1.168932
+  type: 'test'
+  ...
+# Subtest: a route with no species lists offers a one-click prompt to add them
+ok 61 - a route with no species lists offers a one-click prompt to add them
+  ---
+  duration_ms: 0.226841
+  type: 'test'
+  ...
+# Subtest: replayed history keeps the app route reports for the latest answer only
+ok 62 - replayed history keeps the app route reports for the latest answer only
+  ---
+  duration_ms: 0.962389
+  type: 'test'
+  ...
+# Subtest: carbon is found only where the SMILES has a carbon atom
+ok 63 - carbon is found only where the SMILES has a carbon atom
+  ---
+  duration_ms: 0.49679
+  type: 'test'
+  ...
+# Subtest: an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+ok 64 - an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+  ---
+  duration_ms: 0.441026
+  type: 'test'
+  ...
+# Subtest: a checker message reaches the correction prompt whole
+ok 65 - a checker message reaches the correction prompt whole
+  ---
+  duration_ms: 0.778772
+  type: 'test'
+  ...
+# Subtest: the route review blocks a workup folded into another transformation
+ok 66 - the route review blocks a workup folded into another transformation
+  ---
+  duration_ms: 0.159802
+  type: 'test'
+  ...
+# Subtest: the first request draws the target from its SMILES when the request gives one
+ok 67 - the first request draws the target from its SMILES when the request gives one
+  ---
+  duration_ms: 0.332777
+  type: 'test'
+  ...
+# Subtest: an unbuildable step keeps every later step on its own number
+ok 68 - an unbuildable step keeps every later step on its own number
+  ---
+  duration_ms: 0.264729
+  type: 'test'
+  ...
+# Subtest: the report, the drawings and the corrections share one step verdict
+ok 69 - the report, the drawings and the corrections share one step verdict
+  ---
+  duration_ms: 0.22718
+  type: 'test'
+  ...
+# Subtest: the shared rules keep a workup as its own step, as the review requires
+ok 70 - the shared rules keep a workup as its own step, as the review requires
+  ---
+  duration_ms: 0.364243
+  type: 'test'
+  ...
+# Subtest: history drops the review and known reactions of superseded answers, and repeated correction rules
+ok 71 - history drops the review and known reactions of superseded answers, and repeated correction rules
+  ---
+  duration_ms: 0.408562
+  type: 'test'
+  ...
+# Subtest: the interim report says checks passed, not verified, while the review runs
+ok 72 - the interim report says checks passed, not verified, while the review runs
+  ---
+  duration_ms: 0.418972
+  type: 'test'
+  ...
+# Subtest: conditions and prose are read inside each step, not by position
+ok 73 - conditions and prose are read inside each step, not by position
+  ---
+  duration_ms: 0.936455
+  type: 'test'
+  ...
+# Subtest: a named new route never inherits a different target, including Spanish requests
+ok 74 - a named new route never inherits a different target, including Spanish requests
+  ---
+  duration_ms: 0.591617
+  type: 'test'
+  ...
+# Subtest: correction drawing plans preserve backslashes in stereochemical SMILES
+ok 75 - correction drawing plans preserve backslashes in stereochemical SMILES
+  ---
+  duration_ms: 0.388199
+  type: 'test'
+  ...
+# Subtest: reaction precedent is normalized defensively
+ok 76 - reaction precedent is normalized defensively
+  ---
+  duration_ms: 1.127089
+  type: 'test'
+  ...
+# Subtest: similarity reads as a plain-language band
+ok 77 - similarity reads as a plain-language band
+  ---
+  duration_ms: 0.122152
+  type: 'test'
+  ...
+# Subtest: only a step without an exact match gets its closest known reaction drawn
+ok 78 - only a step without an exact match gets its closest known reaction drawn
+  ---
+  duration_ms: 0.132919
+  type: 'test'
+  ...
+# Subtest: the precedent section is titled by route step, names the target and explains similarity
+ok 79 - the precedent section is titled by route step, names the target and explains similarity
+  ---
+  duration_ms: 1.058474
+  type: 'test'
+  ...
+# Subtest: replayed history keeps the app route reports for the latest answer only
+ok 80 - replayed history keeps the app route reports for the latest answer only
+  ---
+  duration_ms: 0.351603
+  type: 'test'
+  ...
+# Subtest: carbon is found only where the SMILES has a carbon atom
+ok 81 - carbon is found only where the SMILES has a carbon atom
+  ---
+  duration_ms: 0.221465
+  type: 'test'
+  ...
+# Subtest: an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+ok 82 - an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+  ---
+  duration_ms: 0.227776
+  type: 'test'
+  ...
+# Subtest: a checker message reaches the correction prompt whole
+ok 83 - a checker message reaches the correction prompt whole
+  ---
+  duration_ms: 0.656964
+  type: 'test'
+  ...
+# Subtest: the route review blocks a workup folded into another transformation
+ok 84 - the route review blocks a workup folded into another transformation
+  ---
+  duration_ms: 0.179907
+  type: 'test'
+  ...
+# Subtest: the first request draws the target from its SMILES when the request gives one
+ok 85 - the first request draws the target from its SMILES when the request gives one
+  ---
+  duration_ms: 0.106485
+  type: 'test'
+  ...
+# Subtest: an unbuildable step keeps every later step on its own number
+ok 86 - an unbuildable step keeps every later step on its own number
+  ---
+  duration_ms: 0.143894
+  type: 'test'
+  ...
+# Subtest: the report, the drawings and the corrections share one step verdict
+ok 87 - the report, the drawings and the corrections share one step verdict
+  ---
+  duration_ms: 0.125233
+  type: 'test'
+  ...
+# Subtest: the shared rules keep a workup as its own step, as the review requires
+ok 88 - the shared rules keep a workup as its own step, as the review requires
+  ---
+  duration_ms: 0.227117
+  type: 'test'
+  ...
+# Subtest: history drops the review and known reactions of superseded answers, and repeated correction rules
+ok 89 - history drops the review and known reactions of superseded answers, and repeated correction rules
+  ---
+  duration_ms: 0.206175
+  type: 'test'
+  ...
+# Subtest: the interim report says checks passed, not verified, while the review runs
+ok 90 - the interim report says checks passed, not verified, while the review runs
+  ---
+  duration_ms: 0.222033
+  type: 'test'
+  ...
+# Subtest: conditions and prose are read inside each step, not by position
+ok 91 - conditions and prose are read inside each step, not by position
+  ---
+  duration_ms: 0.298757
+  type: 'test'
+  ...
+# Subtest: a step carries its reaction class, a textbook passage and the index alternatives
+ok 92 - a step carries its reaction class, a textbook passage and the index alternatives
+  ---
+  duration_ms: 1.362845
+  type: 'test'
+  ...
+# Subtest: the route rules agree with each other and with what the checker does
+ok 93 - the route rules agree with each other and with what the checker does
+  ---
+  duration_ms: 0.29823
+  type: 'test'
+  ...
+# Subtest: a target requested without stereochemistry is racemic by the request
+ok 94 - a target requested without stereochemistry is racemic by the request
+  ---
+  duration_ms: 1.495141
+  type: 'test'
+  ...
+# Subtest: a racemic outcome is declared per step, and "achiral" is not a declaration
+ok 95 - a racemic outcome is declared per step, and "achiral" is not a declaration
+  ---
+  duration_ms: 0.153133
+  type: 'test'
+  ...
+# Subtest: a fix chip names the species that did not resolve, not only the balance it broke
+ok 96 - a fix chip names the species that did not resolve, not only the balance it broke
+  ---
+  duration_ms: 1.433863
+  type: 'test'
+  ...
+# Subtest: an unresolved species in a step that otherwise passes still gets a fix chip
+ok 97 - an unresolved species in a step that otherwise passes still gets a fix chip
+  ---
+  duration_ms: 1.857632
+  type: 'test'
+  ...
+# Subtest: a salt is shown whole with its count, and water at 7 in a dichromate oxidation is not called suspicious
+ok 98 - a salt is shown whole with its count, and water at 7 in a dichromate oxidation is not called suspicious
+  ---
+  duration_ms: 1.853294
+  type: 'test'
+  ...
+# Subtest: a spectator ion the solver left at 1:1 still lets the salts show whole (caprolactam, Suite 2b)
+ok 99 - a spectator ion the solver left at 1:1 still lets the salts show whole (caprolactam, Suite 2b)
+  ---
+  duration_ms: 0.789668
+  type: 'test'
+  ...
+# Subtest: a stereo declaration counts wherever it sits in the step, and a bold lead-in keeps its prose (Sonnet 5.5, hard suite)
+ok 100 - a stereo declaration counts wherever it sits in the step, and a bold lead-in keeps its prose (Sonnet 5.5, hard suite)
+  ---
+  duration_ms: 3.04435
+  type: 'test'
+  ...
+# Subtest: an unspecified-stereo failure names the product that carries the open centres
+ok 101 - an unspecified-stereo failure names the product that carries the open centres
+  ---
+  duration_ms: 0.385719
+  type: 'test'
+  ...
+# Subtest: steps written as a numbered list are found, and a numbered list inside one step is not (Opus 4.8, camphor)
+ok 102 - steps written as a numbered list are found, and a numbered list inside one step is not (Opus 4.8, camphor)
+  ---
+  duration_ms: 0.905681
+  type: 'test'
+  ...
+# Subtest: a route request asks for backwards, one-step planning without hand-balancing or mechanisms, before the format
+ok 103 - a route request asks for backwards, one-step planning without hand-balancing or mechanisms, before the format
+  ---
+  duration_ms: 0.199734
+  type: 'test'
+  ...
+# Subtest: open stereocentres that cannot reach the target pass, and say so
+ok 104 - open stereocentres that cannot reach the target pass, and say so
+  ---
+  duration_ms: 0.412925
+  type: 'test'
+  ...
+# Subtest: a step whose bond changes cannot happen is FAIL, and the fix prompt carries the checker's sentence
+ok 105 - a step whose bond changes cannot happen is FAIL, and the fix prompt carries the checker's sentence
+  ---
+  duration_ms: 1.001542
+  type: 'test'
+  ...
+# Subtest: a passing step states the bonds it forms, so the reviewer reads the checker's facts
+ok 106 - a passing step states the bonds it forms, so the reviewer reads the checker's facts
+  ---
+  duration_ms: 0.806588
+  type: 'test'
+  ...
+# Subtest: rearrangement and radical declarations are read per step, and a negated mention is not one
+ok 107 - rearrangement and radical declarations are read per step, and a negated mention is not one
+  ---
+  duration_ms: 1.875998
+  type: 'test'
+  ...
+# Subtest: step prose stays aligned when bold lead-in steps and full-line step headings are mixed
+ok 108 - step prose stays aligned when bold lead-in steps and full-line step headings are mixed
+  ---
+  duration_ms: 0.163873
+  type: 'test'
+  ...
+# Subtest: a route the model draws in a capability fence does not turn its own labels into species
+ok 109 - a route the model draws in a capability fence does not turn its own labels into species
+  ---
+  duration_ms: 0.988967
+  type: 'test'
+  ...
+# Subtest: a closed inline SVG is masked too, and a species name that is markup is dropped
+ok 110 - a closed inline SVG is masked too, and a species name that is markup is dropped
+  ---
+  duration_ms: 0.421001
+  type: 'test'
+  ...
+# Subtest: a step the application could not build is reported as UNBUILT and names the species
+ok 111 - a step the application could not build is reported as UNBUILT and names the species
+  ---
+  duration_ms: 0.475059
+  type: 'test'
+  ...
+# Subtest: the resolution source of every structure is reported
+ok 112 - the resolution source of every structure is reported
+  ---
+  duration_ms: 0.481477
+  type: 'test'
+  ...
+# Subtest: a placeholder where a species belongs is called a placeholder, not an unresolvable name
+ok 113 - a placeholder where a species belongs is called a placeholder, not an unresolvable name
+  ---
+  duration_ms: 0.393993
+  type: 'test'
+  ...
+# Subtest: every fragment of every species reaches the equation, including repeated counterions
+ok 114 - every fragment of every species reaches the equation, including repeated counterions
+  ---
+  duration_ms: 0.202724
+  type: 'test'
+  ...
+# Subtest: the configuration report names each block, what was measured, and what the name asserts
+ok 115 - the configuration report names each block, what was measured, and what the name asserts
+  ---
+  duration_ms: 1.106495
+  type: 'test'
+  ...
+# Subtest: what a name asserts about configuration is read, and only when it says something
+ok 116 - what a name asserts about configuration is read, and only when it says something
+  ---
+  duration_ms: 0.311847
+  type: 'test'
+  ...
+# Subtest: a systematic name with braces is a species, not markup
+ok 117 - a systematic name with braces is a species, not markup
+  ---
+  duration_ms: 0.603206
+  type: 'test'
+  ...
+# Subtest: one fault repeated across steps is stated once, as a pattern
+ok 118 - one fault repeated across steps is stated once, as a pattern
+  ---
+  duration_ms: 1.334621
+  type: 'test'
+  ...
+# Subtest: a repeated fault that already ends in a full stop is not given a second one
+ok 119 - a repeated fault that already ends in a full stop is not given a second one
+  ---
+  duration_ms: 1.03336
+  type: 'test'
+  ...
+# Subtest: distinct faults are not collapsed into a false pattern
+ok 120 - distinct faults are not collapsed into a false pattern
+  ---
+  duration_ms: 0.943199
+  type: 'test'
+  ...
+# Subtest: a bond check that could not run is said out loud, and does not fail the route
+ok 121 - a bond check that could not run is said out loud, and does not fail the route
+  ---
+  duration_ms: 0.500834
+  type: 'test'
+  ...
+# Subtest: a replayed answer carries its text, never its drawings
+ok 122 - a replayed answer carries its text, never its drawings
+  ---
+  duration_ms: 0.689789
+  type: 'test'
+  ...
+# Subtest: a correction that re-states no route says so, instead of returning prose in silence
+ok 123 - a correction that re-states no route says so, instead of returning prose in silence
+  ---
+  duration_ms: 0.466086
+  type: 'test'
+  ...
+# Subtest: a route answer the checker cannot read says nothing was checked
+ok 124 - a route answer the checker cannot read says nothing was checked
+  ---
+  duration_ms: 0.341356
+  type: 'test'
+  ...
+# Subtest: a route conversation stays one when the author types a follow-up
+ok 125 - a route conversation stays one when the author types a follow-up
+  ---
+  duration_ms: 0.856229
+  type: 'test'
+  ...
+# Subtest: the report starts the step support before it waits on the final report
+ok 126 - the report starts the step support before it waits on the final report
+  ---
+  duration_ms: 65.0156
+  type: 'test'
+  ...
+# Subtest: a step that balanced only by refiling a declared reactant is a failing step
+ok 127 - a step that balanced only by refiling a declared reactant is a failing step
+  ---
+  duration_ms: 0.277203
+  type: 'test'
+  ...
+# Subtest: a step whose coefficient search gave up reads as unchecked, not as unbalanced
+ok 128 - a step whose coefficient search gave up reads as unchecked, not as unbalanced
+  ---
+  duration_ms: 0.48954
+  type: 'test'
+  ...
+# Subtest: a route answer draws only through the final report
+ok 129 - a route answer draws only through the final report
+  ---
+  duration_ms: 0.249843
+  type: 'test'
+  ...
+# Subtest: every step of a passing route is summarised the same way the check reports it
+ok 130 - every step of a passing route is summarised the same way the check reports it
+  ---
+  duration_ms: 0.346941
+  type: 'test'
+  ...
+# Subtest: the step line and the route verdict cannot disagree about which step failed
+ok 131 - the step line and the route verdict cannot disagree about which step failed
+  ---
+  duration_ms: 0.344757
+  type: 'test'
+  ...
+1..131
+# tests 131
+# suites 0
+# pass 131
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 386.443403

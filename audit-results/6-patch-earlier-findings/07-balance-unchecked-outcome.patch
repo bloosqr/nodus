@@ -1,0 +1,142 @@
+# Repository: bloosqr/nodus-research-skill-marketplace — unified diff against branch audit/2026-10-09. Apply with: git apply 07-balance-unchecked-outcome.patch (the nodus side is 07b)
+diff --git a/plugins/chemistry-studio/src/engine/chemistryDocument.ts b/plugins/chemistry-studio/src/engine/chemistryDocument.ts
+index c0b1f68..df6d8c3 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryDocument.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryDocument.ts
+@@ -258,6 +258,10 @@ export interface RouteStepAudit {
+   /** Set when the equation balances only by assembling a product molecule from more than one
+    *  substrate molecule — chemically impossible for a single transformation. */
+   assemblyProblem?: string;
++  /** Set when the coefficient search gave up because more species are free to vary than it
++   *  determines coefficients for. `balanced` stays false, so nothing passes the step, but it is
++   *  unchecked rather than unbalanced, and its one action is to split the step. */
++  balanceUnchecked?: string;
+   /** Why the per-molecule packing search gave up, when it did. Not set when the step's shape is
+    *  simply outside what packing models (a convergent coupling), which is not a gap in coverage. */
+   assemblyUnchecked?: string;
+diff --git a/plugins/chemistry-studio/src/engine/chemistryReaction.ts b/plugins/chemistry-studio/src/engine/chemistryReaction.ts
+index 65d04fe..01b790d 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryReaction.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryReaction.ts
+@@ -476,6 +476,11 @@ function netColumnBalance(compositions: Composition[], roles: ReactionSpecies['r
+   return coefficients;
+ }
+ 
++/** The coefficient search gave up: more species are free to vary than it determines coefficients
++ *  for. That is no verdict on the balance — the step is unchecked, not unbalanced — so it is thrown
++ *  as its own kind, for the route check to report apart from a real imbalance. */
++export class BalanceUnchecked extends Error {}
++
+ export function balanceReaction(compositions: Composition[], roles: ReactionSpecies['role'][], supplied: number[]): number[] {
+   const active = compositions.map((composition, index) => ({ composition, index })).filter(({ index }) => roles[index] !== 'agent');
+   if (!active.some(({ index }) => roles[index] === 'reactant') || !active.some(({ index }) => roles[index] === 'product')) {
+@@ -527,10 +532,10 @@ export function balanceReaction(compositions: Composition[], roles: ReactionSpec
+       return coefficients;
+     }
+     if (basis.length > SEARCH_DIMENSION_LIMIT) {
+-      // Not ambiguity: the search never produced a candidate to compare. Say so, and give the
+-      // element totals at the declared coefficients, which is the one thing always computable.
+-      const detail = missingSpeciesAdvice(compositions, roles, supplied);
+-      throw new Error(`This step leaves ${basis.length} species free to vary independently, more than the checker determines coefficients for, so it has NOT been shown to be unbalanced — no coefficients were found. ${detail} ${imbalanceAdvice(compositions, roles)}`.replace(/\s+/g, ' ').trim());
++      // Not ambiguity, and not an imbalance: the search never produced a candidate to compare. The
++      // one edit that brings the step within reach is fewer species per step. Adding a species, as
++      // the imbalance advice says, only adds another free one.
++      throw new BalanceUnchecked(`This step leaves ${basis.length} species free to vary independently, more than the ${SEARCH_DIMENSION_LIMIT} the checker determines coefficients for, so its balance was not checked: it has been shown neither balanced nor unbalanced. Split it into consecutive steps, each naming fewer species.`);
+     }
+     throw new Error(`The declared species admit more than one balanced equation; name the intended byproducts, or split this transformation into consecutive balanced steps. ${missingSpeciesAdvice(compositions, roles, supplied)}`.trim());
+   }
+diff --git a/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts b/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts
+index 8dbe638..d119964 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts
+@@ -1,7 +1,7 @@
+ import { MAX_REACTION_CHARS } from './chemistryLimits';
+ import { MAX_CHEMICAL_NAME } from './chemistryIdentity';
+ import type { RouteAudit, RouteLinkAudit, RouteSpeciesSummary, RouteStepAudit, RouteTargetAudit } from './chemistryDocument';
+-import { balanceReaction } from './chemistryReaction';
++import { BalanceUnchecked, balanceReaction } from './chemistryReaction';
+ import { splitReactionSmiles } from './chemistryReactionShared';
+ import { deliveredAtOpenCentres, productMatchesTarget, validateChemicalReferences } from './chemistryValidationCore';
+ import { bondLedger, skeletonChange, type SkeletonReport } from './chemistrySkeleton';
+@@ -186,7 +186,7 @@ function invertedConfiguration(reactants: RouteSpeciesSummary[], products: Route
+ /** Whether the declared species admit a balanced equation, solved exactly as the drawing
+  *  path solves it. Coefficients cannot be written inside a reaction SMILES, so a species
+  *  list that balances only at 2:3:2:2 is balanced, not refused. Agents take no part. */
+-function stepBalance(reactants: RouteSpeciesSummary[], agents: RouteSpeciesSummary[], products: RouteSpeciesSummary[]): { balanced: boolean; chargeBalanced: boolean; differences: string[]; coefficients: number[] | null } {
++function stepBalance(reactants: RouteSpeciesSummary[], agents: RouteSpeciesSummary[], products: RouteSpeciesSummary[]): { balanced: boolean; unchecked?: boolean; chargeBalanced: boolean; differences: string[]; coefficients: number[] | null } {
+   const chargeBalanced = sumSide(reactants).charge === sumSide(products).charge;
+   const ordered = [...reactants, ...agents, ...products];
+   const roles = [
+@@ -199,6 +199,8 @@ function stepBalance(reactants: RouteSpeciesSummary[], agents: RouteSpeciesSumma
+     const coefficients = balanceReaction(compositions, roles, ordered.map(() => 1));
+     return { balanced: true, chargeBalanced, differences: [], coefficients };
+   } catch (error) {
++    // Unchecked keeps its single action: no hint about an Agent that would add a species.
++    if (error instanceof BalanceUnchecked) return { balanced: false, unchecked: true, chargeBalanced, differences: [error.message], coefficients: null };
+     const message = error instanceof Error ? error.message : 'The species cannot be balanced.';
+     return { balanced: false, chargeBalanced, differences: [message + agentMisplacementHint(reactants, agents, products)], coefficients: null };
+   }
+@@ -658,7 +660,7 @@ export async function auditRoute(input: RouteAuditInput, budget?: ChemistryCapBu
+       // Still refused: when moving one species to the other side makes the step balance (water
+       // written as a reactant in an oxidation that forms it), say so — the totals alone did not
+       // tell the author which species or which way.
+-      if (!balance.balanced) {
++      if (!balance.balanced && !balance.unchecked) {
+         const flip = agentRoleThatBalances(reactants, agents, products) || sideFlipThatBalances(reactants, agents, products);
+         if (flip) balance.differences = balance.differences.map(entry => `${entry} ${flip}`);
+       }
+@@ -672,6 +674,7 @@ export async function auditRoute(input: RouteAuditInput, budget?: ChemistryCapBu
+       step.agents = agents;
+       step.products = products;
+       step.balanced = balance.balanced;
++      if (balance.unchecked) step.balanceUnchecked = balance.differences.join(' ');
+       step.chargeBalanced = balance.chargeBalanced;
+       step.differences = balance.differences;
+       // Only the species the step makes are the route's responsibility to specify. A purchased
+@@ -966,7 +969,12 @@ export async function auditRoute(input: RouteAuditInput, budget?: ChemistryCapBu
+   for (const step of audited) {
+     if (!step.ok) { blocked.push(`Step ${step.index + 1}: ${step.error ?? 'could not be parsed.'}`); continue; }
+     for (const problem of step.nameProblems ?? []) blocked.push(`Step ${step.index + 1}: ${sentence(problem)}`);
+-    if (!step.balanced) { blocked.push(`Step ${step.index + 1} is not balanced: ${sentence(step.differences.join('; '))}`); continue; }
++    if (!step.balanced) {
++      blocked.push(step.balanceUnchecked
++        ? `Step ${step.index + 1} was not checked for balance: ${sentence(step.balanceUnchecked)}`
++        : `Step ${step.index + 1} is not balanced: ${sentence(step.differences.join('; '))}`);
++      continue;
++    }
+     const packing = checkPerMoleculePacking(step);
+     if (packing !== 'n/a' && 'unchecked' in packing) {
+       step.assemblyUnchecked = packing.unchecked;
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 8055cf8..f744184 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -2067,18 +2067,20 @@ test('a shared counterion written once per side balances uniquely; repeated toke
+   // The same equation with the shared sulfate and sodium repeated (as an un-deduped derivation
+   // would write them) is refused. It used to be refused as "more than one balanced equation",
+   // which was never established: the repeated tokens leave 5 species free to vary and the
+-  // bounded search covers 4, so no candidate was ever built and nothing was compared. The
+-  // message now says it did not determine the coefficients, and gives the element totals at the
+-  // coefficients as declared, which is the part an author can act on.
++  // bounded search covers 4, so no candidate was ever built and nothing was compared. It is an
++  // UNCHECKED step, not an unbalanced one, and the one thing that brings it within reach of the
++  // search is fewer species per step: adding a species, as the old advice said, adds a free one.
+   const repeated = 'C1(CCCCC1)O.[O-][Cr](=O)(=O)O[Cr](=O)(=O)[O-].[Na+].[Na+].S(O)(O)(=O)=O>>C1(CCCCC1)=O.S(=O)(=O)([O-])[O-].S(=O)(=O)([O-])[O-].S(=O)(=O)([O-])[O-].[Cr+3].[Cr+3].S(=O)(=O)([O-])[O-].[Na+].[Na+].O';
+   const refused = await lib.auditRoute({ steps: [repeated] });
+-  assert.equal(refused.steps[0].balanced, false);
++  assert.equal(refused.steps[0].balanced, false, 'never passed');
++  assert.match(refused.steps[0].balanceUnchecked ?? '', /free to vary independently/, 'a distinct unchecked outcome');
+   const why = refused.steps[0].differences.join(' ');
+-  assert.match(why, /free to vary independently/);
+-  assert.match(why, /NOT been shown to be unbalanced/);
+-  // Four extra sulfurs declared on the product side is the actual fault, and it is now named.
+-  assert.match(why, /reactants are short of .*S \(3\)/);
++  assert.match(why, /split/i, 'its one action is to split the step');
++  assert.doesNotMatch(why, /missing from (Reactants|Products)|Add the missing|short of/, 'no advice to add a species');
+   assert.doesNotMatch(why, /more than one balanced equation/);
++  const line = refused.blocked.find((entry) => entry.startsWith('Step 1'));
++  assert.match(line, /not checked/i);
++  assert.doesNotMatch(line, /is not balanced/, 'the route summary does not call it unbalanced');
+ });
+ 
+ test('a step that inverts a stereocentre is refused, though its equation balances', async () => {
