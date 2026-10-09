@@ -288,7 +288,9 @@ async function pullRelayOperations(vault: VaultSummary, token: string, db: Datab
     for (const mutation of mutations) {
       if (mutation.kind !== 'upsert' || !['world_images', 'map_images'].includes(mutation.table)) continue;
       const hash = String(mutation.assets?.[0]?.hash ?? '');
-      if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('El servidor entregó una imagen de mundo sin hash válido.');
+      // Deterministic: refused and acknowledged rather than thrown, or this one row would
+      // stop the replica from receiving anything after it.
+      if (!/^[0-9a-f]{64}$/.test(hash)) { mutation.refusal = 'La imagen llegó sin referencia a sus bytes y no puede guardarse.'; continue; }
       const binary = await request(
         `${normalizeUrl(vault.remote!.url)}/api/v1/spaces/${encodeURIComponent(vault.remote!.spaceId)}/assets/${hash}`,
         { headers: { authorization: `Bearer ${token}`, accept: 'image/*' } },
