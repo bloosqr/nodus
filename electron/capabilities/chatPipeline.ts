@@ -86,6 +86,8 @@ export async function runTrustedChatPipeline(
     // Checked here rather than left to the provider, because the provider's own refusal is
     // the one with no room to explain itself: a worker that validates exact keys answers
     // "Invalid map request." and names nothing, which is a dead end for the next turn.
+    const hostOwned = hostSuppliedField(input);
+    if (hostOwned) throw new Error(`${toolId} was not run: ${hostOwned} is supplied by the application, never by the reply.`);
     const mismatch = describeInputMismatch(tool.inputSchema, input);
     // No full stop added here: describeInputMismatch already ends its sentence, and adding one
     // produced "at most 8000 are allowed.." in the answer the author reads.
@@ -197,6 +199,19 @@ export async function runTrustedChatPipeline(
 
   // 8. Serialize once more, with the artifacts already persisted.
   return serialize(nodes, removed, placement);
+}
+
+/** Inputs the application fills on its own calls: local directories a package reads, or (for a
+ *  local OPSIN) runs a program from, and the switch that keeps it off the network. A request that
+ *  comes out of a reply — a fence the model wrote, or one a hook promoted from it — must never
+ *  choose them: `{"plan": …, "opsinDir": "~/Downloads/kit"}` would have the package execute
+ *  whatever `java` that folder holds. The tool schemas accept them because the application's own
+ *  calls send them, so the schema check alone does not refuse them. */
+export const HOST_SUPPLIED_INPUTS: readonly string[] = ['pubchemDir', 'opsinDir', 'indexDir', 'indexDirs', 'stockDir', 'textbookDir', 'localOnly'];
+
+function hostSuppliedField(input: unknown): string | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  return HOST_SUPPLIED_INPUTS.find(key => Object.prototype.hasOwnProperty.call(input, key)) ?? null;
 }
 
 function anchorFor(nodes: readonly ChatAstNode[], position: 'before' | 'after'): string {
