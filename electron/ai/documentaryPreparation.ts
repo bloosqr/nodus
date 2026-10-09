@@ -147,6 +147,7 @@ export function closeDocumentaryPreparation(): Promise<void> {
   if (vectorConversion) clearTimeout(vectorConversion); vectorConversion = null;
   // An interrupted VACUUM rolls back; the store stays as it was.
   if (maintenanceWorker) void maintenanceWorker.terminate().catch(() => undefined);
+  stopDocumentaryRetrievalWorker();
   unsubscribe?.(); unsubscribe = null;
   if (!draining) { shared?.close(); shared = null; return Promise.resolve(); }
   return new Promise(resolve => { drainClosed = resolve; });
@@ -848,6 +849,57 @@ async function initializeOwnedDocumentaryPreparation(): Promise<void> {
   if (shared) convertLegacyVectorsInBackground();
 }
 
+/** The documentary retrieval process, shared by every search and kept between them: it holds the
+ *  read-only store open and its vectors cached (see documentaryRetrievalWorker.ts). Stopped after
+ *  a few idle minutes, on a search that never answers, and at shutdown; the next search starts it. */
+interface RetrievalWorker {
+  process: BackgroundProcess;
+  pending: Map<number, { message: (message: any) => void; fail: (error: Error) => void }>;
+  idle?: ReturnType<typeof setTimeout>;
+}
+let retrievalWorker: RetrievalWorker | null = null;
+let retrievalRequests = 0;
+const RETRIEVAL_WORKER_IDLE_MS = 5 * 60_000;
+function documentaryRetrievalWorker(): RetrievalWorker {
+  if (retrievalWorker) {
+    if (retrievalWorker.idle) clearTimeout(retrievalWorker.idle);
+    retrievalWorker.idle = undefined;
+    retrievalWorker.process.setIdle(false);
+    return retrievalWorker;
+  }
+  const packagedWorker = path.join(__dirname, 'documentaryRetrievalWorker.js');
+  const worker: RetrievalWorker = { process: backgroundProcess(fs.existsSync(packagedWorker) ? packagedWorker : path.join(app.getAppPath(), 'dist-electron/documentaryRetrievalWorker.js'), 'Nodus documentary retrieval'), pending: new Map() };
+  const failAll = (error: Error) => {
+    if (retrievalWorker === worker) retrievalWorker = null;
+    if (worker.idle) clearTimeout(worker.idle);
+    for (const request of [...worker.pending.values()]) request.fail(error);
+    worker.pending.clear();
+  };
+  worker.process.on('message', (message: { id?: number }) => { if (typeof message?.id === 'number') worker.pending.get(message.id)?.message(message); });
+  worker.process.once('error', error => failAll(error instanceof Error ? error : new Error(String(error))));
+  worker.process.once('exit', (code: number | null) => {
+    if (worker.pending.size) console.warn(`[documentary] retrieval worker exited with code ${code} before replying`);
+    failAll(new Error('documentary_retrieval_worker_stopped'));
+  });
+  retrievalWorker = worker;
+  return worker;
+}
+/** After a search settles: an idle process no longer holds the app (or a test) open, and is
+ *  stopped once it has been idle for a while. */
+function settleRetrievalWorker(worker: RetrievalWorker): void {
+  if (worker.pending.size || retrievalWorker !== worker) return;
+  worker.process.setIdle(true);
+  if (worker.idle) clearTimeout(worker.idle);
+  worker.idle = setTimeout(() => stopDocumentaryRetrievalWorker(worker), RETRIEVAL_WORKER_IDLE_MS);
+  worker.idle.unref?.();
+}
+function stopDocumentaryRetrievalWorker(worker: RetrievalWorker | null = retrievalWorker): void {
+  if (!worker) return;
+  if (retrievalWorker === worker) retrievalWorker = null;
+  if (worker.idle) clearTimeout(worker.idle);
+  void worker.process.terminate().catch(() => undefined);
+}
+
 export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchScope, query: string, settings: RetrievalSettings, vector: number[] | null, signal?: AbortSignal, read?: ResearchDocumentRead,
   // A run passes its own, so one search does not build the whole inventory twice more.
   currentDocuments: () => ReturnType<typeof researchCorpusInventory>['documents'] = () => researchCorpusInventory().documents): Promise<{ evidence: ResearchEvidence[]; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }> {
@@ -890,8 +942,6 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
   const threshold = settings.threshold.mode === 'manual' && settings.threshold.embeddingSpace === space ? settings.threshold.value : -1;
   signal?.throwIfAborted();
   if (!keys.length && !vectorKeys.length) return { evidence: [], traversal: { partial: scope.documents.length > 0, rounds: 1, candidates: 0, evidenceTokens: 0, visited: [] } };
-  const packagedWorker = path.join(__dirname, 'documentaryRetrievalWorker.js');
-  const worker = backgroundProcess(fs.existsSync(packagedWorker) ? packagedWorker : path.join(app.getAppPath(), 'dist-electron/documentaryRetrievalWorker.js'), 'Nodus documentary retrieval');
   const finishSearch = startResearchActivity('nodus', read?.kind === 'search' ? 'search' : read?.kind === 'pages' ? 'pages' : read?.kind === 'context' ? 'expand' : read?.kind === 'references' ? 'references' : 'search', scope.documents.length === 1 ? scope.documents[0].title : query);
   const activities = new Map<string, ReturnType<typeof startResearchActivity>>();
   const result = await new Promise<{ passages: ReturnType<DocumentaryStore['lexicalSearch']>; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }>((resolve, reject) => {
@@ -900,6 +950,8 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
     // Diagnostic, off unless asked for: the query text itself, so a trace can tell a repeated
     // question from a rephrased one. It is the user's own words, so it is never logged by default.
     const traceQuery = process.env.NODUS_TRACE_QUERIES === '1' ? ` · query ${JSON.stringify(query.slice(0, 240))}` : '';
+    const worker = documentaryRetrievalWorker();
+    const id = ++retrievalRequests;
     const finish = (error: Error | null, value?: { passages: ReturnType<DocumentaryStore['lexicalSearch']>; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }) => {
       if (settled) return;
       settled = true;
@@ -909,23 +961,27 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
       for (const finishActivity of activities.values()) finishActivity(error ? 'failed' : 'completed');
       activities.clear();
       signal?.removeEventListener('abort', abort);
-      void worker.terminate().finally(() => { if (error) reject(error); else resolve(value!); });
+      worker.pending.delete(id);
+      settleRetrievalWorker(worker);
+      if (error) reject(error); else resolve(value!);
     };
+    // A cancelled search leaves the shared process to finish it and discards the answer; a search
+    // that never answers stops the process, which the next search starts again.
     const abort = () => finish(new Error('documentary_retrieval_cancelled'));
-    const deadline = setTimeout(() => finish(new Error('documentary_retrieval_timeout')), 30000);
+    const deadline = setTimeout(() => { finish(new Error('documentary_retrieval_timeout')); stopDocumentaryRetrievalWorker(worker); }, 30000);
     signal?.addEventListener('abort', abort, { once: true });
-    worker.on('message', message => {
-      if (settled) return;
-      if (message.type === 'activity') {
-        if (message.status === 'active') activities.set(message.key, startResearchActivity(message.operation === 'expand' ? 'context' : 'nodus', message.operation));
-        else { activities.get(message.key)?.('completed', message.count); activities.delete(message.key); }
-        return;
-      }
-      finish(message.error ? new Error(message.error) : null, message);
+    worker.pending.set(id, {
+      message: message => {
+        if (message.type === 'activity') {
+          if (message.status === 'active') activities.set(message.key, startResearchActivity(message.operation === 'expand' ? 'context' : 'nodus', message.operation));
+          else { activities.get(message.key)?.('completed', message.count); activities.delete(message.key); }
+          return;
+        }
+        finish(message.error ? new Error(message.error) : null, message);
+      },
+      fail: error => finish(error),
     });
-    worker.once('error', error => finish(error));
-    worker.once('exit', (code: number | null) => { if (!settled) { console.warn(`[documentary] retrieval worker exited with code ${code} before replying`); finish(new Error('documentary_retrieval_worker_stopped')); } });
-    worker.postMessage({ filename: documentaryStore().db.name, query, lexicalKeys: keys, vectorKeys, vector, settings, threshold, read, activity: researchActivityEnabled() });
+    worker.process.postMessage({ id, filename: documentaryStore().db.name, query, lexicalKeys: keys, vectorKeys, vector, settings, threshold, read, activity: researchActivityEnabled() });
   });
   const latest = documentsById(currentDocuments());
   for (const document of scope.documents) assertResearchDocumentPermission(scope, document.id, latest.get(document.id));
