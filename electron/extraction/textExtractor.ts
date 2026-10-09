@@ -359,6 +359,9 @@ export async function extractPdfStreaming(
     throw error;
   }
   const layerQuality = new Map<number, number>();
+  /** Pages pdf.js cannot open at all (a damaged page object). They have no text and cannot
+   * be rendered for OCR either; the rest of the document is still read. */
+  const damaged = new Set<number>();
   if (opts.declutter) perfLog('scheme declutter', 0, opts.perf, { file: path.basename(filePath), body });
 
   for (let p = 1; p <= total; p++) {
@@ -367,12 +370,24 @@ export async function extractPdfStreaming(
       opts.signal.throwIfAborted();
     }
     opts.onProgress?.({ phase: 'extract', detail: `Extrayendo p. ${p}/${total}`, pct: p / total });
-    const page = await pdf.getPage(p);
-    // Blank and low-quality pages (sent to OCR) are judged on the page's full text layer: a page
-    // that is mostly scheme is short once decluttered, and OCR would only read the scheme back.
-    const layered = opts.declutter ? await pageTextWithSchemes(page, true, body || undefined, opts.schemeClassifier) : null;
-    const txt = cleanExtractedText(layered ? layered.text : await pageText(page));
-    page.cleanup?.();
+    let txt: string;
+    let layered: Awaited<ReturnType<typeof pageTextWithSchemes>> | null;
+    try {
+      const page = await pdf.getPage(p);
+      try {
+        // Blank and low-quality pages (sent to OCR) are judged on the page's full text layer: a page
+        // that is mostly scheme is short once decluttered, and OCR would only read the scheme back.
+        layered = opts.declutter ? await pageTextWithSchemes(page, true, body || undefined, opts.schemeClassifier) : null;
+        txt = cleanExtractedText(layered ? layered.text : await pageText(page));
+      } finally {
+        page.cleanup?.();
+      }
+    } catch (error) {
+      console.warn(`[extractPdfStreaming] p. ${p} unreadable: ${error instanceof Error ? error.message : String(error)}`);
+      damaged.add(p);
+      blanks.push(p);
+      continue;
+    }
     if (txt.length >= MIN_CHARS_TEXT_PAGE) {
       pageTexts.set(p, layered ? cleanExtractedText(layered.declutteredText) : txt);
       layerQuality.set(p, textQualityScore(txt));
@@ -384,7 +399,7 @@ export async function extractPdfStreaming(
   let ocredPages = 0;
   let ocrFailed = false;
   const ocrReadPages = new Set<number>();
-  const ocrCandidates = [...blanks, ...lowQuality].slice(0, opts.ocr.maxPages);
+  const ocrCandidates = [...blanks.filter((page) => !damaged.has(page)), ...lowQuality].slice(0, opts.ocr.maxPages);
   if (opts.ocr.enabled && ocrCandidates.length) {
     const toOcr = ocrCandidates;
     const ocrDone = startPerf('OCR', opts.perf, { pages: toOcr.length, languages: opts.ocr.languages });
@@ -444,7 +459,7 @@ export async function extractPdfStreaming(
   // a missing worker or a mid-batch failure can prevent any page results returning.
   const ocrSelected = new Set(opts.ocr.enabled ? ocrCandidates : []);
   const unrecovered = blanks.filter((page) => !pageTexts.has(page));
-  const capped = opts.ocr.enabled ? unrecovered.filter((page) => !ocrSelected.has(page)).length : 0;
+  const capped = opts.ocr.enabled ? unrecovered.filter((page) => !ocrSelected.has(page) && !damaged.has(page)).length : 0;
   const readWithoutText = unrecovered.filter((page) => ocrReadPages.has(page)).length;
   const unresolved = unrecovered.length - capped - readWithoutText;
   const notes: string[] = [];
