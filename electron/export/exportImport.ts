@@ -10,6 +10,7 @@ import type { AiProvider, AppSettings, BackupSelection, RecoveryRestoreProgress,
 import { SECRET_PROVIDERS } from '@shared/providers';
 import { isVaultType } from '@shared/vaultTypes';
 import { closeDb, getDb, replaceDbFile, SCHEMA_VERSION } from '../db/database';
+import { stopVectorScanWorker } from '../db/vectorScanHost';
 import { testimonyBackupInventory } from './testimonyExport';
 import { getSettings } from '../db/settingsRepo';
 import { listVaults, getActiveVault, restoreVaultDatabase, setActiveVault } from '../vaults/vaultRegistry';
@@ -599,6 +600,8 @@ export async function restoreBackupArchiveSafely(
     writeAtomicFile(safetyPath, safetyArchive);
 
     pausedVaultIds = await pauseAllDocumentIndexingAndDrain();
+    // Its open connections would keep the replaced vault's write-ahead log alive (vectorScanHost.ts).
+    await stopVectorScanWorker();
     const result = restoreBackupArchive(archive, password);
     if (!result.ok) {
       fs.rmSync(safetyPath, { force: true });
@@ -615,6 +618,7 @@ export async function restoreBackupArchiveSafely(
       return { ok: false, message: `La restauración se canceló antes de modificar los datos: ${failure}` };
     }
     try {
+      await stopVectorScanWorker();
       const rollback = restoreBackupArchive(fs.readFileSync(safetyPath), safetyPassword);
       if (!rollback.ok) throw new Error(rollback.message);
       return {
@@ -1216,6 +1220,7 @@ export async function restoreBackupArchiveFile(
         return { ok: false, message: 'Copia inválida: faltan datos o embeddings en la instantánea de base de datos.' };
       }
       const localPaths = captureMachineLocalSettings().get(getActiveVault().id) ?? null;
+      await stopVectorScanWorker();
       closeDb();
       replaceDbFile(tmp);
       if (importedSettings) {
