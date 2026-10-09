@@ -112,7 +112,10 @@ export class CompassRequestScheduler {
       )
       .digest("hex");
     const existing = this.inflight.get(key);
-    if (existing) return this.subscribe(existing, input.signal);
+    // An entry whose last consumer left has already been aborted but stays in the map until
+    // its promise settles. Joining it would hand a fresh search an AbortError it never asked for.
+    if (existing && !existing.controller.signal.aborted)
+      return this.subscribe(existing, input.signal);
     const controller = new AbortController();
     const priority =
       input.priority === "visible" ? 0 : input.priority === "load-more" ? 1 : 2;
