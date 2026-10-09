@@ -434,6 +434,22 @@ ER  -`);
   assert.equal(catalog.list({ collectionId: collection.id }).total, 1);
   assert.equal(operations.importBibliographyFiles([risFile], collection.id).duplicates, 1);
   const importedRecord = store.readMaterializedItem(imported.itemIds[0]);
+  // A reference the library already holds is still filed into the collection it is imported into.
+  const otherCollection = operations.createCollection('Capítulo 2', null);
+  const refiled = operations.importBibliographyFiles([risFile], otherCollection.id);
+  assert.equal(refiled.duplicates, 1);
+  assert.deepEqual(refiled.itemIds, [imported.itemIds[0]]);
+  assert.deepEqual(catalog.list({ collectionId: otherCollection.id }).items.map((entry) => entry.id), [imported.itemIds[0]],
+    'importing an existing reference into a collection files it there');
+  // A trashed record is not a duplicate: the import must bring the reference back as a live item.
+  const trashRis = path.join(scratch, 'trashed.ris');
+  await writeFile(trashRis, `TY  - JOUR\nTI  - Referencia enviada a la papelera\nAU  - Ruiz, Irene\nPY  - 2021\nDO  - 10.7777/trash.1\nER  -\n`);
+  const trashedId = operations.importBibliographyFiles([trashRis], null).itemIds[0];
+  operations.setItemsDeleted([trashedId], true);
+  const reimported = operations.importBibliographyFiles([trashRis], null);
+  assert.equal(reimported.created, 1, 'a reference whose only match is in the trash is imported again');
+  assert.notEqual(reimported.itemIds[0], trashedId);
+  assert.ok(!store.readMaterializedItem(reimported.itemIds[0]).deletedAt);
   assert.equal(catalog.findItemIdByMetadataIdentifiers({
     title: 'Same DOI', itemType: 'journal-article', creators: [], year: null,
     doi: 'https://doi.org/10.7777/import.1', isbn: [], issn: [], tags: [],
