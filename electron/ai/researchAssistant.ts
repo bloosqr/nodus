@@ -346,7 +346,7 @@ async function answerResearchChatTurn(request: ResearchChatRequest, signal: Abor
     signal.throwIfAborted();
     answer = finalizeAnswer(await withResearchAttachmentFallback(attachments, opts, options => completeText(options, request.model)), local, user);
     validateNotebookRequest(request);
-    if (!citationRequired || attachments.text || extractCitationRefs(answer).length > 0 || splitChatVisuals(answer).some(part => part.kind !== 'markdown')) return { answer: rememberNotebookTurn(request, await finalizeWithAudit(await withRouteEvidence(answer, execution, opts, local, user, signal), execution)), stats };
+    if (!citationRequired || attachments.text || extractCitationRefs(answer).length > 0 || splitChatVisuals(answer).some(part => part.kind !== 'markdown')) return { answer: rememberNotebookTurn(request, await finalizeWithAudit(await withRouteEvidence(answer, execution, opts, local, user, signal), execution, signal)), stats };
   }
   throw new Error('El modelo no devolvió ninguna cita verificable del contexto tras tres intentos idénticos.');
 }
