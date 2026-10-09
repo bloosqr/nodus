@@ -92,3 +92,20 @@ test('a route where NO step could be built still gets a route check the model ca
   assert.match(measured, /could not be built/);
   assert.doesNotMatch(measured, /Route check unavailable/);
 });
+
+test('a route review that never answered is said to be missing, not read as a clean review', async () => {
+  // The review is the blocking check a balance cannot do. When its call fails (a timeout, a
+  // provider error) the report used to print the same verdict as a review that found nothing.
+  const passingSteps = [passing(0, 'CCO>>CC=O'), passing(1, 'CC=O>>CC(=O)O')];
+  const two = ['CCO>>CC=O', 'CC=O>>CC(=O)O'];
+  const runner = { async invoke({ toolId }) {
+    assert.equal(toolId, 'verify-route');
+    return { artifacts: [{ artifactType: 'route-audit', data: { steps: passingSteps, continuous: true, blocked: [], links: [] } }] };
+  } };
+  const warn = console.warn; const info = console.info; console.warn = () => {}; console.info = () => {};
+  let answer;
+  try { answer = await appendRouteReportAndDrawings('Route prose', '', { runner }, { steps: two, labels: two.map(() => [{ role: 'reactant', byproduct: false, name: 'ethanol', smiles: 'CCO' }]) }); }
+  finally { console.warn = warn; console.info = info; }
+  assert.match(answer, /Route checked: balanced and connected/);
+  assert.match(answer, /model review did not run/i);
+});
