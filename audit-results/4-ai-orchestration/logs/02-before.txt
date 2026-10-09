@@ -1,0 +1,5 @@
+# returned 5009 ms after the start, 4909 ms after the stop
+not ok 1 - stopping the turn cancels the name-correction request
+  error: 'the correction request carries the turn signal'
+# pass 0
+# fail 1

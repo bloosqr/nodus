@@ -1,0 +1,109 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Synthesis evidence: a gather in which a phase failed is not remembered for the corrections.
+diff --git a/electron/ai/synthesisEvidence.ts b/electron/ai/synthesisEvidence.ts
+index ce9affb8..717ede8b 100644
+--- a/electron/ai/synthesisEvidence.ts
++++ b/electron/ai/synthesisEvidence.ts
+@@ -80,6 +80,9 @@ interface EvidenceOptions {
+   locale?: string;
+   signal?: AbortSignal;
+   owner?: string;
++  /** The phases of this gather that failed rather than found nothing. Set by the gather, so a
++   *  degraded result is used for this turn but not remembered as the whole evidence. */
++  failures?: string[];
+ }
+ 
+ function disconnectProvider() {
+@@ -151,6 +154,7 @@ async function ordDisconnections(target: string, starting: string[], options: Ev
+     }
+   } catch (error) {
+     if (options.signal?.aborted) throw error;
++    options.failures?.push('ORD disconnections');
+     console.warn('[synthesisEvidence] ORD disconnections unavailable:', error instanceof Error ? error.message : String(error));
+   } finally {
+     await dispose();
+@@ -185,6 +189,7 @@ async function textbookSchemePreparations(target: string, disconnectionsReady: P
+     return textbookPreparations({ disconnections: entries }, (ids) => textbookCitations(ids, indexDir, options.evidenceScope), (templates) => textbookTemplateCitations(templates, indexDir, 2, options.evidenceScope));
+   } catch (error) {
+     if (options.signal?.aborted) throw error;
++    options.failures?.push('textbook preparations');
+     console.warn('[synthesisEvidence] textbook schemes unavailable:', error instanceof Error ? error.message : String(error));
+     return [];
+   } finally {
+@@ -232,6 +237,7 @@ async function searchedRoutes(target: string, starting: string[], options: Evide
+     );
+   } catch (error) {
+     if (options.signal?.aborted) throw error;
++    options.failures?.push('route search');
+     console.warn('[synthesisEvidence] route search unavailable:', error instanceof Error ? error.message : String(error));
+     return [];
+   } finally {
+@@ -254,6 +260,7 @@ async function targetAvailability(target: string, name: string, options: Evidenc
+     return (data && formatTargetAvailability(name, compoundAvailability(target, data))) || undefined;
+   } catch (error) {
+     if (options.signal?.aborted) throw error;
++    options.failures?.push('availability');
+     return undefined;
+   } finally {
+     await dispose();
+@@ -455,7 +462,8 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
+   // of vendor data. The reuse path already existed (`chemistryRunner` returns a supplied runner
+   // with a no-op dispose) but EvidenceOptions never declared the field, so it was unreachable.
+   const { runner, dispose } = chemistryRunner(options);
+-  const scoped: EvidenceOptions = { ...options, runner };
++  const failures: string[] = [];
++  const scoped: EvidenceOptions = { ...options, runner, failures };
+   try {
+     // The route search runs beside the rest of the evidence (it has its own time budget).
+     const routes = phases.track('route search', searchedRoutes(target, startingMaterials, scoped));
+@@ -477,6 +485,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
+       passages = await phases.track('passages', textbookPassages(queries, synthesisEvidenceWorkIds(options.evidenceScope), options.signal));
+     } catch (error) {
+       if (options.signal?.aborted) throw error;
++      failures.push('passages');
+       console.warn('[synthesisEvidence] textbook passages unavailable:', error instanceof Error ? error.message : String(error));
+     }
+     const preparations = await prepared;
+@@ -492,8 +501,11 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
+       ...(candidates.length ? { candidateRoutes: candidates } : {}),
+     };
+     // Only a completed gather is kept. The throwIfAborted above means a cancelled one never
+-    // reaches here, so a half-gathered result cannot be served to the next turn as a whole one.
+-    rememberEvidence(key, gathered);
++    // reaches here, and a phase that failed (a runtime deadline, a worker that died) is not a
++    // completed gather either: kept, it was served to every correction for the cache's lifetime
++    // as if the search had found nothing. Used for this turn, gathered again for the next.
++    if (failures.length) console.info(`${new Date().toISOString()} [synthesisEvidence] not remembered: ${failures.join(', ')} failed`);
++    else rememberEvidence(key, gathered);
+     return gathered;
+   } finally {
+     // Ours to close, and only ours: when the caller supplied the runner, dispose is a no-op.
+diff --git a/scripts/test-synthesis-evidence-without-ord.mjs b/scripts/test-synthesis-evidence-without-ord.mjs
+index 3bd04db7..5f220aa8 100644
+--- a/scripts/test-synthesis-evidence-without-ord.mjs
++++ b/scripts/test-synthesis-evidence-without-ord.mjs
+@@ -338,3 +338,25 @@ test('the route search is not asked about a target it has never answered for', a
+   assert.equal(evidence.candidateRoutes, undefined, 'with no candidate routes');
+   assert.equal(evidence.target, 'OC([C@H](CC1=CC=C(OCCSC[C@@H](C(O)=O)N)C=C1)NC(OCC2C3=CC=CC=C3C4=C2C=CC=C4)=O)=O');
+ });
++
++test('a gather in which a phase FAILED is not remembered for the corrections', async () => {
++  // The cache is for a completed gather. A disconnection search that threw (a runtime deadline, a
++  // worker that died) is not a completed gather: remembering it served the corrections an empty ORD
++  // brief for thirty minutes, while the same search, asked again, would have answered.
++  const found = { artifacts: [{ artifactType: 'reaction-disconnections', data: { disconnections: [{ input: 'CCOC(=O)c1ccc(N)cc1', target: 'CCOC(=O)c1ccc(N)cc1', madeBy: null, proposals: [{ precursors: 'CCO.Nc1ccc(C(=O)O)cc1', classes: ['Fischer esterification'], recorded: 3, available: true }] }] } }] };
++  let failing = true;
++  const invoke = async () => { if (failing) throw new Error('The disconnection search failed.'); return found; };
++  Object.assign(globalThis.__ord, { provider: TOOL, indexDir: '/idx', invoke, calls: 0 });
++  const first = await quiet(() => gatherSynthesisEvidence(REQUEST));
++  assert.deepEqual(first.disconnections, [], 'the failed search contributes nothing to this turn');
++  failing = false;
++  const info = console.info; console.info = () => {};
++  let second;
++  try { second = await quiet(() => gatherSynthesisEvidence(REQUEST)); } finally { console.info = info; }
++  assert.equal(second.disconnections[0]?.proposals[0]?.classes[0], 'Fischer esterification', 'the correction is gathered again, not served the failed gather');
++  // A gather that completed is still remembered.
++  const calls = globalThis.__ord.calls;
++  const third = await quiet(() => gatherSynthesisEvidence(REQUEST));
++  assert.equal(globalThis.__ord.calls, calls, 'a completed gather is served from memory');
++  assert.equal(third, second);
++});
