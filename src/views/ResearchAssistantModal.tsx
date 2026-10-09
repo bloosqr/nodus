@@ -28,7 +28,7 @@ import { ResearchEffortControl } from '../components/ResearchEffortControl';
 import { ChatMarkdown } from '../components/ChatMarkdown';
 import { ChatAbortedNotice } from '../components/ChatAbortedNotice';
 import { ChatSkillsControl } from '../components/ChatSkillsControl';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import type {
   AppSettings,
   ChatConversationSummary,
@@ -102,6 +102,14 @@ const GENEALOGY_SUGGESTIONS = [
 ];
 
 type UiMessage = ResearchUiMessage;
+
+/** An adapter's answer (Study, World, Databases). `renderMessage` builds fresh callback props on
+ *  every call, which defeats the memo inside ChatMarkdown, so without this every streamed delta
+ *  re-parsed the Markdown of every earlier answer. A delta replaces only the streaming message
+ *  object; the others keep their identity and are skipped here. */
+const AdapterMessageBody = memo(function AdapterMessageBody({ render, message, streaming }: { render: (message: UiMessage, streaming: boolean) => ReactNode; message: UiMessage; streaming: boolean }) {
+  return <>{render(message, streaming)}</>;
+});
 
 export function ResearchAssistantModal({
   settings,
@@ -1107,7 +1115,7 @@ export function ResearchAssistantModal({
                       {message.role === 'assistant' && !message.error ? (
                         message.content ? (
                           <div className={message.id === streamingId ? 'stream-body' : undefined}>
-                            {adapter ? adapter.renderMessage(message, message.id === streamingId) : <ChatMarkdown content={message.content} onCitation={handleCitation} streaming={message.id === streamingId && message.id !== repaintedId} />}
+                            {adapter ? <AdapterMessageBody render={adapter.renderMessage} message={message} streaming={message.id === streamingId} /> : <ChatMarkdown content={message.content} onCitation={handleCitation} streaming={message.id === streamingId && message.id !== repaintedId} />}
                             {message.id === streamingId && <span aria-hidden className="stream-caret" />}
                           </div>
                         ) : message.id === streamingId ? (
