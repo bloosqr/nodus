@@ -1,0 +1,62 @@
+TAP version 13
+# Subtest: a note after a name is not part of the name
+not ok 1 - a note after a name is not part of the name
+  ---
+  duration_ms: 6.178657
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-route-label-notes.mjs:16:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      [
+        'ethanal',
+    +   'sodium borohydride (1.2 equiv)',
+    +   'ethanol (distilled off as it forms)',
+    +   'methanol (solvent)',
+    +   'sulfuric acid (cat.)'
+    -   'sodium borohydride',
+    -   'ethanol',
+    -   'methanol',
+    -   'sulfuric acid'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'ethanal'
+    1: 'sodium borohydride'
+    2: 'ethanol'
+    3: 'methanol'
+    4: 'sulfuric acid'
+  actual:
+    0: 'ethanal'
+    1: 'sodium borohydride (1.2 equiv)'
+    2: 'ethanol (distilled off as it forms)'
+    3: 'methanol (solvent)'
+    4: 'sulfuric acid (cat.)'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-route-label-notes.mjs:17:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  ...
+# Subtest: parentheses that belong to the name stay
+ok 2 - parentheses that belong to the name stay
+  ---
+  duration_ms: 0.908203
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 157.025736

@@ -1,0 +1,3 @@
+'sodium borohydride'                          HIT
+'sodium borohydride (1.2 equiv)'              miss -> network PubChem
+'4-nitrophenol (2 equiv)'                     miss -> network PubChem

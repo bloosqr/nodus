@@ -1,0 +1,69 @@
+# Repository: github.com/bloosqr/nodus — apply to audit/2026-10-09 with: git apply audit-results/5-shared-parsing/09-trailing-notes-in-names.patch
+diff --git a/scripts/test-route-label-notes.mjs b/scripts/test-route-label-notes.mjs
+new file mode 100644
+index 00000000..7edd8be0
+--- /dev/null
++++ b/scripts/test-route-label-notes.mjs
+@@ -0,0 +1,28 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++
++const dir = await mkdtemp(path.join(os.tmpdir(), 'route-label-notes-'));
++await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
++const { findStepNamedSpecies } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
++test.after(() => rm(dir, { recursive: true, force: true }));
++
++const names = (reactants, agents = 'none', products = 'ethanol') => findStepNamedSpecies(`## Step 1 — Reduction\n\nThe aldehyde is reduced.\n\nReactants: ${reactants}\nProducts: ${products}\nByproducts: none\nAgents: ${agents}\n`, 1)[0].map((entry) => entry.name);
++
++test('a note after a name is not part of the name', () => {
++  assert.deepEqual(names('ethanal; sodium borohydride (1.2 equiv)', 'methanol (solvent); sulfuric acid (cat.)', 'ethanol (distilled off as it forms)'), ['ethanal', 'sodium borohydride', 'ethanol', 'methanol', 'sulfuric acid']);
++  assert.deepEqual(names('acetic acid (glacial) (excess); ethane-1,2-diol (ethylene glycol)'), ['acetic acid', 'ethane-1,2-diol', 'ethanol']);
++  assert.deepEqual(names('the photodimer (crude) — `C1=CC2(C=C1)OCCO2`'), ['the photodimer', 'ethanol']);
++});
++
++test('parentheses that belong to the name stay', () => {
++  assert.deepEqual(
++    names('iron(III) chloride; (2R)-butan-2-ol; sodium (2R)-2-hydroxypropanoate; copper (II); tetrakis(triphenylphosphine)palladium (0); 2-(trimethylsilyl)ethanol; but-2-ene (E)'),
++    ['iron(III) chloride', '(2R)-butan-2-ol', 'sodium (2R)-2-hydroxypropanoate', 'copper (II)', 'tetrakis(triphenylphosphine)palladium (0)', '2-(trimethylsilyl)ethanol', 'but-2-ene (E)', 'ethanol'],
++  );
++  assert.deepEqual(names('ε-caprolactam (azepan-2-one'), ['ε-caprolactam (azepan-2-one', 'ethanol']);
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..9b60cbab 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -1090,6 +1090,20 @@ export function countRouteSteps(answer: string): number {
+   return count;
+ }
+ 
++/** A note the author put after a name, in parentheses after a space: "sodium borohydride (1.2
++ *  equiv)", "sulfuric acid (cat.)", "ethanal (distilled off as it forms)", a trivial name after the
++ *  systematic one. The contract asks for names only, a model adds these anyway, and no reference
++ *  holds the name with its note: a reactant or product so written cost a name-correction call to the
++ *  model, an agent was simply never resolved. Only a note with a lowercase word goes, so an oxidation
++ *  state, a charge or a descriptor written apart ("palladium (0)", "copper (II)", "(2R)") stays. */
++function withoutTrailingNote(name: string): string {
++  let out = name;
++  for (let match = /\s+\(([^()]*)\)$/.exec(out); match && /[a-z]{2}/.test(match[1]) && match.index > 0; match = /\s+\(([^()]*)\)$/.exec(out)) {
++    out = out.slice(0, match.index).trimEnd();
++  }
++  return out;
++}
++
+ /** The names the answer assigns to each step, in document order per step. */
+ export function findStepNamedSpecies(text: string, count: number): NamedSpecies[][] {
+   if (count < 1) return [];
+@@ -1097,7 +1111,7 @@ export function findStepNamedSpecies(text: string, count: number): NamedSpecies[
+   for (const segment of namedSegments(text, count)) {
+     for (const entry of segment.entries) {
+       if (steps[segment.step].length >= 48) break;
+-      steps[segment.step].push({ role: segment.role, byproduct: segment.byproduct, name: entry.name, ...(entry.declaredSmiles ? { declaredSmiles: entry.declaredSmiles } : {}) });
++      steps[segment.step].push({ role: segment.role, byproduct: segment.byproduct, name: withoutTrailingNote(entry.name), ...(entry.declaredSmiles ? { declaredSmiles: entry.declaredSmiles } : {}) });
+     }
+   }
+   return steps;

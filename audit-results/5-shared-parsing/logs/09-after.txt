@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: a note after a name is not part of the name
+ok 1 - a note after a name is not part of the name
+  ---
+  duration_ms: 5.381743
+  type: 'test'
+  ...
+# Subtest: parentheses that belong to the name stay
+ok 2 - parentheses that belong to the name stay
+  ---
+  duration_ms: 0.563629
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 155.128437

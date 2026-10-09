@@ -1,0 +1,5 @@
+case | answer size | countRouteSteps base ms | patched ms | findStepNamedSpecies base ms | patched ms
+target drawing 20 KB + 8 steps | 21 KB | 597 | 0.4 | 557 | 3.1
+target drawing 40 KB + 8 steps | 41 KB | 2408 | 0.6 | 2380 | 1.2
+passed route, 8 steps x 20 KB drawings | 162 KB | 4596 | 4.2 | 4458 | 4.6
+passed route, 29 steps x 20 KB drawings (~600 KB) | 588 KB | 16335 | 33.2 | 17411 | 34.0
