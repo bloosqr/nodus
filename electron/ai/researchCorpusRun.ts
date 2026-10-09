@@ -19,7 +19,7 @@ import { embed, resolveModelRef, researchModelContextWindow } from './aiClient';
 import { createResearchSectionCoverage } from './researchSectionCoverage';
 import { withResearchValidationThinking } from './thinkingEffort';
 import { withResearchRequestBudget } from './researchRequestBudget';
-import { recordScopedSourcePassage, recordScopedLegacyPassage } from '../citations/scopedLegacyCitations';
+import { insertScopedReceipts, recordScopedSourcePassage, recordScopedLegacyPassage, type ScopedReceiptRow } from '../citations/scopedLegacyCitations';
 import { documentaryCitationId } from '../citations/documentaryCitations';
 import { getSettings } from '../db/settingsRepo';
 import { readAutomaticResearchZotero, pinZoteroOriginals, type ZoteroOriginalPins } from '../mcp/researchZotero';
@@ -89,6 +89,8 @@ export class ResearchCorpusRun {
   private readonly ideaIds: string[];
   private originalPins?: Promise<ZoteroOriginalPins>;
   private graphSnapshot: Pick<WritingWorkshopSnapshot, 'gaps' | 'contradictions' | 'themes'> | null = null;
+  /** Receipts found while investigate() runs, written when it ends. See insertScopedReceipts. */
+  private pendingReceipts?: ScopedReceiptRow[];
   private readonly sourceCoverage: NonNullable<ResearchTraversal['sourceCoverage']>;
   constructor(readonly scope: ResolvedResearchScope, settings: RetrievalSettings, readonly signal?: AbortSignal, readonly pinRevisions = false) {
     this.budget = new ResearchRetrievalBudget(settings);
@@ -121,6 +123,11 @@ export class ResearchCorpusRun {
   }
   /** Research Chat's agent starts from every query of its plan; other callers from one. */
   async investigate(query: string, model?: ModelRef | null): Promise<void> {
+    this.pendingReceipts = [];
+    try { await this.investigateSteps(query, model); }
+    finally { const rows = this.pendingReceipts; this.pendingReceipts = undefined; insertScopedReceipts(rows); }
+  }
+  private async investigateSteps(query: string, model?: ModelRef | null): Promise<void> {
     if (this.pinRevisions && !this.originalPins) {
       const controller = new AbortController();
       const signal = this.signal ? AbortSignal.any([this.signal, controller.signal]) : controller.signal;
@@ -181,7 +188,7 @@ export class ResearchCorpusRun {
     const separable = readDocuments ? scopedIdeaEvidencePassages(query, stableWorks, settings.candidates) : [];
     const inventory = researchCorpusInventory().documents;
     const legacy = selectPassageEvidence([...hierarchy.passages, ...separable], settings.passagesPerRound, { preferLexical: true, preferSourceDiversity: true }).flatMap(hit => {
-      const receipt = recordScopedLegacyPassage(this.scope, hit.passage_id, inventory);
+      const receipt = recordScopedLegacyPassage(this.scope, hit.passage_id, inventory, this.pendingReceipts);
       return receipt ? [{ id: receipt.passage_id, label: hit.title, summary: receipt.text, nodus_id: hit.nodus_id, pageLabel: receipt.page_label,
         authors: this.scope.documents.find(document => document.workId === hit.nodus_id)?.authors ?? [], year: hit.year, zotero_key: hit.zotero_key,
         citation: `nodus://passage/${encodeURIComponent(receipt.passage_id)}`, score: hit.similarity, reason: 'source' }] : [];
@@ -315,7 +322,7 @@ export class ResearchCorpusRun {
       const receipt = recordScopedSourcePassage(this.scope, document.id, { passage_id: '', nodus_id: document.workId ?? document.id,
         libraryItemId: library?.id ?? null, attachmentId, attachmentRevision, revision: document.revision, provenance: 'source',
         text: page.text, page_label: page.pageLabel, page_number: page.pageNumber, source_ref: sourceRef, chunk_index: 0,
-        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } });
+        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } }, undefined, this.pendingReceipts);
       if (!receipt || !this.budget.accept(receipt.passage_id, page.text)) continue;
       this.evidence.set(receipt.passage_id, { id: receipt.passage_id, nodus_id: receipt.nodus_id, label: document.title, summary: page.text,
         authors: document.authors, year: document.year, pageLabel: page.pageLabel, zotero_key: receipt.work.zotero_key,
