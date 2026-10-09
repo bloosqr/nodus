@@ -161,3 +161,62 @@ test('a call cancelled while it waits for a slot never starts', async (t) => {
   await Promise.all(busy);
   assert.ok(!fs.existsSync(marker), 'the cancelled call ran anyway');
 });
+
+/** A script that answers in a loop when the host asks it to, and once otherwise. */
+const SERVED = `
+import json, os, sys, time
+def answer(request):
+    if request.get("sleep"): time.sleep(request["sleep"])
+    if request.get("exit") is not None: os._exit(request["exit"])
+    return {"pid": os.getpid(), "echo": request.get("echo")}
+if os.environ.get("NODUS_PYTHON_SERVE") == "1":
+    for line in sys.stdin:
+        message = json.loads(line)
+        reply = {"id": message["id"], "code": 0, "stdout": json.dumps(answer(json.loads(message["stdin"] or "{}"))), "stderr": ""}
+        sys.stdout.write(json.dumps(reply) + "\\n")
+        sys.stdout.flush()
+else:
+    print(json.dumps(answer(json.loads(sys.stdin.read() or "{}"))))
+`;
+
+test('a persistent script is started once and answers call after call', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  if (typeof lib.stopServedInterpreters !== 'function') assert.fail('the host has no persistent interpreters');
+  installRuntime();
+  const file = script(SERVED);
+  const ask = (request, extra = {}, signal = new AbortController().signal) => lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', file], stdin: JSON.stringify(request), timeoutMs: 30_000, persistent: true, ...extra }, signal);
+  try {
+    const first = JSON.parse((await ask({ echo: 'é€' })).stdout);
+    const second = JSON.parse((await ask({ echo: 2 })).stdout);
+    assert.equal(first.echo, 'é€');
+    assert.equal(second.pid, first.pid, 'the second call was answered by the same interpreter');
+
+    // A timeout kills the interpreter; the next call gets a fresh one that works.
+    await assert.rejects(ask({ sleep: 5 }, { timeoutMs: 1_000 }), /exceeded 1 seconds/);
+    const afterTimeout = JSON.parse((await ask({ echo: 3 })).stdout);
+    assert.notEqual(afterTimeout.pid, first.pid);
+
+    // So does a cancellation.
+    const controller = new AbortController();
+    const cancelled = ask({ sleep: 5 }, {}, controller.signal);
+    setTimeout(() => controller.abort(), 200);
+    await assert.rejects(cancelled, { name: 'AbortError' });
+
+    // An interpreter that dies mid-request is a failure with its exit code, never a hang or a success.
+    const died = await ask({ exit: 7 });
+    assert.equal(died.code, 7);
+    assert.match(died.stderr, /exited before it answered/);
+
+    // Calls at the same time are answered by different interpreters.
+    const both = await Promise.all([ask({ sleep: 0.3 }), ask({ sleep: 0.3 })]);
+    assert.notEqual(JSON.parse(both[0].stdout).pid, JSON.parse(both[1].stdout).pid);
+  } finally { lib.stopServedInterpreters(); }
+});
+
+test('a call that carries a secret is never given a persistent interpreter', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  installRuntime();
+  const file = script('import sys, json, os\nprint(json.dumps({"serve": os.environ.get("NODUS_PYTHON_SERVE"), "first": sys.stdin.readline().strip()}))\n');
+  const result = await lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', file], secret: 'not-a-real-key', timeoutMs: 30_000, persistent: true }, new AbortController().signal);
+  assert.deepEqual(JSON.parse(result.stdout), { serve: null, first: 'not-a-real-key' });
+});
