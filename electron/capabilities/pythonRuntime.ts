@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pluginsRuntimesRoot } from './pluginStoreV2';
+import { Semaphore } from './hostLimits';
 import type { TrustedWorkerRuntime } from './workerHost';
 
 /** Python environments a capability declares and the host builds.
@@ -211,6 +212,13 @@ const STDERR_TAIL = 64_000;
 const signalExitCode = (name: NodeJS.Signals | null): number =>
   128 + ((name && os.constants.signals[name]) || 9);
 
+/** Interpreters running at once, across every capability and every turn. Each one is a CPU-bound
+ *  process carrying its own RDKit and index tables, and nothing else bounded them: one evidence
+ *  gather and one route check together started a dozen on a four-core machine. One core is left
+ *  for the main process, which serves every capability's host calls. */
+const pythonSlots = new Semaphore(Math.max(2, os.availableParallelism() - 1));
+export const pythonRuntimeConcurrency = (): number => pythonSlots.size;
+
 /** Interpreters whose process group may still hold something, so a quit does not leave a
  *  capability's helpers running after the application is gone. */
 const liveInterpreters = new Set<ChildProcess>();
@@ -239,6 +247,15 @@ export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request:
   if (!root || !fs.existsSync(path.join(root, READY))) throw new Error('That capability runtime is not installed.');
   if (request.args.some(argument => typeof argument !== 'string' || argument.length > 4_000)) throw new Error('Invalid runtime argument.');
 
+  // The deadline below is armed once the interpreter has a slot: time spent queued behind other
+  // calls is not time this one spent running, and must not be reported as it.
+  const release = await pythonSlots.acquire(signal);
+  try {
+    return await spawnInterpreter(root, request, signal);
+  } finally { release(); }
+}
+
+function spawnInterpreter(root: string, request: PythonRunRequest, signal: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(interpreter(root), request.args, {
       cwd: root, stdio: ['pipe', 'pipe', 'pipe'],

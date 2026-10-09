@@ -125,3 +125,39 @@ test('cancelling a call also stops what the interpreter started', async (t) => {
     assert.ok(await waitFor(() => !alive(helper)), `the helper ${helper} outlived the cancelled call`);
   } finally { try { process.kill(helper, 'SIGKILL'); } catch { /* gone */ } }
 });
+
+test('interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  installRuntime();
+  const limit = typeof lib.pythonRuntimeConcurrency === 'function' ? lib.pythonRuntimeConcurrency() : Math.max(2, os.availableParallelism() - 1);
+  const log = path.join(scratch, 'overlap.log');
+  fs.writeFileSync(log, '');
+  const body = `import time\nopen(${JSON.stringify(log)}, "a").write("+\\n")\ntime.sleep(0.6)\nopen(${JSON.stringify(log)}, "a").write("-\\n")\n`;
+  const calls = Array.from({ length: limit + 3 }, () => run(body));
+  // Queued behind every slot for at least 0.6 s, with a one-second budget for 0.1 s of work.
+  const late = run('import time\ntime.sleep(0.1)\nprint("done")\n', { timeoutMs: 1_000 });
+  const results = await Promise.all([...calls, late]);
+  assert.ok(results.every(result => result.code === 0));
+  assert.equal(results.at(-1).stdout.trim(), 'done');
+  let running = 0, peak = 0;
+  for (const mark of fs.readFileSync(log, 'utf8').trim().split('\n')) { running += mark === '+' ? 1 : -1; peak = Math.max(peak, running); }
+  assert.ok(peak <= limit, `${peak} interpreters ran at once with a limit of ${limit}`);
+});
+
+test('a call cancelled while it waits for a slot never starts', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  installRuntime();
+  const limit = typeof lib.pythonRuntimeConcurrency === 'function' ? lib.pythonRuntimeConcurrency() : Math.max(2, os.availableParallelism() - 1);
+  const marker = path.join(scratch, 'started.marker');
+  const busy = Array.from({ length: limit }, () => run('import time\ntime.sleep(1.0)\n'));
+  const controller = new AbortController();
+  const queued = run(`open(${JSON.stringify(marker)}, "w").write("started")\n`, {}, controller.signal);
+  queued.catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 200));
+  controller.abort();
+  const started = Date.now();
+  await assert.rejects(queued, { name: 'AbortError' });
+  assert.ok(Date.now() - started < 300, 'the cancellation did not wait for a slot');
+  await Promise.all(busy);
+  assert.ok(!fs.existsSync(marker), 'the cancelled call ran anyway');
+});
