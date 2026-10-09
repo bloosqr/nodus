@@ -1,0 +1,22 @@
+== after patch
+ok 1 - the cached scan ranks exactly as the per-row callback
+ok 2 - ties, missing and misshapen vectors are treated exactly as before
+ok 3 - the caller's WHERE and its parameters filter exactly as before
+ok 4 - a write from another connection is never answered from the old vectors
+ok 5 - a write to a table no scan reads keeps the cached vectors and rows
+ok 6 - a write to a table the statement's filter reads is never answered from the old rows
+# pass 6
+# fail 0
+== before patch (worker as on audit/2026-10-09; counters installed by the test)
+ok 1 - the cached scan ranks exactly as the per-row callback
+ok 2 - ties, missing and misshapen vectors are treated exactly as before
+ok 3 - the caller's WHERE and its parameters filter exactly as before
+ok 4 - a write from another connection is never answered from the old vectors
+not ok 5 - a write to a table no scan reads keeps the cached vectors and rows
+  expected: 3
+  actual: 4
+not ok 6 - a write to a table the statement's filter reads is never answered from the old rows
+  expected: 4
+  actual: 5
+# pass 4
+# fail 2

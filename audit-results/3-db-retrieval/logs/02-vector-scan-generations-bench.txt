@@ -1,0 +1,13 @@
+== after patch
+2026-10-09T06:08:32.899Z [vectorScanWorker] passages cache built in 1.20s · 100000 vectors · passages:0
+BENCH first scan (cold): 2276 ms
+BENCH second scan (warm): 427 ms
+BENCH after an unrelated one-row write: 423 ms
+BENCH warm again: 472 ms
+== before patch (worker from audit/2026-10-09)
+2026-10-09T06:08:37.701Z [vectorScanWorker] passages cache built in 1.10s · 100000 vectors · data_version 2
+BENCH first scan (cold): 2212 ms
+BENCH second scan (warm): 471 ms
+BENCH after an unrelated one-row write: 5857 ms
+2026-10-09T06:08:43.975Z [vectorScanWorker] passages cache built in 4.77s · 100000 vectors · data_version 3
+BENCH warm again: 393 ms

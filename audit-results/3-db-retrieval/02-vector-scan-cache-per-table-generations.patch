@@ -1,0 +1,209 @@
+# Repository: github.com/bloosqr/nodus — unified diff against audit/2026-10-09. Apply with: git apply 02-vector-scan-cache-per-table-generations.patch
+diff --git a/electron/db/database.ts b/electron/db/database.ts
+index 3709f101..e7e6bbda 100644
+--- a/electron/db/database.ts
++++ b/electron/db/database.ts
+@@ -14,6 +14,7 @@ import { auditQaDatabaseOpen } from '../qa/databaseAudit';
+ import { migrateDatabaseSafely } from './migrationSafety';
+ import { scheduleMigrationRecoveryRetention } from './migrationRecoveryUtilityHost';
+ import { ensureBackupRevisionTriggers } from '../export/backupVaultRevision';
++import { ensureVectorScanGenerationTriggers } from './vectorScanGenerations';
+ import { embeddingTextForIdea, embeddingTextHash } from './ideaEmbeddingText';
+ 
+ let db: Database.Database | null = null;
+@@ -136,6 +137,8 @@ function openDatabase(file: string): Database.Database {
+   // stops a reader from queueing anything: without triggers, nothing can write to
+   // server_outbox no matter what the rest of the app believes.
+   ensureOutboxTriggers(next, mayQueueMutations(file));
++  // Before the backup triggers, so its counter table is tracked like any other.
++  ensureVectorScanGenerationTriggers(next);
+   ensureBackupRevisionTriggers(next);
+   // A chat history's folders and projects are checked on every open: a placement that
+   // names a folder or project that is gone (or a folder of another project) is cleared
+diff --git a/electron/db/syncTables.ts b/electron/db/syncTables.ts
+index 8b619750..841f37ff 100644
+--- a/electron/db/syncTables.ts
++++ b/electron/db/syncTables.ts
+@@ -284,6 +284,9 @@ const NOT_SYNCED_TABLES = new Set([
+   // backup can reuse a verified snapshot. Moving it to another machine would neither
+   // carry user data nor describe the receiver's SQLite file.
+   'backup_revision',
++  // Write counters the vector-scan worker keys its cache on (vectorScanGenerations.ts):
++  // they describe this SQLite file's writes, not anything a receiver could use.
++  'vector_scan_generations',
+   // Explicitly local, opt-in and content-free beta performance observations.
+   'primary_source_local_metrics',
+   // Deliberately machine-local: it is THIS computer's record of what its own merges
+diff --git a/electron/db/vectorScanGenerations.ts b/electron/db/vectorScanGenerations.ts
+new file mode 100644
+index 00000000..a061e939
+--- /dev/null
++++ b/electron/db/vectorScanGenerations.ts
+@@ -0,0 +1,44 @@
++import type Database from 'better-sqlite3';
++
++const PREFIX = 'nodus_vector_scan_';
++
++/** Every table a similarity scan reads, the vector tables and the ones their filters join. A scan
++ *  whose statement reads a table missing here is answered without the worker's cache keys (it
++ *  falls back to `PRAGMA data_version`), so forgetting one costs speed, never a stale answer. */
++export const VECTOR_SCAN_TABLES = [
++  'archive_item_persons', 'archive_items', 'document_profile_state', 'document_vectors',
++  'idea_occurrences', 'ideas', 'passages', 'work_summaries', 'works',
++] as const;
++
++function quoteIdentifier(value: string): string {
++  return `"${value.replace(/"/g, '""')}"`;
++}
++
++/**
++ * A write counter per scanned table, kept by triggers in the vault itself so a write from any
++ * connection moves it in the same transaction.
++ *
++ * The vector-scan worker keyed its cached vectors on `PRAGMA data_version`, which moves on ANY
++ * commit to the file: one settings row, one citation receipt or one chat message threw away
++ * 100,000 cached vectors and the filtered rows, and the next scan paid ~1.7 s to rebuild them
++ * (measured 2026-10-09 on 100k passages at 1024 dimensions). These counters move only when a
++ * table the scan actually reads is written.
++ */
++export function ensureVectorScanGenerationTriggers(db: Database.Database): void {
++  db.exec('CREATE TABLE IF NOT EXISTS vector_scan_generations (name TEXT PRIMARY KEY, generation INTEGER NOT NULL DEFAULT 0)');
++  const present = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((row) => row.name));
++  const register = db.prepare('INSERT OR IGNORE INTO vector_scan_generations (name, generation) VALUES (?, 0)');
++  for (const table of VECTOR_SCAN_TABLES) {
++    if (!present.has(table)) continue;
++    register.run(table);
++    for (const operation of ['insert', 'update', 'delete'] as const) {
++      db.exec(`
++        CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${PREFIX}${operation}_${table}`)}
++        AFTER ${operation.toUpperCase()} ON ${quoteIdentifier(table)}
++        BEGIN
++          UPDATE vector_scan_generations SET generation = generation + 1 WHERE name = '${table}';
++        END
++      `);
++    }
++  }
++}
+diff --git a/electron/workers/vectorScanWorker.ts b/electron/workers/vectorScanWorker.ts
+index 84d53f13..744a207e 100644
+--- a/electron/workers/vectorScanWorker.ts
++++ b/electron/workers/vectorScanWorker.ts
+@@ -52,24 +52,46 @@ function databaseFor(file: string): Database.Database {
+  *  the same way, so a similarity here is the same double the callback returned. A row whose vector
+  *  is missing or the wrong length is absent from the cache and scores 0, exactly as `vec_scan` does.
+  *
+- *  Freshness: `PRAGMA data_version` changes whenever another connection commits to the file, and
+- *  this worker's connection is read-only, so ANY write since the cache was built rebuilds it. It is
+- *  never trusted across a write, in-place re-embeddings included. Every rebuild is logged, so a
+- *  trace shows how often that happens. Idle caches are dropped after a few minutes. */
++ *  Freshness: the vault's triggers count writes per table (db/vectorScanGenerations.ts). The vectors
++ *  are keyed on the scanned table's counter and each statement's filtered rows on the counters of
++ *  every table that statement reads, so any write to one of them, in-place re-embeddings included,
++ *  rebuilds what depends on it, and a write anywhere else (a setting, a citation receipt, a chat
++ *  message) rebuilds nothing. A vault without the counters, or a statement reading a table they do
++ *  not cover, falls back to `PRAGMA data_version`, which changes on ANY commit by another
++ *  connection. Every rebuild is logged, so a trace shows how often that happens. Idle caches are
++ *  dropped after a few minutes. */
+ interface VectorCache {
+-  version: number; dim: number; slots: Map<number, number>; vectors: Float32Array; norms: Float64Array; timer?: NodeJS.Timeout;
+-  /** The rows the caller's own statement keeps, per statement + parameters, window by window. The
+-   *  same database version gives the same rows, so the filter (a JOIN and a text-hash test on every
+-   *  row, ~10 µs a row) runs once per version rather than once per query. Bounded per table. */
++  version: string; dim: number; slots: Map<number, number>; vectors: Float32Array; norms: Float64Array; timer?: NodeJS.Timeout;
++  /** The rows the caller's own statement keeps, per statement + parameters + the versions of the
++   *  tables it reads, window by window. The same versions give the same rows, so the filter (a JOIN
++   *  and a text-hash test on every row, ~10 µs a row) runs once per version rather than once per
++   *  query. Bounded per table. */
+   eligible: Map<string, Array<Array<Record<string, unknown> & { rid: number }>>>;
+ }
+ const ELIGIBLE_SETS = 8;
+ const vectorCaches = new Map<string, VectorCache>();
+ const CACHE_IDLE_MS = 5 * 60_000;
+ 
++/** The tables a statement reads: every name after FROM or JOIN, table-valued functions aside. */
++function tablesRead(sql: string): string[] {
++  return [...new Set([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_]\w*)/gi)].map((match) => match[1].toLowerCase()))]
++    .filter((name) => name !== 'json_each')
++    .sort();
++}
++
++/** The write counters of `tables`, or the connection's data_version when any is not counted. */
++function versionOf(database: Database.Database, tables: string[]): string {
++  try {
++    const rows = database.prepare('SELECT name, generation FROM vector_scan_generations WHERE name IN (SELECT value FROM json_each(?)) ORDER BY name')
++      .all(JSON.stringify(tables)) as Array<{ name: string; generation: number }>;
++    if (rows.length === tables.length) return rows.map((row) => `${row.name}:${row.generation}`).join(',');
++  } catch { /* A vault opened before the counters existed. */ }
++  return `data_version:${database.pragma('data_version', { simple: true }) as number}`;
++}
++
+ function vectorCacheFor(database: Database.Database, file: string, table: string, dim: number): VectorCache {
+   const key = `${path.resolve(file)}|${table}`;
+-  const version = database.pragma('data_version', { simple: true }) as number;
++  const version = versionOf(database, [table]);
+   let cache = vectorCaches.get(key);
+   if (!cache || cache.version !== version || cache.dim !== dim) {
+     const started = performance.now();
+@@ -92,7 +114,7 @@ function vectorCacheFor(database: Database.Database, file: string, table: string
+     if (cache?.timer) clearTimeout(cache.timer);
+     cache = { version, dim, slots, vectors, norms, eligible: new Map() };
+     vectorCaches.set(key, cache);
+-    console.info(`${new Date().toISOString()} [vectorScanWorker] ${table} cache built in ${((performance.now() - started) / 1000).toFixed(2)}s · ${slot} vectors · data_version ${version}`);
++    console.info(`${new Date().toISOString()} [vectorScanWorker] ${table} cache built in ${((performance.now() - started) / 1000).toFixed(2)}s · ${slot} vectors · ${version}`);
+   }
+   if (cache.timer) clearTimeout(cache.timer);
+   cache.timer = setTimeout(() => vectorCaches.delete(key), CACHE_IDLE_MS);
+@@ -159,7 +181,7 @@ function scan(request: WorkerRequest, trace?: SweepTrace): unknown[] {
+   const filterSql = input.sql.replace(/vec_scan\(\s*[\w.]+\s*\)/, '0');
+   if (process.env.NODUS_VECTOR_SCAN_CACHE !== '0' && filterSql !== input.sql) {
+     const cache = vectorCacheFor(database, databasePath, input.table, query.length);
+-    const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}`;
++    const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}\u0000${versionOf(database, tablesRead(filterSql))}`;
+     let windows = cache.eligible.get(key);
+     if (!windows) {
+       const filter = database.prepare(filterSql);
+diff --git a/scripts/test-vector-scan-worker.mjs b/scripts/test-vector-scan-worker.mjs
+index 1a5ab0df..b4158fdb 100644
+--- a/scripts/test-vector-scan-worker.mjs
++++ b/scripts/test-vector-scan-worker.mjs
+@@ -117,3 +117,40 @@ test('a write from another connection is never answered from the old vectors', a
+   await scan(cached, { limit: 3 });
+   assert.equal(builds, before + 1, 'and not again without a write');
+ });
++
++// The vault's per-table write counters (electron/db/vectorScanGenerations.ts), installed here as
++// openDatabase installs them: a write the scan cannot see must not throw the cache away, and a
++// write to any table the statement reads must still reach the answer.
++const countersFile = path.join(outDir, 'counters.cjs');
++await build({ entryPoints: [path.join(repoRoot, 'electron/db/vectorScanGenerations.ts')], outfile: countersFile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' });
++const { ensureVectorScanGenerationTriggers } = require(countersFile);
++
++test('a write to a table no scan reads keeps the cached vectors and rows', async () => {
++  const writer = new Database(dbFile);
++  writer.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE IF NOT EXISTS works (nodus_id TEXT PRIMARY KEY, archived INTEGER NOT NULL DEFAULT 0); INSERT OR IGNORE INTO works VALUES ('a', 0), ('b', 0)");
++  ensureVectorScanGenerationTriggers(writer);
++  await scan(cached, {});
++  const before = builds;
++  for (let i = 0; i < 3; i += 1) writer.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('unrelated', String(i));
++  const rows = await scan(cached, {});
++  assert.deepEqual(rows, await scan(callback, {}));
++  assert.equal(builds, before, 'no rebuild for a write the scan cannot see');
++  writer.close();
++});
++
++test("a write to a table the statement's filter reads is never answered from the old rows", async () => {
++  const input = { sql: sql(' AND kind IN (SELECT nodus_id FROM works WHERE archived = 0)'), limit: 5000 };
++  const both = await scan(cached, input);
++  assert.ok(both.some((row) => Number(row.passage_id.slice(1)) % 3 === 0) && both.some((row) => Number(row.passage_id.slice(1)) % 3 !== 0));
++  const before = builds;
++  const writer = new Database(dbFile);
++  writer.prepare("UPDATE works SET archived = 1 WHERE nodus_id = 'b'").run();
++  const rows = await scan(cached, input);
++  assert.deepEqual(rows, await scan(callback, input));
++  assert.ok(rows.length > 0 && rows.every((row) => Number(row.passage_id.slice(1)) % 3 === 0), 'the archived kind is gone at once');
++  assert.equal(builds, before, 'the vectors themselves were not rebuilt: only the filtered rows');
++  writer.prepare('UPDATE passages SET embedding = ? WHERE passage_id = ?').run(vector(), 'p1');
++  await scan(cached, input);
++  assert.equal(builds, before + 1, 'a write to the vector table rebuilds the vectors');
++  writer.close();
++});
