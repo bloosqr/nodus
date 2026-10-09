@@ -1,0 +1,4 @@
+== after patch
+Lexical passage lane: same candidate pool, ranking read by page and inside the scope.
+== before patch (passagesRepo.ts as on audit/2026-10-09)
+AssertionError [ERR_ASSERTION]: ester reflux: no statement returned more than a page of the ranking (largest 1800)

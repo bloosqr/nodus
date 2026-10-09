@@ -1,0 +1,10 @@
+== after patch
+BENCH lexical unscoped, limit 24: median 100 ms · work-0#1,work-14#62,work-21#39,work-28#16,work-37#40,work-44
+BENCH lexical scoped to 12 works, limit 24: median 146 ms · work-194#39,work-192#95,work-195#42,work-193#75,work-190#48,
+BENCH lexical scoped to 1000 works, limit 6: median 0 ms · 
+BENCH lexical rare term, limit 24: median 62 ms · work-0#84,work-23#62,work-46#40,work-53#17,work-75#95,work-9
+== before patch
+BENCH lexical unscoped, limit 24: median 296 ms · work-0#1,work-14#62,work-21#39,work-28#16,work-37#40,work-44
+BENCH lexical scoped to 12 works, limit 24: median 330 ms · work-194#39,work-192#95,work-195#42,work-193#75,work-190#48,
+BENCH lexical scoped to 1000 works, limit 6: median 0 ms · 
+BENCH lexical rare term, limit 24: median 253 ms · work-0#84,work-23#62,work-46#40,work-53#17,work-75#95,work-9
