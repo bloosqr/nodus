@@ -1,0 +1,15 @@
+✔ selected works constrain pre-answer chemistry evidence and post-answer options (44.677295ms)
+✔ documents switched off contribute no chemistry passages, even with selected books (15.426489ms)
+✔ an empty source selection remains empty instead of searching the full library (15.693739ms)
+✔ an authorized notebook limits chemistry to its own works (72.394312ms)
+✔ automatic academic authorization preserves external chemistry evidence; explicit restrictions do not (13.214914ms)
+✔ repeated correction retains the original target beyond the 4096 history window (19.12431ms)
+✔ repeated correction retains the original target beyond the cloud history window (17.421428ms)
+✔ retrieval starts once ORD has answered, beside the rest of the gather (171.721813ms)
+✔ cancelling a prompt interrupts the evidence embedding instead of finishing retrieval (9.486795ms)
+✔ cancellation reaches concurrent route tools, and one gather opens one runner (14.735086ms)
+✔ post-answer checks preserve structural verification while respecting the source grant (16.393136ms)
+✔ the opt-in revision pass honours web-off and propagates web cancellation (1.32464ms)
+✔ scheme indexes are searched only when every record and template is in scope (5.645851ms)
+ℹ pass 13
+ℹ fail 0
