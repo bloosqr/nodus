@@ -124,8 +124,21 @@ export interface EnsureRuntimeContext {
   signal: AbortSignal;
 }
 
+/** Environments found ready in this process, by pointer. A capability asks before every call it
+ *  makes, and the full check starts three interpreters (the system Python's version, its path, the
+ *  environment's own version): 59 ms measured, every call. Within a few minutes of a full check, the
+ *  pointer and the READY marker still naming the same lock is answer enough; anything else (a
+ *  rebuild, a removal, an interpreter upgraded in between) is checked in full again. */
+const confirmedRuntimes = new Map<string, { root: string; lockDigest: string; at: number }>();
+const CONFIRMED_RUNTIME_MS = 10 * 60_000;
+
 export async function ensurePythonRuntime(runtime: TrustedWorkerRuntime, runtimeId: string, context: EnsureRuntimeContext): Promise<{ ready: boolean; detail?: string }> {
   const pointer = pointerFile(runtime, runtimeId);
+  const known = confirmedRuntimes.get(pointer);
+  if (known && Date.now() - known.at < CONFIRMED_RUNTIME_MS && readPointer(pointer) === known.lockDigest) {
+    try { if (fs.readFileSync(path.join(known.root, READY), 'utf8').trim() === known.lockDigest) return { ready: true }; }
+    catch { /* rebuilt or removed: check in full */ }
+  }
 
   const python = await findSystemPython(context.minVersion);
   if (!python) return { ready: false, detail: `Python ${context.minVersion} or newer was not found on this machine.` };
@@ -156,6 +169,7 @@ async function provisionPythonRuntime(
     if (fs.readFileSync(marker, 'utf8').trim() === lockDigest) {
       await run(interpreter(root), ['--version'], { timeout: 10_000 });
       writePointer(pointer, lockDigest, python.version);
+      confirmedRuntimes.set(pointer, { root, lockDigest, at: Date.now() });
       return { ready: true };
     }
   } catch { /* not built, or built from a different lock */ }
@@ -187,6 +201,7 @@ async function provisionPythonRuntime(
     fs.renameSync(staging, root);
     fs.writeFileSync(marker, lockDigest, { mode: 0o600 });
     writePointer(pointer, lockDigest, python.version);
+    confirmedRuntimes.set(pointer, { root, lockDigest, at: Date.now() });
     return { ready: true };
   } catch (error) {
     fs.rmSync(staging, { recursive: true, force: true });
