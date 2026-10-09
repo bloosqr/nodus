@@ -996,20 +996,22 @@ interface RoleEntry { name: string; declaredSmiles?: string; start: number; end:
 /** Entry spans split on `;`/newlines, but not inside parentheses — so "none (H₂SO₄ is consumed…;
   * the product is obtained after neutralization)" stays one entry. When the parentheses do not
   * balance (a name like "ε-caprolactam (azepan-2-one" with no closing), fall back to a plain
-  * split so an unclosed bracket cannot swallow the rest of the list. */
+  * split so an unclosed bracket cannot swallow the rest of the list. The full-width `；` of an
+  * answer written in Chinese or Japanese separates entries too, as the role markers already accept
+  * its full-width colon; read as one name, two species resolved to nothing. */
 function splitEntrySpans(list: string): Array<{ start: number; end: number }> {
   let balance = 0;
   for (const character of list) { if (character === '(') balance += 1; else if (character === ')') balance = Math.max(0, balance - 1); }
   const spans: Array<{ start: number; end: number }> = [];
   if (balance !== 0) {
-    for (const match of list.matchAll(/[^;\n]+/g)) spans.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
+    for (const match of list.matchAll(/[^;；\n]+/g)) spans.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
     return spans;
   }
   let depth = 0;
   let start = 0;
   for (let index = 0; index <= list.length; index += 1) {
     const character = list[index];
-    if (index === list.length || (depth === 0 && (character === ';' || character === '\n'))) {
+    if (index === list.length || (depth === 0 && (character === ';' || character === '；' || character === '\n'))) {
       if (index > start) spans.push({ start, end: index });
       start = index + 1;
     } else if (character === '(') depth += 1;
