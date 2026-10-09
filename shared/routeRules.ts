@@ -74,15 +74,12 @@ export function routeSpeciesRules(): string[] {
   return restored;
 }
 
-/** What a correction says about the target drawing. The drawing tool accepts only an identity
- *  quoted in the current message, so a correction quotes the target exactly as the original
- *  request did; with no such target it asks for no drawing rather than one that is refused. */
+/** What a correction says about the target and about drawing. A route turn strips every
+ *  chemistry-plan fence from the answer and draws the route only in the final report, once every
+ *  step passes, so a correction asks for no drawing. The target is still quoted exactly as the
+ *  original request gave it, so the model knows which compound the route must reach. */
 export function correctionTargetPlanRule(target: string | null | undefined): string {
-  const never = 'Never emit a chemistry-plan for a step, and never a nodus-view, nodus-artifact or nodus-capability-result block: the application draws and checks every step itself.';
-  if (!target) return `Do not emit a chemistry-plan block in this correction: the application keeps the target from the original request. ${never}`;
-  const plan = JSON.stringify({ version: 2, kind: 'structure', depiction: 'skeletal', species: [{ id: 'target', input: { kind: 'smiles', value: target } }] });
-  return [
-    `The requested target, exactly as the original request gave it: \`${target}\`.`,
-    `Draw only that target: emit exactly one fenced code block tagged chemistry-plan with ${plan}, copying the target exactly as quoted above. ${never}`,
-  ].join('\n');
+  const never = 'Do not emit a chemistry-plan block, and never a nodus-view, nodus-artifact or nodus-capability-result block: the application draws the route itself once every step passes.';
+  if (!target) return never;
+  return [`The requested target, exactly as the original request gave it: \`${target}\`.`, never].join('\n');
 }
