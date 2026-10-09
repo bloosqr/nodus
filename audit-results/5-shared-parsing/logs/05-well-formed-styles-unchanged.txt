@@ -1,0 +1,15 @@
+hash heading   ""                 steps=3 same
+hash heading   "## Notes\n\nSee " steps=3 same
+hash heading   "### Route chec"   steps=3 same
+bold heading   ""                 steps=3 same
+bold heading   "## Notes\n\nSee " steps=3 same
+bold heading   "### Route chec"   steps=3 same
+bold lead-in   ""                 steps=3 same
+bold lead-in   "## Notes\n\nSee " steps=3 same
+bold lead-in   "### Route chec"   steps=3 same
+plain line     ""                 steps=3 same
+plain line     "## Notes\n\nSee " steps=3 same
+plain line     "### Route chec"   steps=3 same
+numbered list  ""                 steps=3 same
+numbered list  "## Notes\n\nSee " steps=3 same
+numbered list  "### Route chec"   steps=3 same

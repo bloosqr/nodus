@@ -1,0 +1,74 @@
+# Repository: github.com/bloosqr/nodus — apply to audit/2026-10-09 with: git apply audit-results/5-shared-parsing/05-evidence-blocks-drift.patch
+diff --git a/scripts/test-route-evidence-blocks.mjs b/scripts/test-route-evidence-blocks.mjs
+new file mode 100644
+index 00000000..21bbe63f
+--- /dev/null
++++ b/scripts/test-route-evidence-blocks.mjs
+@@ -0,0 +1,50 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++
++const dir = await mkdtemp(path.join(os.tmpdir(), 'route-evidence-blocks-'));
++await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
++const { collectStepEvidence, formatEvidenceSources, countRouteSteps, findStepProse } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
++test.after(() => rm(dir, { recursive: true, force: true }));
++
++// An overview that names the steps on plain "Step N:" lines, then the route itself.
++const answer = `**Route overview**
++
++Step 1: oxidation of ethanol to ethanal.
++Step 2: aldol addition.
++
++## Step 1 — Oxidation of ethanol
++
++Ethanol is oxidised with PCC [Clayden, p. 120](nodus://passage/p-clayden-120).
++
++Reactants: ethanol; pyridinium chlorochromate
++Products: ethanal
++Byproducts: water
++Agents: dichloromethane
++
++## Step 2 — Aldol addition
++
++Two ethanal condense [March, p. 1220](nodus://passage/p-march-1220).
++
++Reactants: ethanal
++Products: 3-hydroxybutanal
++Byproducts: none
++Agents: sodium hydroxide
++`;
++
++test('a step cited in its own section is credited with that citation', () => {
++  const count = countRouteSteps(answer);
++  assert.equal(count, 2);
++  assert.match(findStepProse(answer, count)[0], /Clayden/, 'the premise: the prose reader already finds step 1 in its own section');
++  const evidence = collectStepEvidence(answer, count, null, []);
++  assert.deepEqual(evidence.steps.map((step) => step.library.map((entry) => entry.id)), [['p-clayden-120'], ['p-march-1220']]);
++  assert.deepEqual(evidence.steps.map((step) => step.title), ['Oxidation of ethanol', 'Aldol addition']);
++  assert.deepEqual(evidence.elsewhere.library, []);
++  const table = formatEvidenceSources(evidence);
++  assert.doesNotMatch(table, /model knowledge only/);
++  assert.match(table, /the answer cites textbooks or library passages in 2/);
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..a1c7fdc1 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -583,6 +583,12 @@ function stepProseText(title: string, block: string): string {
+  *  ("**Target structure**"): those belong to the answer, not to the last step. The first
+  *  section for each number wins. The evidence summary reads its citations from here. */
+ export function findStepBlocks(text: string, count: number): string[] {
++  // The same sections the species, prose and conditions are read from, when the answer has them.
++  // Matched on its own, a "Step 1: …" line in an overview above the route claimed step 1 (the first
++  // section for each number wins), and every citation in the real step was counted as cited
++  // outside the steps — the step read "model knowledge only" beside its own textbook citation.
++  const sections = stepSections(text);
++  if (sections) return Array.from({ length: count }, (_, index) => sections[index] ? text.slice(sections[index].start, sections[index].end) : '');
+   const lines = text.split('\n');
+   let starts: Array<{ step: number; line: number }> = [];
+   lines.forEach((line, at) => {
