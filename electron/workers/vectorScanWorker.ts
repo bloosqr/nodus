@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
 import path from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import type { VectorScanWorkerInput } from '../db/vectorScanHost';
@@ -17,7 +18,7 @@ const ALLOWED_TABLES = new Set([
   'work_summaries',
 ]);
 const WINDOW_ROWIDS = 1_500;
-const databases = new Map<string, Database.Database>();
+const databases = new Map<string, { database: Database.Database; identity: string }>();
 
 function unitVector(values: number[]): Float32Array | null {
   const vector = Float32Array.from(values);
@@ -29,17 +30,36 @@ function unitVector(values: number[]): Float32Array | null {
   return vector;
 }
 
+/** Which file is at `file` now. A restore renames another file over the vault and a reset deletes
+ *  and recreates it; a connection opened before either keeps reading the file it opened. */
+function fileIdentity(file: string): string {
+  const stat = fs.statSync(file);
+  return `${stat.dev}:${stat.ino}`;
+}
+
 function databaseFor(file: string): Database.Database {
   const resolved = path.resolve(file);
+  const identity = fileIdentity(resolved);
   const existing = databases.get(resolved);
-  if (existing?.open) return existing;
+  if (existing?.database.open && existing.identity === identity) return existing.database;
+  if (existing) {
+    // The vault was replaced under this connection. Drop it and everything cached from it, or a
+    // scan would keep answering from the file the user restored over or wiped.
+    try { existing.database.close(); } catch { /* already closed */ }
+    databases.delete(resolved);
+    for (const [key, cache] of vectorCaches) {
+      if (!key.startsWith(`${resolved}|`)) continue;
+      if (cache.timer) clearTimeout(cache.timer);
+      vectorCaches.delete(key);
+    }
+  }
   const database = new Database(resolved, { readonly: true, fileMustExist: true });
   database.pragma('query_only = ON');
   database.pragma('busy_timeout = 5000');
   database.pragma('temp_store = MEMORY');
   database.pragma('cache_size = -32768');
   database.pragma('mmap_size = 268435456');
-  databases.set(resolved, database);
+  databases.set(resolved, { database, identity });
   return database;
 }
 
