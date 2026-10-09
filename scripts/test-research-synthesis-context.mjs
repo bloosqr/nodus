@@ -247,8 +247,10 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
       const grant = { workIds: new Set(), external: false, web: false };
       const answer = await molecule.appendRouteReportAndDrawings(prose, prose, { runner, evidenceScope: grant }, { steps, labels });
       assert.match(answer, /Route check/);
-      assert.deepEqual(calls.map(call => call.toolId), ['verify-route', 'check-compatibility']);
-      assert.equal(calls[1].input.textbookDir, undefined);
+      // The compatibility check reads the labels, not the audit, so it runs beside it: which tools
+      // ran is the contract here, not their order.
+      assert.deepEqual(calls.map(call => call.toolId).sort(), ['check-compatibility', 'verify-route']);
+      assert.equal(calls.find(call => call.toolId === 'check-compatibility').input.textbookDir, undefined);
       calls.length = 0;
       await molecule.appendRouteReportAndDrawings(prose, prose, { runner }, { steps, labels });
       assert.ok(calls.some(call => call.toolId === 'known-reactions'), 'ORD still runs with an unrestricted grant');
