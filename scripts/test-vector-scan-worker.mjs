@@ -154,3 +154,31 @@ test("a write to a table the statement's filter reads is never answered from the
   assert.equal(builds, before + 1, 'a write to the vector table rebuilds the vectors');
   writer.close();
 });
+
+// The rows a statement's filter keeps are computed once per table version. Over a sparse table
+// with a long parameter list (the vault's passages statement carries one parameter per work) that
+// must be one execution, not one per 1,500-rowid window: on a real 14,055-work vault the windowed
+// form took 1.5 s each time the vault's tables changed, against 0.27 s.
+test('a sparse table with a long IN list is filtered in one pass, exactly as window by window', async () => {
+  const sparseFile = path.join(outDir, 'sparse.sqlite');
+  const db = new Database(sparseFile);
+  db.exec('CREATE TABLE passages (passage_id TEXT PRIMARY KEY, kind TEXT, embedding BLOB)');
+  const insert = db.prepare('INSERT INTO passages (rowid, passage_id, kind, embedding) VALUES (?, ?, ?, ?)');
+  db.transaction(() => { for (let i = 0; i < 800; i += 1) insert.run(1 + i * 1000, `s${i}`, `k${i % 40}`, i % 90 === 0 ? null : vector()); })();
+  db.close();
+  const kinds = Array.from({ length: 20_000 }, (_, i) => `k${i}`);
+  const input = { sql: `${sql()} AND kind IN (${kinds.map(() => '?').join(',')})`, params: kinds, limit: 5000 };
+  const ask = (worker) => new Promise((resolve, reject) => {
+    const id = Math.floor(Math.random() * 1e9);
+    const onMessage = (reply) => { if (reply.id !== id) return; worker.off('message', onMessage); reply.ok ? resolve(reply.rows) : reject(new Error(reply.error)); };
+    worker.on('message', onMessage);
+    worker.postMessage({ id, databasePath: sparseFile, scan: { table: 'passages', query, threshold: -1, params: [], ...input } });
+  });
+  const started = performance.now();
+  const rows = await ask(cached);
+  const elapsed = performance.now() - started;
+  console.log(`sparse filter: ${elapsed.toFixed(0)} ms`);
+  assert.deepEqual(rows, await ask(callback), 'the same rows, in the same order, as the statement run window by window');
+  assert.ok(rows.length > 700, 'the fixture keeps most rows');
+  assert.ok(elapsed < 1500, `filtering ${Math.ceil(799_001 / 1500)} windows took ${elapsed.toFixed(0)} ms: the statement must run once, not once per window`);
+});
