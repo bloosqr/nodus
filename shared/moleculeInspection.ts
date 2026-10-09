@@ -1123,6 +1123,20 @@ export function countRouteSteps(answer: string): number {
   return count;
 }
 
+/** A note the author put after a name, in parentheses after a space: "sodium borohydride (1.2
+ *  equiv)", "sulfuric acid (cat.)", "ethanal (distilled off as it forms)", a trivial name after the
+ *  systematic one. The contract asks for names only, a model adds these anyway, and no reference
+ *  holds the name with its note: a reactant or product so written cost a name-correction call to the
+ *  model, an agent was simply never resolved. Only a note with a lowercase word goes, so an oxidation
+ *  state, a charge or a descriptor written apart ("palladium (0)", "copper (II)", "(2R)") stays. */
+function withoutTrailingNote(name: string): string {
+  let out = name;
+  for (let match = /\s+\(([^()]*)\)$/.exec(out); match && /[a-z]{2}/.test(match[1]) && match.index > 0; match = /\s+\(([^()]*)\)$/.exec(out)) {
+    out = out.slice(0, match.index).trimEnd();
+  }
+  return out;
+}
+
 /** The names the answer assigns to each step, in document order per step. */
 export function findStepNamedSpecies(text: string, count: number): NamedSpecies[][] {
   if (count < 1) return [];
@@ -1130,7 +1144,7 @@ export function findStepNamedSpecies(text: string, count: number): NamedSpecies[
   for (const segment of namedSegments(text, count)) {
     for (const entry of segment.entries) {
       if (steps[segment.step].length >= 48) break;
-      steps[segment.step].push({ role: segment.role, byproduct: segment.byproduct, name: entry.name, ...(entry.declaredSmiles ? { declaredSmiles: entry.declaredSmiles } : {}) });
+      steps[segment.step].push({ role: segment.role, byproduct: segment.byproduct, name: withoutTrailingNote(entry.name), ...(entry.declaredSmiles ? { declaredSmiles: entry.declaredSmiles } : {}) });
     }
   }
   return steps;
