@@ -462,6 +462,30 @@ ER  -`);
   }
   assert.equal(catalog.findItemIdByMetadataIdentifiers({ title: 'x', itemType: 'book', creators: [], year: null, isbn: ['0-306-40615-2 9780306406157'], issn: [], tags: [] }),
     multiIsbn.id, 'an incoming space-separated ISBN list matches too');
+  // Duplicate detection must see every record, not just the 5,000 the scan reaches first
+  // (the most recently updated, by the index SQLite picks). Hold a record only the fallback
+  // scans can find, then put more than 5,000 newer records in front of it.
+  {
+    const late = operations.createItem({ title: 'Un registro anterior a cinco mil más', itemType: 'document', creators: [], year: null,
+      doi: 'DOI: 10.5555/late.1', url: 'https://example.test/late/record', isbn: [], issn: [], tags: [] });
+    const handle = catalog.handle;
+    const template = handle.prepare('SELECT * FROM library_items WHERE id=?').get(importedRecord.id);
+    const columns = Object.keys(template);
+    const insert = handle.prepare(`INSERT INTO library_items (${columns.join(',')}) VALUES (${columns.map((c) => '@' + c).join(',')})`);
+    handle.transaction(() => {
+      for (let index = 0; index < 5_100; index += 1) {
+        insert.run({ ...template, id: `filler:${index}`, storage_id: `filler:${index}`, citation_key: null, doi: null, title: `Relleno ${index}`, year: 1900, updated_at: '2999-01-01T00:00:00.000Z',
+          metadata_json: JSON.stringify({ title: `Relleno ${index}`, url: `https://example.test/filler/${index}` }) });
+      }
+    })();
+    const lookup = (fields) => ({ title: 'x', itemType: 'document', creators: [], year: null, isbn: [], issn: [], tags: [], ...fields });
+    const started = performance.now();
+    assert.equal(catalog.findItemIdByMetadataIdentifiers(lookup({ doi: '10.5555/late.1' })), late.id, 'a legacy DOI spelling behind 5,000 newer records is still found');
+    console.log(`identifier fallback over ${5_100 + 2} rows: ${(performance.now() - started).toFixed(1)} ms`);
+    assert.equal(catalog.findItemIdByNormalizedBibliography(lookup({ title: 'Un registro anterior a cinco mil más' })), late.id, 'a title match behind 5,000 newer records is still found');
+    assert.equal(catalog.findItemIdByMetadataUrl(lookup({ url: 'https://example.test/late/record' })), late.id, 'a URL match behind 5,000 newer records is still found');
+    handle.prepare("DELETE FROM library_items WHERE id LIKE 'filler:%'").run();
+  }
   assert.ok(importedRecord.citationKey, 'imports always receive a stable citation key');
   const generated = generateCitationKey(importedRecord.metadata, [importedRecord.citationKey], importedRecord.citationKey);
   assert.notEqual(generated, importedRecord.citationKey);

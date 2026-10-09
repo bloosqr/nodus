@@ -751,11 +751,13 @@ export class LibraryCatalog {
     if (row?.id) return row.id;
 
     // Older/imported records may retain DOI prefixes or arXiv URLs. Keep the
-    // indexed query above as the common path, and use a bounded compatibility
-    // scan only when it misses those legacy spellings.
+    // indexed query above as the common path, and use a compatibility scan only
+    // when it misses those legacy spellings. The scan covers every live record: a
+    // 5,000-row cap read the most recently updated rows first (the index SQLite
+    // picks), so in a large library every older record was invisible to it.
     const rows = this.handle.prepare(`
       SELECT id, doi, isbn_json, metadata_json FROM library_items
-      WHERE deleted_at IS NULL LIMIT 5000
+      WHERE deleted_at IS NULL
     `).all() as Array<{ id: string; doi: string | null; isbn_json: string; metadata_json: string }>;
     const incoming = new Map<LibraryMetadataIdentifierKind, Set<string>>();
     for (const key of ['doi', 'pmid', 'pmcid', 'arxiv'] as const) {
@@ -791,8 +793,8 @@ export class LibraryCatalog {
     if (!title) return null;
     const year = metadata.year == null ? null : Number(metadata.year);
     const rows = (year == null
-      ? this.handle.prepare('SELECT id, title, creators_json, year FROM library_items WHERE deleted_at IS NULL LIMIT 5000').all()
-      : this.handle.prepare('SELECT id, title, creators_json, year FROM library_items WHERE deleted_at IS NULL AND year=? LIMIT 5000').all(year)) as Array<{ id: string; title: string; creators_json: string; year: number | null }>;
+      ? this.handle.prepare('SELECT id, title, creators_json, year FROM library_items WHERE deleted_at IS NULL').all()
+      : this.handle.prepare('SELECT id, title, creators_json, year FROM library_items WHERE deleted_at IS NULL AND year=?').all(year)) as Array<{ id: string; title: string; creators_json: string; year: number | null }>;
     const creator = libraryCreatorDedupKey(metadata.creators);
     for (const row of rows) {
       if (normalizeLibraryDedupTitle(row.title) !== title) continue;
@@ -820,7 +822,6 @@ export class LibraryCatalog {
     const rows = this.handle.prepare(`
       SELECT id, metadata_json FROM library_items
       WHERE deleted_at IS NULL AND metadata_json LIKE '%"url"%'
-      LIMIT 5000
     `).all() as Array<{ id: string; metadata_json: string }>;
     for (const row of rows) {
       try {
