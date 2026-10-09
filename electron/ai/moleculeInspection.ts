@@ -1087,7 +1087,10 @@ export async function appendRouteReportAndDrawings(
       return formatTextbookPrecedents(precedent, (ids) => textbookCitations(ids, undefined, options.evidenceScope), { queries, target });
     }).catch(() => '');
     const review = await reviewPromise;
-    const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
+    // A review that failed or returned nothing readable is null; one that found nothing is `ok`.
+    // The verdict stands on the deterministic checks either way, but the reader is told which, as
+    // the interim report told them the verdict was waiting for it.
+    const report = `${formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []).trimEnd()}${review ? '' : '\n\n_The model review did not run (its call failed or its reply could not be read), so this verdict rests on the balance and continuity checks alone._'}`;
     const finalReport = blockingReviewProblems(review).length ? drawings.replace(FINAL_REPORT_PASSED, FINAL_REPORT_REVIEW_HELD) : drawings;
     const precedentText = await precedentSection;
     const support = await supportPromise;
