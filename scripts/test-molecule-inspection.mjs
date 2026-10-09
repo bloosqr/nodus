@@ -2371,3 +2371,11 @@ test('a correction chip is never taken as the conversation route request', () =>
   const followUp = [...turns, { role: 'assistant', content: 'prose' }, { role: 'user', content: 'Can you use a milder oxidant?' }];
   assert.equal(routeConversationState(followUp).request, request, 'nor after a human follow-up');
 });
+
+test('the application note that nothing was checked is not a delivered route', () => {
+  const request = 'Propose a laboratory synthesis of benzocaine (SMILES: CCOC(=O)c1ccc(N)cc1).';
+  const answer = `Nitrate toluene, oxidise, reduce and esterify.\n\n${uncheckedRouteNote('no steps here', { correction: false })}\n`;
+  const turns = [{ role: 'user', content: request }, { role: 'assistant', content: answer }, { role: 'user', content: 'Please give me the full route.' }];
+  assert.deepEqual(routeConversationState(turns), { request, delivered: false });
+  assert.equal(asksForRoute(turns), true, 'the follow-up stays in the route lane');
+});
