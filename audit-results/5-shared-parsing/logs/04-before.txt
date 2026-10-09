@@ -1,0 +1,98 @@
+TAP version 13
+# Subtest: a full-width semicolon separates species
+not ok 1 - a full-width semicolon separates species
+  ---
+  duration_ms: 5.976265
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-route-label-fullwidth.mjs:18:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      [
+    +   'reactant:acetic acid；ethanol',
+    -   'reactant:acetic acid',
+    -   'reactant:ethanol',
+        'product:ethyl acetate',
+        'product:water',
+    +   'agent:sulfuric acid；toluene'
+    -   'agent:sulfuric acid',
+    -   'agent:toluene'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'reactant:acetic acid'
+    1: 'reactant:ethanol'
+    2: 'product:ethyl acetate'
+    3: 'product:water'
+    4: 'agent:sulfuric acid'
+    5: 'agent:toluene'
+  actual:
+    0: 'reactant:acetic acid；ethanol'
+    1: 'product:ethyl acetate'
+    2: 'product:water'
+    3: 'agent:sulfuric acid；toluene'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-route-label-fullwidth.mjs:20:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  ...
+# Subtest: each species is annotated in place
+not ok 2 - each species is annotated in place
+  ---
+  duration_ms: 1.21054
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-route-label-fullwidth.mjs:23:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Reactants： acetic acid — `C0`；ethanol — `C1`\n/. Input:
+    
+    '## Step 1 — 酯化\n' +
+      '\n' +
+      '乙酸与乙醇在酸催化下酯化。\n' +
+      '\n' +
+      'Reactants： acetic acid；ethanol — `C0`\n' +
+      'Products： ethyl acetate — `C1`\n' +
+      'Byproducts： water — `C2`\n' +
+      'Agents： sulfuric acid；toluene — `C3`\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    ## Step 1 — 酯化
+    
+    乙酸与乙醇在酸催化下酯化。
+    
+    Reactants： acetic acid；ethanol — `C0`
+    Products： ethyl acetate — `C1`
+    Byproducts： water — `C2`
+    Agents： sulfuric acid；toluene — `C3`
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-route-label-fullwidth.mjs:27:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 155.792007

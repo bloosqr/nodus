@@ -1,0 +1,65 @@
+# Repository: github.com/bloosqr/nodus — apply to audit/2026-10-09 with: git apply audit-results/5-shared-parsing/04-fullwidth-semicolon.patch
+diff --git a/scripts/test-route-label-fullwidth.mjs b/scripts/test-route-label-fullwidth.mjs
+new file mode 100644
+index 00000000..cbc06058
+--- /dev/null
++++ b/scripts/test-route-label-fullwidth.mjs
+@@ -0,0 +1,28 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++
++const dir = await mkdtemp(path.join(os.tmpdir(), 'route-label-fullwidth-'));
++await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
++const { findStepNamedSpecies, annotateSpeciesSmiles } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
++test.after(() => rm(dir, { recursive: true, force: true }));
++
++// An answer written in Chinese keeps the English labels the contract asks for, but punctuates with
++// full-width marks: the colon is already accepted, the semicolon was not.
++const answer = '## Step 1 — 酯化\n\n乙酸与乙醇在酸催化下酯化。\n\nReactants： acetic acid；ethanol\nProducts： ethyl acetate\nByproducts： water\nAgents： sulfuric acid；toluene\n';
++
++test('a full-width semicolon separates species', () => {
++  const species = findStepNamedSpecies(answer, 1)[0].map((entry) => `${entry.role}:${entry.name}`);
++  assert.deepEqual(species, ['reactant:acetic acid', 'reactant:ethanol', 'product:ethyl acetate', 'product:water', 'agent:sulfuric acid', 'agent:toluene']);
++});
++
++test('each species is annotated in place', () => {
++  const species = findStepNamedSpecies(answer, 1);
++  const resolved = species.map((step) => step.map((entry, index) => ({ ...entry, status: 'resolved', smiles: `C${index}` })));
++  const out = annotateSpeciesSmiles(answer, resolved);
++  assert.match(out, /Reactants： acetic acid — `C0`；ethanol — `C1`\n/);
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..314a134a 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -987,20 +987,22 @@ interface RoleEntry { name: string; declaredSmiles?: string; start: number; end:
+ /** Entry spans split on `;`/newlines, but not inside parentheses — so "none (H₂SO₄ is consumed…;
+   * the product is obtained after neutralization)" stays one entry. When the parentheses do not
+   * balance (a name like "ε-caprolactam (azepan-2-one" with no closing), fall back to a plain
+-  * split so an unclosed bracket cannot swallow the rest of the list. */
++  * split so an unclosed bracket cannot swallow the rest of the list. The full-width `；` of an
++  * answer written in Chinese or Japanese separates entries too, as the role markers already accept
++  * its full-width colon; read as one name, two species resolved to nothing. */
+ function splitEntrySpans(list: string): Array<{ start: number; end: number }> {
+   let balance = 0;
+   for (const character of list) { if (character === '(') balance += 1; else if (character === ')') balance = Math.max(0, balance - 1); }
+   const spans: Array<{ start: number; end: number }> = [];
+   if (balance !== 0) {
+-    for (const match of list.matchAll(/[^;\n]+/g)) spans.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
++    for (const match of list.matchAll(/[^;；\n]+/g)) spans.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
+     return spans;
+   }
+   let depth = 0;
+   let start = 0;
+   for (let index = 0; index <= list.length; index += 1) {
+     const character = list[index];
+-    if (index === list.length || (depth === 0 && (character === ';' || character === '\n'))) {
++    if (index === list.length || (depth === 0 && (character === ';' || character === '；' || character === '\n'))) {
+       if (index > start) spans.push({ start, end: index });
+       start = index + 1;
+     } else if (character === '(') depth += 1;
