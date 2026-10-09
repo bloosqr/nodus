@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
@@ -202,6 +203,14 @@ export interface PythonRunRequest {
   timeoutMs: number;
 }
 
+const STDOUT_LIMIT = 32 * 1024 * 1024;
+const STDERR_TAIL = 64_000;
+
+/** The shell's convention for a process ended by a signal, so a caller that only reads the code
+ *  still sees a failure. */
+const signalExitCode = (name: NodeJS.Signals | null): number =>
+  128 + ((name && os.constants.signals[name]) || 9);
+
 export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request: PythonRunRequest, signal: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
   signal.throwIfAborted();
   const lockDigest = readPointer(pointerFile(runtime, request.runtimeId));
@@ -228,10 +237,24 @@ export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request:
     const abort = () => finish(new DOMException('The capability runtime call was cancelled.', 'AbortError'));
     const timer = setTimeout(() => finish(new Error(`The capability runtime exceeded ${Math.round(request.timeoutMs / 1000)} seconds.`)), Math.min(Math.max(request.timeoutMs, 1_000), 900_000));
     signal.addEventListener('abort', abort, { once: true });
-    child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > 32 * 1024 * 1024) finish(new Error('The capability runtime produced too much output.')); });
-    child.stderr.on('data', chunk => { stderr += chunk.toString().slice(0, 64_000); });
+    // Decoded as a stream, not chunk by chunk: a character whose bytes straddle two pipe reads
+    // otherwise comes out as two replacement characters.
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > STDOUT_LIMIT) finish(new Error('The capability runtime produced too much output.')); });
+    // The tail, bounded in total: a traceback is at the end, and a library that warns in a loop
+    // must not hold the main process's memory for as long as it keeps warning.
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-STDERR_TAIL); });
+    // An interpreter that exits before reading its input closes the pipe under the write. Its
+    // exit status says why; the EPIPE says nothing, and unhandled it is a main-process fault.
+    child.stdin.on('error', () => {});
     child.once('error', error => finish(error instanceof Error ? error : new Error(String(error))));
-    child.once('close', code => finish(undefined, code ?? 0));
+    // A process ended by a signal has no exit code. Reporting it as 0 turned an interpreter the
+    // OOM killer stopped mid-answer into a success with truncated output.
+    child.once('close', (code, killedBy) => {
+      if (code === null && killedBy) stderr = `${stderr}\nThe interpreter was terminated by ${killedBy}.`.slice(-STDERR_TAIL);
+      finish(undefined, code ?? signalExitCode(killedBy));
+    });
     try {
       if (request.secret) child.stdin.write(`${request.secret}\n`);
       if (request.stdin) child.stdin.write(request.stdin);
