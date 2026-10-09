@@ -639,7 +639,9 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   const genealogy = getActiveVault().type === 'genealogy';
   const chemistryEnabled = skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry'));
   // Started here and awaited below, beside the evidence gather: neither reads the other.
-  const inspecting = genealogy || !chemistryEnabled ? Promise.resolve([]) : inspectResearchMolecules(question, { model, locale: promptLanguage, signal });
+  // A correction chip carries no new structure: its only SMILES-like tokens come from the shared
+  // rules, so inspecting it costs a worker start for nothing.
+  const inspecting = genealogy || !chemistryEnabled || isRouteFixPrompt(question) ? Promise.resolve([]) : inspectResearchMolecules(question, { model, locale: promptLanguage, signal });
   inspecting.catch(() => undefined);
   // What this conversation is doing about a route, read from the whole authorized history rather
   // than from the latest message. A human follow-up ("you can solve this directly") is neither a
