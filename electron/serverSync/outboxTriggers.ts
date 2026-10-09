@@ -56,8 +56,13 @@ function enqueueStatement(table: string, op: 'upsert' | 'delete', keySql: string
     `VALUES (lower(hex(randomblob(16))), ` +
     `COALESCE((SELECT MAX(seq) FROM server_outbox), 0) + 1, ` +
     `${literal}, ${keySql}, '${op}', ${SCHEMA_VERSION}, strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'pending', 0, NULL, ${actor}, ${device}, ${hlc}) ` +
+    // A folded edit takes a NEW id. drainOutbox reads the live row, sends it, and marks the
+    // entry sent by id once the server answers; an edit landing while that request is in
+    // flight would otherwise be marked sent with it without ever having been read. The
+    // server also deduplicates by id, so a re-send under the old id would be dropped as a
+    // duplicate. A fresh id makes the newer state a mutation of its own.
     `ON CONFLICT(table_name, row_key) WHERE state = 'pending' DO UPDATE SET ` +
-    `op = excluded.op, created_at = excluded.created_at, schema_version = excluded.schema_version, ` +
+    `id = lower(hex(randomblob(16))), op = excluded.op,created_at = excluded.created_at, schema_version = excluded.schema_version, ` +
     `actor_id = excluded.actor_id, device_id = excluded.device_id, hlc = excluded.hlc, ` +
     `attempts = 0, last_error = NULL; ` +
     `UPDATE workspace_devices SET last_hlc = COALESCE((SELECT hlc FROM server_outbox ORDER BY seq DESC LIMIT 1), last_hlc), revision = revision + 1, ` +
