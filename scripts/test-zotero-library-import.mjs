@@ -56,6 +56,8 @@ try {
     groupItems: [item({
       key: 'groups:42:G1', itemKey: 'G1', library: group, version: 7, title: 'Libro del grupo',
       itemType: 'book', collections: ['groups:42:GC'], doi: null,
+      // Zotero keeps every ISBN of a book in one field, separated by spaces.
+      isbn: '9780306406157 0306406152',
     })],
     deletedPersonal: [],
     calls: [],
@@ -165,6 +167,10 @@ try {
   assert.ok(existsSync(path.join(store.itemFolder(storedA.storageId), storedA.files.original)));
   const storedGroup = store.findItemBySourceIdentity({ source: 'zotero', libraryType: 'group', libraryId: '42', itemKey: 'G1' });
   assert.ok(existsSync(path.join(store.itemFolder(storedGroup.storageId), 'attachments', 'EPUB-grupo.epub')));
+  assert.deepEqual(storedGroup.metadata.isbn, ['9780306406157', '0306406152'], 'a space-separated Zotero ISBN field is a list of ISBNs');
+  assert.equal(catalog.findItemIdByMetadataIdentifiers({
+    title: 'Otro título', itemType: 'book', creators: [], year: null, isbn: ['0-306-40615-2'], issn: [], tags: [],
+  }), storedGroup.id, 'importing the same book again by its ISBN finds the Zotero record instead of duplicating it');
   assert.equal(catalog.getImportSource('zotero:users/0').version, 10);
   assert.equal(catalog.getImportSource('zotero:groups/42').version, 7);
 

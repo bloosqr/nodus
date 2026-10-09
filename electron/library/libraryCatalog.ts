@@ -46,7 +46,23 @@ function ftsQuery(value: string): string {
     .map((term) => `"${term.replace(/"/g, '""')}"*`).join(' AND ');
 }
 
+/**
+ * Zotero keeps every ISBN of a book in one field, separated by spaces
+ * ("9780306406157 0306406152"), and older records were stored that way. Read such a
+ * value as the list it is: stripping the separators glued the numbers into one
+ * 23-digit string that matched nothing, so the same book imported again by ISBN
+ * became a duplicate. A single ISBN written with spaces between its groups still
+ * reads as one.
+ */
 function isbnForms(value: string): string[] {
+  const whole = singleIsbnForms(value);
+  if (whole.length !== 1 || /^(?:\d{9}[\dX]|\d{13})$/.test(whole[0])) return whole;
+  const tokens = value.split(/[\s,;]+/).map(singleIsbnForms)
+    .filter((forms) => forms.length && /^(?:\d{9}[\dX]|\d{13})$/.test(forms[0]));
+  return tokens.length > 1 ? [...new Set(tokens.flat())] : whole;
+}
+
+function singleIsbnForms(value: string): string[] {
   const clean = value.toUpperCase().replace(/[^0-9X]/g, '');
   if (/^\d{9}[\dX]$/.test(clean)) {
     const body = `978${clean.slice(0, 9)}`;

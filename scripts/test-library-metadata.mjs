@@ -438,6 +438,14 @@ ER  -`);
     title: 'Same DOI', itemType: 'journal-article', creators: [], year: null,
     doi: 'https://doi.org/10.7777/import.1', isbn: [], issn: [], tags: [],
   }), importedRecord.id, 'identifier imports can update an existing record instead of creating a duplicate');
+  // A record stored before ISBN lists were split keeps Zotero's space-separated field.
+  const multiIsbn = operations.createItem({ title: 'Libro con dos ISBN', itemType: 'book', creators: [], year: null, isbn: ['9780306406157 0306406152'], issn: [], tags: [] });
+  for (const isbn of ['978-0-306-40615-7', '0306406152']) {
+    assert.equal(catalog.findItemIdByMetadataIdentifiers({ title: 'x', itemType: 'book', creators: [], year: null, isbn: [isbn], issn: [], tags: [] }),
+      multiIsbn.id, `an ISBN list stored as one string still matches ${isbn}`);
+  }
+  assert.equal(catalog.findItemIdByMetadataIdentifiers({ title: 'x', itemType: 'book', creators: [], year: null, isbn: ['0-306-40615-2 9780306406157'], issn: [], tags: [] }),
+    multiIsbn.id, 'an incoming space-separated ISBN list matches too');
   assert.ok(importedRecord.citationKey, 'imports always receive a stable citation key');
   const generated = generateCitationKey(importedRecord.metadata, [importedRecord.citationKey], importedRecord.citationKey);
   assert.notEqual(generated, importedRecord.citationKey);
