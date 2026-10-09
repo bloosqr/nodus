@@ -208,7 +208,15 @@ export async function createConnectedVault(input: {
   try {
     setNodusServerTokenFor(vault.id, session.deviceToken);
     await pullReplica(vault.id, { force: true });
+    // pullReplica reports a failure on the runtime instead of throwing, so it has to be read
+    // here; otherwise the rollback below never runs and the sign-in "succeeds" over an empty
+    // vault. A space with no publication yet is not a failure (phase 'ok', with a notice).
+    const hydration = runtimeFor(vault.id);
+    if (hydration.phase === 'error' || hydration.phase === 'revoked') {
+      throw new Error(hydration.lastError || 'No se ha podido descargar el espacio remoto.');
+    }
   } catch (error) {
+    runtimes.delete(vault.id);
     // A hydration that never completed leaves a vault that looks connected and holds
     // nothing. Roll it back rather than leave that behind.
     try { deleteVault(vault.id, true); } catch { /* the registry entry is already gone */ }
