@@ -4,6 +4,7 @@ import { LIMITS, TRUSTED_PROTOCOL } from '../../packages/capability-api/src/limi
 import { validateWorkerToHost, type HostChannel, type HostToWorkerMessage, type WorkerMethod } from '../../packages/capability-api/src/protocol';
 import type { CapabilityManifestV2 } from '../../packages/capability-api/src/manifest';
 import type { TrustedPermissionSetV2 } from '../../packages/capability-api/src/permissions';
+import { stopCapabilitySubworkers } from './subworkerPool';
 
 /** Runs one trusted capability in its own utility process.
  *
@@ -279,14 +280,27 @@ export class CapabilityWorkerHandle {
 const handles = new Map<string, CapabilityWorkerHandle>();
 
 /** One live worker per capability and digest. A package that updates gets a new key, so
- *  a turn already running against the old digest keeps the process it started with. */
+ *  a turn already running against the old digest keeps the process it started with.
+ *
+ *  The key starts with the PLUGIN id. It used to start with the capability id
+ *  (`nodus:chemistry@…`), while every caller that retires a package's workers — approve, discard,
+ *  roll back, remove, update — asked for the keys that contain the plugin id (`chemistry-studio`),
+ *  so none of them ever stopped anything: the old version's processes outlived its update and
+ *  its removal. */
 export function acquireCapabilityWorker(runtime: TrustedWorkerRuntime, options: CapabilityWorkerHandleOptions): CapabilityWorkerHandle {
-  const key = `${runtime.capabilityId}@${runtime.plugin.version}+${runtime.plugin.digest}${options.scopeKey ? `#${options.scopeKey}` : ''}`;
+  const key = `${runtime.plugin.id}/${runtime.capabilityId}@${runtime.plugin.version}+${runtime.plugin.digest}${options.scopeKey ? `#${options.scopeKey}` : ''}`;
   const existing = handles.get(key);
   if (existing) return existing;
   const handle = new CapabilityWorkerHandle(runtime, options);
   handles.set(key, handle);
   return handle;
+}
+
+/** Every worker and kept subworker of one plugin, whatever version, digest or turn. */
+export async function stopPluginWorkers(pluginId: string): Promise<void> {
+  const owned = (key: string) => key.startsWith(`${pluginId}/`);
+  stopCapabilitySubworkers(owned);
+  await stopCapabilityWorkers(owned);
 }
 
 export async function stopCapabilityWorkers(predicate?: (key: string) => boolean): Promise<void> {
