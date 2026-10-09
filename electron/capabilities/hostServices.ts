@@ -32,7 +32,7 @@ export interface CapabilityServiceAdapters {
   };
   python?: {
     ensureRuntime: (runtime: TrustedWorkerRuntime, runtimeId: string, signal: AbortSignal) => Promise<{ ready: boolean; detail?: string }>;
-    run: (runtime: TrustedWorkerRuntime, request: { runtimeId: string; args: string[]; stdin?: string; secret?: string; timeoutMs: number }, signal: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
+    run: (runtime: TrustedWorkerRuntime, request: { runtimeId: string; args: string[]; stdin?: string; secret?: string; timeoutMs: number; persistent?: boolean }, signal: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
   };
   subworker?: (runtime: TrustedWorkerRuntime, request: { entry: string; input: unknown; timeoutMs: number }, signal: AbortSignal) => Promise<unknown>;
   /** Bound by the caller to the conversation the invocation belongs to. */
@@ -314,7 +314,7 @@ export function createCapabilityHostServices(adapters: CapabilityServiceAdapters
         ? readCapabilitySecret(runtime.plugin.id, runtime.manifest.id, secretId)
         : undefined;
       if (secretId && !secret) throw new Error('That capability credential is not configured.');
-      return adapters.python.run(runtime, { runtimeId, args, stdin: typeof value.stdin === 'string' ? value.stdin : undefined, secret, timeoutMs: Number(value.timeoutMs ?? 120_000) }, signal);
+      return adapters.python.run(runtime, { runtimeId, args, stdin: typeof value.stdin === 'string' ? value.stdin : undefined, secret, timeoutMs: Number(value.timeoutMs ?? 120_000), persistent: value.persistent === true }, signal);
     }
 
     // `nodus:3d`. The core owns the format check and the storage; the capability owns
