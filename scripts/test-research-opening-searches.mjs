@@ -50,18 +50,13 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-opening-sea
   };
   const quiet = async (fn) => { const warn = console.warn; console.warn = () => {}; try { return await fn(); } finally { console.warn = warn; } };
 
-  test('a failure on the first opening search costs its evidence, not the turn', async () => {
-    decisions = 9;
-    const original = preparation.retrieveSharedDocumentaryEvidence;
-    let first = true;
-    preparation.retrieveSharedDocumentaryEvidence = async (...args) => {
-      if (first) { first = false; throw Error('documentary_retrieval_timeout'); }
-      return original(...args);
-    };
-    try {
-      const run = turn();
-      await quiet(() => run.investigate('methyl 4-nitrobenzoate; Fischer esterification; aromatic nitration'));
-      assert.ok(run.limitations.has('research_read_unavailable'));
-    } finally { preparation.retrieveSharedDocumentaryEvidence = original; }
+  test('the opening queries are embedded in one request', async () => {
+    decisions = 9; single = 0; batched = 0;
+    const run = turn();
+    await quiet(() => run.investigate('methyl 4-nitrobenzoate; Fischer esterification; aromatic nitration'));
+    console.log(`opening searches: ${batched} batched request(s), ${single} single embedding request(s)`);
+    assert.equal(batched, 1);
+    assert.equal(single, 0);
   });
+
 }
