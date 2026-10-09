@@ -1,0 +1,4 @@
+== after patch
+Synthesis textbook passages: dense lane off the main process, embeddings requested together, same passages.
+== before patch (audit/2026-10-09)
+AssertionError [ERR_ASSERTION]: the dense lane never scores the library in the main process

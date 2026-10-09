@@ -1,0 +1,16 @@
+== after patch, EMBED_MS=0
+BENCH textbookPassages 7 queries (embed 0 ms): 3323 ms wall · longest main-thread block 243 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 0 ms): 3182 ms wall · longest main-thread block 235 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 0 ms): 3220 ms wall · longest main-thread block 260 ms · 8 passages
+== after patch, EMBED_MS=250
+BENCH textbookPassages 7 queries (embed 250 ms): 3447 ms wall · longest main-thread block 266 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 250 ms): 3329 ms wall · longest main-thread block 238 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 250 ms): 3342 ms wall · longest main-thread block 254 ms · 8 passages
+== before patch, EMBED_MS=0
+BENCH textbookPassages 7 queries (embed 0 ms): 8246 ms wall · longest main-thread block 1503 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 0 ms): 8384 ms wall · longest main-thread block 1509 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 0 ms): 8519 ms wall · longest main-thread block 1551 ms · 8 passages
+== before patch, EMBED_MS=250
+BENCH textbookPassages 7 queries (embed 250 ms): 10130 ms wall · longest main-thread block 1532 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 250 ms): 10498 ms wall · longest main-thread block 1622 ms · 8 passages
+BENCH textbookPassages 7 queries (embed 250 ms): 10571 ms wall · longest main-thread block 1684 ms · 8 passages

@@ -1,0 +1,111 @@
+# Repository: github.com/bloosqr/nodus — unified diff against audit/2026-10-09. Apply with: git apply 01-synthesis-dense-lane-off-main-thread.patch
+diff --git a/electron/ai/synthesisEvidence.ts b/electron/ai/synthesisEvidence.ts
+index ce9affb8..ae35da51 100644
+--- a/electron/ai/synthesisEvidence.ts
++++ b/electron/ai/synthesisEvidence.ts
+@@ -25,7 +25,7 @@ import { evidenceText } from '@shared/passageQuality';
+ import { isScannedWork, parseTextNotes } from '@shared/textProvenance';
+ import { capabilityRegistry } from '../capabilities/registry';
+ import { getDb } from '../db/database';
+-import { findSimilarPassages, lexicalPassageSearch, type SimilarPassage } from '../db/passagesRepo';
++import { findSimilarPassagesPaged, lexicalPassageSearch, type SimilarPassage } from '../db/passagesRepo';
+ import { reactionIndexService } from '../reactionIndex';
+ import { chemistryStockDirectory } from './chemistryStock';
+ import { textbookCitations, textbookSchemeDirectory, textbookTemplateCitations } from './textbookSchemes';
+@@ -301,7 +301,11 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
+   if (!queries.length || !workIds.length) return [];
+   const chosen = new Map<string, EvidencePassage>();
+   const scannedWork = scannedWorkLookup();
+-  for (const query of queries) {
++  // Every query's embedding is requested at once: they were awaited one query after another,
++  // a provider round trip each. A failed one is that query's dense lane only, as before.
++  const vectors = queries.map((query) => embed(query, signal));
++  for (const vector of vectors) vector.catch(() => undefined); // awaited in the loop
++  for (const [index, query] of queries.entries()) {
+     signal?.throwIfAborted();
+     // With the local reranker each lane offers more candidates, and the reranker orders the
+     // fused top RERANK_POOL by reading query and passage together (localReranker.ts).
+@@ -310,9 +314,12 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
+     const lanes: SimilarPassage[][] = [];
+     try { lanes.push(lexicalPassageSearch(query, laneSize, { nodusIds: workIds })); } catch { /* FTS is optional */ }
+     try {
+-      const vector = await embed(query, signal);
++      const vector = await vectors[index];
+       signal?.throwIfAborted();
+-      if (vector) lanes.push(findSimilarPassages(vector, PASSAGE_SIMILARITY, laneSize, { nodusIds: workIds }));
++      // The paged scan runs on the vector-scan worker against its cached vectors. The synchronous
++      // `findSimilarPassages` scored every passage in the main process: 1.2 s per query on
++      // 100,000 passages, seven queries a gather, with the window and every IPC reply held.
++      if (vector) lanes.push(await findSimilarPassagesPaged(vector, PASSAGE_SIMILARITY, laneSize, { nodusIds: workIds }));
+     } catch (error) {
+       if (signal?.aborted) throw error;
+       /* no embedding provider: the lexical lane alone */
+diff --git a/scripts/test-synthesis-evidence-passages.mjs b/scripts/test-synthesis-evidence-passages.mjs
+new file mode 100644
+index 00000000..926745d9
+--- /dev/null
++++ b/scripts/test-synthesis-evidence-passages.mjs
+@@ -0,0 +1,63 @@
++// The textbook passages of a route request: the dense lane must not score the library in the
++// main process, and the queries' embeddings are requested together rather than one at a time.
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++import { createRequire } from 'node:module';
++import { fileURLToPath } from 'node:url';
++import { installRuntimeHooks, requireElectronRuntime, repoRoot } from './lib/tsRuntimeHooks.mjs';
++if (!requireElectronRuntime(fileURLToPath(import.meta.url), '--synthesis-evidence-passages')) process.exit(0);
++const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-synthesis-passages-'));
++installRuntimeHooks(scratch);
++const require = createRequire(import.meta.url);
++const load = file => require(path.join(repoRoot, file));
++globalThis.fetch = () => { throw new Error('External network forbidden in synthesis passages fixture'); };
++try {
++  const db = load('electron/db/database.ts').getDb();
++  const passages = load('electron/db/passagesRepo.ts');
++  const { currentEmbeddingConfig } = load('electron/db/ideasRepo.ts');
++  const config = currentEmbeddingConfig();
++  const axis = index => Array.from({ length: 8 }, (_, at) => (at === index ? 1 : 0.01));
++  // Long enough to count as prose evidence, and sharing no word with the queries below, so only
++  // the dense lane can find them.
++  const prose = 'The mixture was heated under reflux for two hours, cooled to room temperature, poured onto ice and the solid collected by filtration, washed with cold water and dried in air before recrystallisation from ethanol gave the product as pale needles.';
++  const texts = [`First account. ${prose}`, `Second account. ${prose}`, `Third account. ${prose}`];
++  for (const [index, text] of texts.entries()) {
++    const id = `organic-${index}`;
++    db.prepare(`INSERT INTO works(nodus_id,zotero_key,title,authors_json,year,item_type,source_type,deep_hash)
++      VALUES(?,?,?,'[]',2020,'book','text','hash')`).run(id, id, `Organic Synthesis ${index}`);
++    passages.replaceWorkPassages(id, 'hash', [{ text, pageLabel: String(index + 1), embedding: axis(index) }]);
++  }
++  assert.equal(db.prepare('SELECT COUNT(*) n FROM passages WHERE embedding_provider=? AND embedding_model=?').get(config.provider, config.model).n, 3);
++
++  const ai = load('electron/ai/aiClient.ts');
++  const queries = ['zeta', 'kappa', 'omega'];
++  let inFlight = 0, widest = 0;
++  ai.embed = async query => {
++    inFlight += 1; widest = Math.max(widest, inFlight);
++    await new Promise(resolve => setTimeout(resolve, 20));
++    inFlight -= 1;
++    return axis(queries.indexOf(query));
++  };
++  const synchronous = passages.findSimilarPassages;
++  let synchronousScans = 0;
++  passages.findSimilarPassages = (...args) => { synchronousScans += 1; return synchronous(...args); };
++  const synthesis = load('electron/ai/synthesisEvidence.ts');
++  const found = await synthesis.textbookPassages(queries, synthesis.synthesisEvidenceWorkIds());
++  passages.findSimilarPassages = synchronous;
++  assert.equal(synchronousScans, 0, 'the dense lane never scores the library in the main process');
++  assert.equal(widest, queries.length, 'every query\'s embedding is requested before the first one is answered');
++  for (const [index, query] of queries.entries()) {
++    assert.ok(found.some(passage => passage.retrievedFor === query && passage.text.startsWith(texts[index].slice(0, 14))), `the dense lane still finds the passage for "${query}"`);
++  }
++  // The paged scan ranks exactly as the synchronous one it replaces.
++  for (const index of [0, 1, 2]) {
++    const paged = await passages.findSimilarPassagesPaged(axis(index), 0.3, 6, { nodusIds: ['organic-0', 'organic-1', 'organic-2'] });
++    const direct = synchronous(axis(index), 0.3, 6, { nodusIds: ['organic-0', 'organic-1', 'organic-2'] });
++    assert.deepEqual(paged.map(hit => hit.passage_id), direct.map(hit => hit.passage_id));
++  }
++  console.log('Synthesis textbook passages: dense lane off the main process, embeddings requested together, same passages.');
++} finally {
++  fs.rmSync(scratch, { recursive: true, force: true });
++}
