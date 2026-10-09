@@ -1,0 +1,1 @@
+chip 7963 chars; request taken is the original: true; target from it: CCOC(=O)c1ccc(N)cc1; retrieval query length: 20

@@ -1,0 +1,33 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Route state: a correction chip is never taken as the conversation's route request.
+diff --git a/scripts/test-molecule-inspection.mjs b/scripts/test-molecule-inspection.mjs
+index 46fbbabf..04d0411c 100644
+--- a/scripts/test-molecule-inspection.mjs
++++ b/scripts/test-molecule-inspection.mjs
+@@ -2340,3 +2340,12 @@ test('the step line and the route verdict cannot disagree about which step faile
+       `${cause}: the step line names the fault it failed on — got: ${line}`);
+   }
+ });
++
++test('a correction chip is never taken as the conversation route request', () => {
++  const request = 'Propose a laboratory synthesis of benzocaine (SMILES: CCOC(=O)c1ccc(N)cc1) starting from toluene.';
++  const chip = fixPayload(formatMissingSpeciesPrompt('CCOC(=O)c1ccc(N)cc1')).prompt;
++  const turns = [{ role: 'user', content: request }, { role: 'assistant', content: '### Step 1\nNitrate toluene.\n\n### Step 2\nOxidise.' }, { role: 'user', content: chip }];
++  assert.equal(routeConversationState(turns).request, request, 'the chip is not the request');
++  const followUp = [...turns, { role: 'assistant', content: 'prose' }, { role: 'user', content: 'Can you use a milder oxidant?' }];
++  assert.equal(routeConversationState(followUp).request, request, 'nor after a human follow-up');
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..ea182b15 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -1450,7 +1450,9 @@ export function routeConversationState(turns: ReadonlyArray<{ role: string; cont
+   let asked = -1;
+   for (let index = 0; index < list.length; index += 1) {
+     const turn = list[index];
+-    if (turn?.role === 'user' && typeof turn.content === 'string' && looksLikeSynthesisRequest(turn.content)) asked = index;
++    // A correction chip names the synthesis and its rules name reagents, so a short one reads as a
++    // request; it is never the conversation's request.
++    if (turn?.role === 'user' && typeof turn.content === 'string' && !isRouteFixPrompt(turn.content) && looksLikeSynthesisRequest(turn.content)) asked = index;
+   }
+   if (asked < 0) return { request: null, delivered: false };
+   const delivered = list.slice(asked + 1).some((turn) => turn?.role === 'assistant' && countRouteSteps(typeof turn.content === 'string' ? turn.content : '') > 0);

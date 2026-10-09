@@ -1,0 +1,38 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). History replay: the route request stays in the replayed conversation after many correction rounds.
+diff --git a/electron/ai/researchAssistant.ts b/electron/ai/researchAssistant.ts
+index c60d32bf..7b314ade 100644
+--- a/electron/ai/researchAssistant.ts
++++ b/electron/ai/researchAssistant.ts
+@@ -616,6 +616,10 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
+       : index === latestQuestion ? m : { ...m, content: routeFixPromptForHistory(m.content) }))
+     .filter((m) => m.content.trim())
+     .slice(-MAX_HISTORY_MESSAGES);
++  // A run of corrections pushes the route's own request out of the window, and with it every
++  // constraint the chips do not repeat (the starting materials, the scale, the stereochemistry).
++  const routeAnchor = skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry')) ? routeConversationState(turns).request : null;
++  if (routeAnchor && !messages.some((m) => m.role === 'user' && m.content === routeAnchor)) messages = [{ role: 'user', content: routeAnchor }, ...messages];
+ 
+   if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
+     throw new Error('El chat necesita una pregunta del usuario.');
+diff --git a/scripts/test-research-synthesis-context.mjs b/scripts/test-research-synthesis-context.mjs
+index 016814cd..502d9d22 100644
+--- a/scripts/test-research-synthesis-context.mjs
++++ b/scripts/test-research-synthesis-context.mjs
+@@ -125,6 +125,17 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
+     } finally { ai.localModelContextWindow = async () => null; }
+   });
+ 
++  test('a run of corrections keeps the route request in the replayed conversation', async () => {
++    // The history window is twelve messages; six correction rounds used to push the request (and
++    // every constraint the chips do not repeat: starting materials, scale, stereochemistry) out of it.
++    const fix = { role: 'user', content: 'Correction needed for the synthesis route above. Fix the rejected step.' };
++    const messages = [request.messages[0]];
++    for (let i = 0; i < 8; i++) messages.push({ role: 'assistant', content: 'Step 1 draft' }, fix);
++    const payload = await build({ ...request, messages });
++    assert.equal(payload.conversacion[0].content, request.messages[0].content);
++    assert.equal(payload.conversacion.at(-1).content, fix.content);
++  });
++
+   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
+     const controller = new AbortController();
+     let started;

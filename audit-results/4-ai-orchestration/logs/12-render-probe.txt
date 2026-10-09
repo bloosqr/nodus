@@ -1,0 +1,3 @@
+# Agent probe: ChatMarkdown server-rendered with streaming=true/false (real component, stubbed children)
+streaming=true : <div class="chat-rich-answer">[md]<div role="status" class="chat-visual-pending"><div><b>Preparing tool…</b><span>Cargando…</span></div></div>[md]</div>
+streaming=false: <div class="chat-rich-answer">[md]<div class="ARTIFACT"></div>[md]</div>

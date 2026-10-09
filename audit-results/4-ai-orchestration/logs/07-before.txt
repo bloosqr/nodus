@@ -1,0 +1,3 @@
+not ok 1 - the application note that nothing was checked is not a delivered route
+# pass 0
+# fail 1

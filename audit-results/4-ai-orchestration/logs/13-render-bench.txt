@@ -1,0 +1,4 @@
+# Per-delta cost of re-rendering earlier answers (splitChatVisuals + JSON.parse of their blocks), 6 earlier answers of ~230K chars
+{"prevAnswers":6,"charsPerAnswer":229994,"msPerDelta":2.08,"msOver2000Deltas":4162}
+# Full re-parse of the streaming answer per 40-char delta (react-markdown+gfm+math+katex)
+{"chars":8898,"deltas":223,"singleRenderMs":77.3,"cumulativeMs":1225,"ratio":16}

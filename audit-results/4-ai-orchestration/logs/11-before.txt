@@ -1,0 +1,6 @@
+✖ a stop during the route check keeps the answer the reader was shown (18.557277ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ a stop during the route check keeps the answer the reader was shown (18.557277ms)
+  AssertionError [ERR_ASSERTION]: the stop keeps the repainted answer, not the raw draft
