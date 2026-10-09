@@ -1,0 +1,56 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Web step: a route request that asks for the web is recognised as an explicit web request.
+diff --git a/electron/ai/researchAssistant.ts b/electron/ai/researchAssistant.ts
+index c60d32bf..9d5dfc71 100644
+--- a/electron/ai/researchAssistant.ts
++++ b/electron/ai/researchAssistant.ts
+@@ -728,7 +728,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
+     }
+     const depth = webDepth(retrieval);
+     run.web = new ResearchWebGrant(request.webSearch ?? getSettings().researchWebSearch ?? 'auto', depth, retrievalQuestion, signal, request.model,
+-      Math.min(WEB_RESEARCH_LIMITS[depth].evidenceBytes, Math.max(0, Math.floor(contextBudget / 3))));
++      Math.min(WEB_RESEARCH_LIMITS[depth].evidenceBytes, Math.max(0, Math.floor(contextBudget / 3))), {}, question);
+     // The chat is an agent: it plans the turn from the conversation, keeps what earlier
+     // answers cited and looks in the catalogue before it lets the answer be written.
+     const consulted = run.layers.ideas || run.layers.documents;
+diff --git a/electron/ai/researchWebStep.ts b/electron/ai/researchWebStep.ts
+index d0796684..fa20d624 100644
+--- a/electron/ai/researchWebStep.ts
++++ b/electron/ai/researchWebStep.ts
+@@ -46,8 +46,10 @@ export class ResearchWebGrant {
+   private steps = 0;
+   readonly explicit: boolean;
+   constructor(readonly mode: ResearchWebSearchMode, readonly depth: WebDepth, readonly question: string, readonly signal: AbortSignal | undefined,
+-    readonly model: ModelRef | null | undefined, private readonly evidenceBytes: number, private readonly deps: Partial<WebResearchDeps> = {}) {
+-    this.explicit = explicitWebRequest(question);
++    readonly model: ModelRef | null | undefined, private readonly evidenceBytes: number, private readonly deps: Partial<WebResearchDeps> = {},
++    /** The user's own words, when the search question is derived from them (a route's target and classes). */
++    asked = question) {
++    this.explicit = explicitWebRequest(asked);
+   }
+   get enabled(): boolean { return this.mode !== 'off'; }
+   /** The supervisor may choose web at most once (fast/balanced) or twice (deep). */
+diff --git a/scripts/test-research-synthesis-context.mjs b/scripts/test-research-synthesis-context.mjs
+index 016814cd..20711e96 100644
+--- a/scripts/test-research-synthesis-context.mjs
++++ b/scripts/test-research-synthesis-context.mjs
+@@ -125,6 +125,20 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
+     } finally { ai.localModelContextWindow = async () => null; }
+   });
+ 
++  test('a route request that asks for the web is an explicit web request', async () => {
++    // The grant's search question on a route turn is the target and its reaction classes; whether
++    // the user asked for the web is read from their own words, or a request with the web switched
++    // off is never told so.
++    const service = load('electron/ai/researchNotebookService.ts');
++    const researchWindow = ai.researchModelContextWindow;
++    ai.researchModelContextWindow = async () => ({ tokens: 400_000, known: true });
++    try {
++      const asked = { ...request, webSearch: 'off', messages: [{ role: 'user', content: `${request.messages[0].content} Search the web for recent industrial routes.` }] };
++      const payload = await build(service.authorizeNotebookRequest({ ...asked, selection: { ...selection, sourceFilter: { enabled: false } } }));
++      assert.equal(payload.contexto_modular_seleccionado.web_search, 'disabled_by_user');
++    } finally { ai.researchModelContextWindow = researchWindow; }
++  });
++
+   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
+     const controller = new AbortController();
+     let started;

@@ -1,0 +1,6 @@
+✖ a route correction searches its request again without planning or supervising the chip (182.72016ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+✖ a route correction searches its request again without planning or supervising the chip (182.72016ms)
+  AssertionError [ERR_ASSERTION]: 2 planning or supervisor call(s) on a correction

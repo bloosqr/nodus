@@ -1,0 +1,76 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Corpus run: a route correction searches its request's target and classes without planning the chip or running the supervisor again (trade-off: a correction no longer reads beyond what its searches return).
+diff --git a/electron/ai/researchAssistant.ts b/electron/ai/researchAssistant.ts
+index c60d32bf..45e7ea6c 100644
+--- a/electron/ai/researchAssistant.ts
++++ b/electron/ai/researchAssistant.ts
+@@ -732,8 +732,14 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
+     // The chat is an agent: it plans the turn from the conversation, keeps what earlier
+     // answers cited and looks in the catalogue before it lets the answer be written.
+     const consulted = run.layers.ideas || run.layers.documents;
+-    const plan = consulted ? await planResearchTurn(messages, request.model, signal) : literalResearchTurnPlan(question);
+-    run.agent = { plan, question, compact, minSources: ['definition', 'comparison', 'survey'].includes(plan.kind) ? 3 : 2 };
++    // A route correction searches what its request searched: the target and its reaction classes.
++    // Planning the chip's text only added searches for its rules, and the supervisor's reads are
++    // the request's own again; the passages earlier answers cited are carried below.
++    const correction = chemistryRoute && isRouteFixPrompt(question);
++    const plan = !consulted ? literalResearchTurnPlan(question)
++      : correction ? { ...literalResearchTurnPlan(retrievalQuestion), queries: retrievalQuestion.split('; ').slice(0, 4) }
++        : await planResearchTurn(messages, request.model, signal);
++    run.agent = { plan, question, compact, correction, minSources: ['definition', 'comparison', 'survey'].includes(plan.kind) ? 3 : 2 };
+     if (run.layers.documents) run.seedPriorEvidence(messages.slice(0, -1));
+     // A synthesis-route turn searches for the target and its reaction classes: the request
+     // itself is mostly output rules, and a planned goal drawn from it retrieved passages on
+diff --git a/electron/ai/researchCorpusRun.ts b/electron/ai/researchCorpusRun.ts
+index 3a5a4f8c..9a4557d7 100644
+--- a/electron/ai/researchCorpusRun.ts
++++ b/electron/ai/researchCorpusRun.ts
+@@ -46,6 +46,8 @@ export interface ResearchChatAgent {
+   minSources: number;
+   /** A small local window: shorter menus in every decision. */
+   compact: boolean;
++  /** A route correction: the opening searches only, no supervisor. */
++  correction?: boolean;
+ }
+ 
+ /** Compatibility requests are explicit snapshots of the active vault. A notebook
+@@ -146,7 +148,7 @@ export class ResearchCorpusRun {
+       }
+     }
+     // The supervisor's decisions read documents: nothing to decide with the documents off.
+-    if (this.layers.documents) await deepenResearch(this, query, model);
++    if (this.layers.documents && !this.agent?.correction) await deepenResearch(this, query, model);
+   }
+   async retrieve(query: string, expandRounds = 2, roundLimit?: number): Promise<void> {
+     this.validate();
+diff --git a/scripts/test-research-synthesis-context.mjs b/scripts/test-research-synthesis-context.mjs
+index 016814cd..d7ae0d87 100644
+--- a/scripts/test-research-synthesis-context.mjs
++++ b/scripts/test-research-synthesis-context.mjs
+@@ -125,6 +125,27 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
+     } finally { ai.localModelContextWindow = async () => null; }
+   });
+ 
++  test('a route correction searches its request again without planning or supervising the chip', async () => {
++    // The correction's retrieval question is its request's: the target and its reaction classes.
++    // Planning the chip's text and running the supervisor again bought the same evidence for a
++    // model call per decision, on every correction round.
++    const service = load('electron/ai/researchNotebookService.ts');
++    const researchWindow = ai.researchModelContextWindow;
++    const json = ai.completeJson;
++    let calls = 0;
++    ai.researchModelContextWindow = async () => ({ tokens: 400_000, known: true });
++    ai.completeJson = async () => { calls++; throw Error('no model in this test'); };
++    const warn = console.warn; console.warn = () => {};
++    try {
++      const fix = { role: 'user', content: 'Correction needed for the synthesis route above. Fix the rejected step.' };
++      const messages = [request.messages[0], { role: 'assistant', content: 'Step 1 draft' }, fix];
++      // The history an earlier answer's provenance would have authorized.
++      const payload = await build({ ...service.authorizeNotebookRequest({ ...request, selection: { ...selection, sourceFilter: { enabled: false } } }), messages });
++      assert.ok(payload.evidencia_para_la_ruta, 'the route evidence is still there');
++      assert.equal(calls, 0, `${calls} planning or supervisor call(s) on a correction`);
++    } finally { ai.researchModelContextWindow = researchWindow; ai.completeJson = json; console.warn = warn; }
++  });
++
+   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
+     const controller = new AbortController();
+     let started;
