@@ -125,6 +125,36 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
     } finally { ai.localModelContextWindow = async () => null; }
   });
 
+  test('retrieval starts once ORD has answered, beside the rest of the gather', async () => {
+    // Retrieval reads only ORD's disconnections. The gather's slower phases (the route search's
+    // budget, the textbook schemes' second level) used to hold it back for their whole length.
+    let retrievalStarted;
+    const embedMany = ai.embedMany;
+    ai.embed = async () => { retrievalStarted?.(); return null; };
+    ai.embedMany = async (texts) => { retrievalStarted?.(); return texts.map(() => null); };
+    const recorded = evidence.gatherSynthesisEvidence;
+    evidence.gatherSynthesisEvidence = async (question, options) => {
+      const retrieving = new Promise(resolve => { retrievalStarted = resolve; });
+      options.onDisconnections?.({ target: 'CCOC(=O)c1ccc(N)cc1', startingMaterials: [], disconnections: [], passages: [] });
+      let timer;
+      await Promise.race([retrieving, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('retrieval waited for the whole gather')), 2000); })])
+        .finally(() => clearTimeout(timer));
+      retrievalStarted = undefined;
+      return recorded(question, options);
+    };
+    const service = load('electron/ai/researchNotebookService.ts');
+    const researchWindow = ai.researchModelContextWindow;
+    try {
+      const payload = await build(request);
+      assert.ok(payload.evidencia_para_la_ruta.textbook_passages.some(p => p.text.includes('SELECTED_ONLY')), 'the whole evidence still reaches the prompt');
+      // The academic library's own path: an authorized scope, the corpus run and its window fit,
+      // with a window large enough that retrieval has a budget at all.
+      ai.researchModelContextWindow = async () => ({ tokens: 400_000, known: true });
+      const scoped = await build(service.authorizeNotebookRequest({ ...request, selection: { ...selection, sourceFilter: { enabled: false } } }));
+      assert.ok(scoped.evidencia_para_la_ruta.textbook_passages.length, 'the whole evidence reaches the scoped prompt too');
+    } finally { evidence.gatherSynthesisEvidence = recorded; ai.embed = async () => null; ai.embedMany = embedMany; ai.researchModelContextWindow = researchWindow; }
+  });
+
   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
     const controller = new AbortController();
     let started;
