@@ -20,6 +20,7 @@ const KEEP = new Set(['a', 'abbr', 'address', 'article', 'aside', 'b', 'bdi', 'b
 const ATTRIBUTES = new Set(['alt', 'title', 'id', 'lang', 'dir', 'colspan', 'rowspan', 'headers', 'scope', 'start', 'reversed', 'width', 'height', 'datetime', 'cite', 'name']);
 
 function safeHref(value: string): boolean {
+  // eslint-disable-next-line no-control-regex -- publication HTML is hostile input
   const compact = value.replace(/[\u0000- \u007f]+/g, '').toLowerCase();
   return compact.startsWith('#') || compact.startsWith('https://') || compact.startsWith('http://') || compact.startsWith('mailto:');
 }
