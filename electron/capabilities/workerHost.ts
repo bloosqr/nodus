@@ -5,6 +5,7 @@ import { validateWorkerToHost, type HostChannel, type HostToWorkerMessage, type 
 import type { CapabilityManifestV2 } from '../../packages/capability-api/src/manifest';
 import type { TrustedPermissionSetV2 } from '../../packages/capability-api/src/permissions';
 import { stopCapabilitySubworkers } from './subworkerPool';
+import { Semaphore } from './hostLimits';
 
 /** Runs one trusted capability in its own utility process.
  *
@@ -67,6 +68,11 @@ export interface CapabilityCallOptions {
   signal?: AbortSignal;
   /** The turn's services for this call's host calls; the handle's own when absent. */
   services?: CapabilityHostServices;
+  /** Admission: at most `limit` calls with this key run at once in this worker (a tool's
+   *  manifest `concurrency`). The deadline starts when the call is admitted. */
+  queue?: { key: string; limit: number };
+  /** Called once the call is admitted, with how long it waited. */
+  onAdmitted?: (waitedMs: number) => void;
 }
 
 /** A start that failed before the worker said anything at all.
@@ -104,6 +110,7 @@ export class CapabilityWorkerHandle {
   private nextCallId = 0;
   /** Callers waiting for this worker to finish starting. */
   private starting = 0;
+  private readonly queues = new Map<string, Semaphore>();
 
   constructor(private readonly runtime: TrustedWorkerRuntime, private readonly options: CapabilityWorkerHandleOptions) {}
 
@@ -121,13 +128,27 @@ export class CapabilityWorkerHandle {
    *  Exactly one, and only for work that may be repeated: a retry that hides a worker
    *  which genuinely cannot come up, or that runs a tool twice, is worse than the error. */
   async call<T>(method: WorkerMethod, payload: unknown, options: CapabilityCallOptions = {}): Promise<T> {
-    try { return await this.attempt<T>(method, payload, options); }
-    catch (error) {
-      const retryable = error instanceof WorkerStartFailure
-        || (error instanceof WorkerLostCall && REPEATABLE_METHODS.has(method));
-      if (!retryable) throw error;
-      return this.attempt<T>(method, payload, options);
-    }
+    // A tool's declared concurrency is what this worker runs of it at once. It was declared in
+    // every manifest and enforced nowhere. Waiting is abortable and is not charged to the call's
+    // deadline, which `attempt` arms once the call has its slot and the worker is ready.
+    const waited = performance.now();
+    const release = options.queue ? await this.queueFor(options.queue).acquire(options.signal) : undefined;
+    options.onAdmitted?.(performance.now() - waited);
+    try {
+      try { return await this.attempt<T>(method, payload, options); }
+      catch (error) {
+        const retryable = error instanceof WorkerStartFailure
+          || (error instanceof WorkerLostCall && REPEATABLE_METHODS.has(method));
+        if (!retryable) throw error;
+        return await this.attempt<T>(method, payload, options);
+      }
+    } finally { release?.(); }
+  }
+
+  private queueFor(queue: { key: string; limit: number }): Semaphore {
+    let semaphore = this.queues.get(queue.key);
+    if (!semaphore) { semaphore = new Semaphore(queue.limit); this.queues.set(queue.key, semaphore); }
+    return semaphore;
   }
 
   private async attempt<T>(method: WorkerMethod, payload: unknown, options: CapabilityCallOptions): Promise<T> {
