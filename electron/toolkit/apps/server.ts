@@ -3,7 +3,7 @@ import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
-import { isAuthorized, makePin } from '../presenter/serverAuth';
+import { createPinGate, makePin, type PinGate } from '../presenter/serverAuth';
 import { buildToolkitAppDocument } from '@shared/toolkitAppRuntime';
 import type { AppLanguage } from '@shared/types';
 import { normalizeBrowserUiLanguage } from '@shared/uiLanguage';
@@ -29,6 +29,7 @@ interface Client {
 let server: Server | null = null;
 let wss: WebSocketServer | null = null;
 let pin: string | null = null;
+let gate: PinGate | null = null;
 let manifest: ToolkitAppManifest | null = null;
 let info: ToolkitAppSessionInfo | null = null;
 let nextClientId = 1;
@@ -185,7 +186,7 @@ window.addEventListener('message',(event)=>{if(!frame||event.source!==frame.cont
 
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  const authorized = isAuthorized(req.socket.remoteAddress, url.searchParams.get('pin'), pin);
+  const authorized = Boolean(gate?.admit({ remoteAddress: req.socket.remoteAddress, providedPin: url.searchParams.get('pin'), host: req.headers.host, origin: req.headers.origin }));
   if (url.pathname === '/join' || url.pathname === '/') return html(res, PARTICIPANT_SHELL);
   if (!authorized || !manifest) return json(res, 403, { error: 'Forbidden' });
   if (url.pathname === '/api/meta') {
@@ -257,12 +258,12 @@ function handleMessage(client: Client, raw: WebSocket.RawData): void {
 export async function startToolkitAppSession(nextManifest: ToolkitAppManifest, listener: (snapshot: ToolkitAppSessionSnapshot) => void): Promise<ToolkitAppSessionInfo> {
   if (!isToolkitAppManifest(nextManifest)) throw new Error('El bundle de la app no es válido o contiene capacidades no permitidas.');
   stopToolkitAppSession();
-  manifest = nextManifest; pin = makePin(); onSnapshot = listener; nextClientId = 1; messages.length = 0;
+  manifest = nextManifest; pin = makePin(); gate = createPinGate(pin); onSnapshot = listener; nextClientId = 1; messages.length = 0;
   return new Promise((resolve, reject) => {
     server = createServer(handleRequest); server.on('error', reject);
     wss = new WebSocketServer({ server, maxPayload: 32 * 1024 });
     wss.on('connection', (ws, req) => {
-      if (!isAuthorized(req.socket.remoteAddress, requestPin(req), pin)) return void ws.close(4001, 'Invalid PIN');
+      if (!gate?.admit({ remoteAddress: req.socket.remoteAddress, providedPin: requestPin(req), host: req.headers.host, origin: req.headers.origin })) return void ws.close(4001, 'Invalid PIN');
       const client: Client = { id: nextClientId++, ws, participant: null, language: 'en' }; clients.add(client);
       ws.on('message', (raw) => handleMessage(client, raw));
       ws.on('close', () => { clients.delete(client); emitSnapshot(); });
@@ -289,5 +290,5 @@ export function getToolkitAppSessionSnapshot(): ToolkitAppSessionSnapshot { retu
 
 export function stopToolkitAppSession(): void {
   for (const client of clients) try { client.ws.close(); } catch { /* ignore */ }
-  clients.clear(); wss?.close(); wss = null; server?.close(); server = null; pin = null; manifest = null; info = null; onSnapshot = null; messages.length = 0;
+  clients.clear(); wss?.close(); wss = null; server?.close(); server = null; pin = null; gate = null; manifest = null; info = null; onSnapshot = null; messages.length = 0;
 }
