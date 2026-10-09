@@ -1,0 +1,56 @@
+# Repository: github.com/bloosqr/nodus — apply to audit/2026-10-09 with: git apply audit-results/5-shared-parsing/06-unicode-hyphens-miss-the-mirror.patch
+diff --git a/scripts/test-route-label-unicode.mjs b/scripts/test-route-label-unicode.mjs
+new file mode 100644
+index 00000000..64973e07
+--- /dev/null
++++ b/scripts/test-route-label-unicode.mjs
+@@ -0,0 +1,27 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++
++const dir = await mkdtemp(path.join(os.tmpdir(), 'route-label-unicode-'));
++await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
++const { findStepNamedSpecies } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
++test.after(() => rm(dir, { recursive: true, force: true }));
++
++const names = (reactants, products, byproducts = 'water') => findStepNamedSpecies(`## Step 1 — Coupling\n\nThe acid is coupled.\n\nReactants: ${reactants}\nProducts: ${products}\nByproducts: ${byproducts}\nAgents: dichloromethane\n`, 1)[0].map((entry) => entry.name);
++
++test('typographic hyphens and primes in a name are read as ASCII', () => {
++  assert.deepEqual(
++    names('4‑nitrophenol; N,N′-dicyclohexylcarbodiimide; 2−methylpropan−2−ol', '2′-deoxyadenosine; N,N’-dimethylurea', 'N,N′-dicyclohexylurea; 1‐bromopropane'),
++    ['4-nitrophenol', "N,N'-dicyclohexylcarbodiimide", '2-methylpropan-2-ol', "2'-deoxyadenosine", "N,N'-dimethylurea", "N,N'-dicyclohexylurea", '1-bromopropane', 'dichloromethane'],
++  );
++});
++
++test('a double prime and the structure fallback are kept intact', () => {
++  assert.deepEqual(names("N,N,N′,N″-tetramethyl-x; the photodimer — `C1=CC2(C=C1)OCCO2`", 'ethanol'), ["N,N,N',N''-tetramethyl-x", 'the photodimer', 'ethanol', 'water', 'dichloromethane']);
++  const declared = findStepNamedSpecies('## Step 1\n\nReactants: the photodimer – `C1=CC2(C=C1)OCCO2`\nProducts: ethanol\n', 1)[0][0];
++  assert.equal(declared.declaredSmiles, 'C1=CC2(C=C1)OCCO2');
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..6edbeca6 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -827,8 +827,16 @@ function roleOf(label: string): { role: RouteLabelRole; byproduct: boolean } | n
+  *  than twice and matches the 4000 already used for a declared structure in this file. */
+ export const MAX_SPECIES_NAME = 4000;
+ 
++/** The typographic hyphens and primes a model writes into a name (`4‑nitrophenol` with U+2011,
++ *  `N,N′-dicyclohexylurea`, `2−methylpropan−2−ol`), as the ASCII the references hold. The local
++ *  PubChem mirror matches a synonym exactly, so each of these missed it and went to the network
++ *  service, through the pacer, for a name the mirror had. */
++function asciiNamePunctuation(name: string): string {
++  return name.replace(/[\u2010-\u2013\u2212\uFE63\uFF0D]/g, '-').replace(/[\u2032\u2019]/g, "'").replace(/\u2033/g, "''").replace(/\u2034/g, "'''");
++}
++
+ function cleanSpeciesName(raw: string): string {
+-  return raw.replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
++  return asciiNamePunctuation(raw).replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
+ }
+ 
+ /** Whether a parsed species name can be a chemical name at all. A model that draws its route

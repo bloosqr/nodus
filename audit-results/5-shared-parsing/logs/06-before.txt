@@ -1,0 +1,113 @@
+TAP version 13
+# Subtest: typographic hyphens and primes in a name are read as ASCII
+not ok 1 - typographic hyphens and primes in a name are read as ASCII
+  ---
+  duration_ms: 6.855676
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-route-label-unicode.mjs:16:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      [
+    +   '4‑nitrophenol',
+    +   'N,N′-dicyclohexylcarbodiimide',
+    +   '2−methylpropan−2−ol',
+    +   '2′-deoxyadenosine',
+    +   'N,N’-dimethylurea',
+    +   'N,N′-dicyclohexylurea',
+    +   '1‐bromopropane',
+    -   '4-nitrophenol',
+    -   "N,N'-dicyclohexylcarbodiimide",
+    -   '2-methylpropan-2-ol',
+    -   "2'-deoxyadenosine",
+    -   "N,N'-dimethylurea",
+    -   "N,N'-dicyclohexylurea",
+    -   '1-bromopropane',
+        'dichloromethane'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: '4-nitrophenol'
+    1: "N,N'-dicyclohexylcarbodiimide"
+    2: '2-methylpropan-2-ol'
+    3: "2'-deoxyadenosine"
+    4: "N,N'-dimethylurea"
+    5: "N,N'-dicyclohexylurea"
+    6: '1-bromopropane'
+    7: 'dichloromethane'
+  actual:
+    0: '4‑nitrophenol'
+    1: 'N,N′-dicyclohexylcarbodiimide'
+    2: '2−methylpropan−2−ol'
+    3: '2′-deoxyadenosine'
+    4: 'N,N’-dimethylurea'
+    5: 'N,N′-dicyclohexylurea'
+    6: '1‐bromopropane'
+    7: 'dichloromethane'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-route-label-unicode.mjs:17:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  ...
+# Subtest: a double prime and the structure fallback are kept intact
+not ok 2 - a double prime and the structure fallback are kept intact
+  ---
+  duration_ms: 1.064024
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-route-label-unicode.mjs:23:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      [
+    +   'N,N,N′,N″-tetramethyl-x',
+    -   "N,N,N',N''-tetramethyl-x",
+        'the photodimer',
+        'ethanol',
+        'water',
+        'dichloromethane'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: "N,N,N',N''-tetramethyl-x"
+    1: 'the photodimer'
+    2: 'ethanol'
+    3: 'water'
+    4: 'dichloromethane'
+  actual:
+    0: 'N,N,N′,N″-tetramethyl-x'
+    1: 'the photodimer'
+    2: 'ethanol'
+    3: 'water'
+    4: 'dichloromethane'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-route-label-unicode.mjs:24:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 151.666265

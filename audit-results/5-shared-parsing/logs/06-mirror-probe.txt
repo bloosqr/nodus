@@ -1,0 +1,9 @@
+'4-nitrophenol'                               HIT
+'4\u2011nitrophenol'                          miss -> network PubChem
+'4\u2010nitrophenol'                          miss -> network PubChem
+"N,N'-dicyclohexylcarbodiimide"               HIT
+'N,N\u2032-dicyclohexylcarbodiimide'          miss -> network PubChem
+'N,N\u2019-dicyclohexylcarbodiimide'          miss -> network PubChem
+"2'-deoxyadenosine"                           HIT
+'2\u2032-deoxyadenosine'                      miss -> network PubChem
+'2\u2212methylpropan\u22122\u2212ol'          miss -> network PubChem
