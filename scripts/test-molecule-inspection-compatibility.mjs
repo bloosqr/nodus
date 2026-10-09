@@ -19,14 +19,16 @@ await build({ entryPoints: [path.join(root, 'electron/ai/moleculeInspection.ts')
       './aiClient': `export function completeText(){throw Error('test must not call a model')}`,
       // The reaction index and the route evidence are optional; with no index they add nothing.
       '../reactionIndex': `export const reactionIndexService=()=>({localDirectory:async()=>null})`,
-      './synthesisEvidence': `export async function invokeDisconnections(){return null} export function synthesisEvidenceWorkIds(){return []} export async function textbookPassages(){return []}`,
+      './synthesisEvidence': `export async function invokeDisconnectionsEach(){return []} export function synthesisEvidenceWorkIds(){return []} export async function textbookPassages(){return []}`,
+      // No PubChem mirror: the name and structure lookups go to the package as before.
+      './pubchemMirror': `export const pubchemMirrorDirectory=()=>null; export const opsinDirectory=()=>null`,
       './chemistryStock': `export const chemistryStockDirectory=()=>null`,
       // No textbook-scheme index built: the route report has no textbook section.
       './textbookSchemes': `export const textbookSchemeDirectory=()=>null; export const textbookCitations=()=>[]`,
     };
     // Only the electron modules' imports are mocked: a shared module's own `./textbookSchemes` is the
     // real shared file, not electron/ai/textbookSchemes.
-    api.onResolve({ filter: /^(\.\/aiClient|\.\/synthesisEvidence|\.\/chemistryStock|\.\/textbookSchemes|\.\.\/reactionIndex|\.\.\/capabilities\/(registry|runner))$/ }, args => (args.importer.includes(`${path.sep}electron${path.sep}`) ? { path: args.path, namespace: 'mock' } : undefined));
+    api.onResolve({ filter: /^(\.\/aiClient|\.\/synthesisEvidence|\.\/pubchemMirror|\.\/chemistryStock|\.\/textbookSchemes|\.\.\/reactionIndex|\.\.\/capabilities\/(registry|runner))$/ }, args => (args.importer.includes(`${path.sep}electron${path.sep}`) ? { path: args.path, namespace: 'mock' } : undefined));
     api.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: mocks[args.path] }));
   } }],
 });
@@ -64,4 +66,29 @@ test('a 2.5.7-style checker preserves the failed step and the following step num
   assert.match(answer, /Step 3/);
   assert.match(answer, /Step could not be built/);
   assert.match(answer, /nodus-route-fix/);
+});
+
+test('a route where NO step could be built still gets a route check the model can act on (B50)', async () => {
+  // Every step names a species that did not resolve. The package refuses an all-empty route, and
+  // that refusal used to end the check with "route check unavailable", telling the model nothing.
+  // The application now answers it itself, in the package's shape for an unbuilt step.
+  let called = false;
+  const runner = { async invoke() { called = true; throw new Error('Provide at least one reaction SMILES step.'); } };
+  const empty = ['', '', ''];
+  const unresolved = [{ step: 1, role: 'product', byproduct: false, name: 'benzyl (2S)-2-{[(tert-butoxycarbonyl)amino]propanamido}acetate', feedback: 'PubChem has no exact match for this name.' }];
+  const answer = await appendRouteReportAndDrawings('Route prose', '', { runner }, { steps: empty, labels: empty.map(() => []), unresolved });
+  assert.equal(called, false, 'the package is not asked to check a route with nothing in it');
+  assert.doesNotMatch(answer, /Route check unavailable/, 'not the dead end it used to be');
+  assert.match(answer, /could not be built/);
+  assert.match(answer, /Step 1/);
+  assert.match(answer, /Step 3/);
+  assert.match(answer, /nodus-route-fix/, 'and the fix prompts are offered');
+
+  // The measured case: some species DID resolve (given as structures), but no step had all of its own.
+  called = false;
+  const someLabels = [[{ role: 'reactant', byproduct: false, name: 'DCC', smiles: 'C(=NC1CCCCC1)=NC1CCCCC1' }], [], []];
+  const measured = await appendRouteReportAndDrawings('Route prose', '', { runner }, { steps: empty, labels: someLabels, unresolved });
+  assert.equal(called, false);
+  assert.match(measured, /could not be built/);
+  assert.doesNotMatch(measured, /Route check unavailable/);
 });

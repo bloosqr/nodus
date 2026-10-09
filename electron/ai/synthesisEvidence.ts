@@ -1,3 +1,4 @@
+import { eachBounded } from '../util/async';
 import type { ModelRef } from '@shared/types';
 import { findRequestedTarget } from '@shared/moleculeInspection';
 import {
@@ -115,6 +116,20 @@ export async function invokeDisconnections(runner: Runner, targets: string[], st
   return artifact ? normalizeDisconnections(artifact.data, limit) : [];
 }
 
+/** Python processes the evidence gather may run at once. Each disconnection call is one process
+ *  working through its molecules ONE AFTER ANOTHER on one core; one call per molecule spreads them
+ *  across cores. Bounded, because each process holds its own template screen and RDKit. */
+const DISCONNECTION_PROCESSES = 4;
+
+/** `invokeDisconnections` with one call per molecule, run side by side, concatenated in order.
+ *  The same proposals per molecule — each target is searched independently either way — in a
+ *  fraction of the wall time when there are several. */
+export async function invokeDisconnectionsEach(runner: Runner, targets: string[], starting: string[], limit: number, options: EvidenceOptions): Promise<TargetDisconnections[]> {
+  const parts = await eachBounded(targets.slice(0, 16), DISCONNECTION_PROCESSES, (molecule) => invokeDisconnections(runner, [molecule], starting, limit, options));
+  options.signal?.throwIfAborted();
+  return parts.flatMap((part) => part ?? []);
+}
+
 /** One-step disconnections of the target, then of the most promising precursors, level by level
  *  (one call per level): two levels in all, three when the request names starting materials, so
  *  a route's early steps (4-nitrotoluene → 4-nitrobenzoic acid under benzocaine) are covered.
@@ -131,7 +146,7 @@ async function ordDisconnections(target: string, starting: string[], options: Ev
       options.signal?.throwIfAborted();
       const next = secondLevelTargets(level, starting, 3).filter((molecule) => !briefs.some((brief) => brief.input === molecule || brief.target === molecule));
       if (!next.length) break;
-      level = ((await invokeDisconnections(runner, next, starting, PROPOSALS_PER_TARGET, options)) ?? []).map((brief) => ({ ...brief, proposals: brief.proposals.slice(0, 3) }));
+      level = (await invokeDisconnectionsEach(runner, next, starting, PROPOSALS_PER_TARGET, options)).map((brief) => ({ ...brief, proposals: brief.proposals.slice(0, 3) }));
       briefs.push(...level);
     }
   } catch (error) {
@@ -147,16 +162,27 @@ async function ordDisconnections(target: string, starting: string[], options: Ev
  *  precursors, and one-step disconnections proposed by retro templates extracted from those
  *  schemes, with book-and-page citations. Best-effort: no textbook index, an older package or a
  *  tool failure returns []. */
-async function textbookSchemePreparations(target: string, disconnections: TargetDisconnections[], starting: string[], options: EvidenceOptions): Promise<TextbookPreparation[]> {
+async function textbookSchemePreparations(target: string, disconnectionsReady: Promise<TargetDisconnections[]>, starting: string[], options: EvidenceOptions): Promise<TextbookPreparation[]> {
   const provider = disconnectProvider();
   const indexDir = provider ? textbookSchemeDirectory(options.evidenceScope) : null;
   if (!provider || !indexDir) return [];
-  const molecules = [...new Set([target, ...secondLevelTargets(disconnections, starting, 5)])].slice(0, 6);
   const { runner, dispose } = chemistryRunner(options);
+  // The target needs nothing from the ORD search, so its call starts now, beside it; only the
+  // second-level molecules (chosen from ORD's proposals) wait for it. Each molecule is its own
+  // process: one call used to work through all six one after another — 205 s on a long target.
+  const one = async (molecule: string): Promise<unknown[]> => {
+    const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input: { indexDir, targets: [molecule], limit: 6 } });
+    const data = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections')?.data as { disconnections?: unknown[] } | undefined;
+    return Array.isArray(data?.disconnections) ? data.disconnections : [];
+  };
   try {
-    const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input: { indexDir, targets: molecules, limit: 6 } });
-    const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections');
-    return artifact ? textbookPreparations(artifact.data, (ids) => textbookCitations(ids, indexDir, options.evidenceScope), (templates) => textbookTemplateCitations(templates, indexDir, 2, options.evidenceScope)) : [];
+    const first = one(target);
+    first.catch(() => undefined); // awaited below
+    const disconnections = await disconnectionsReady.catch(() => [] as TargetDisconnections[]);
+    const second = secondLevelTargets(disconnections, starting, 5).filter((molecule) => molecule !== target).slice(0, 5);
+    const rest = await eachBounded(second, DISCONNECTION_PROCESSES - 1, one);
+    const entries = [...await first.catch(() => [] as unknown[]), ...rest.flatMap((part) => part ?? [])];
+    return textbookPreparations({ disconnections: entries }, (ids) => textbookCitations(ids, indexDir, options.evidenceScope), (templates) => textbookTemplateCitations(templates, indexDir, 2, options.evidenceScope));
   } catch (error) {
     if (options.signal?.aborted) throw error;
     console.warn('[synthesisEvidence] textbook schemes unavailable:', error instanceof Error ? error.message : String(error));
@@ -436,11 +462,12 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
     routes.catch(() => undefined); // awaited below; a cancelled request must not leave it unhandled
     const availability = phases.track('availability', targetAvailability(target, findTargetName(question) || target, scoped));
     availability.catch(() => undefined);
-    const disconnections = await phases.track('ORD disconnections', ordDisconnections(target, startingMaterials, scoped));
-    // The passages and the scheme preparations both need the disconnections and neither needs the
-    // other, so they run together rather than one after the other. Started here and awaited below,
-    // the same shape the route search and the availability lookup already use above.
-    const prepared = phases.track('textbook preparations', textbookSchemePreparations(target, disconnections, startingMaterials, scoped));
+    const disconnectionsReady = phases.track('ORD disconnections', ordDisconnections(target, startingMaterials, scoped));
+    disconnectionsReady.catch(() => undefined); // awaited just below
+    // The scheme preparations start now: the target's own search runs beside ORD's, and only the
+    // second-level molecules wait for ORD's proposals. The passages also need the disconnections.
+    const prepared = phases.track('textbook preparations', textbookSchemePreparations(target, disconnectionsReady, startingMaterials, scoped));
+    const disconnections = await disconnectionsReady;
     prepared.catch(() => undefined); // awaited below; a cancelled request must not leave it unhandled
     let passages: EvidencePassage[] = [];
     try {

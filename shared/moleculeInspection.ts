@@ -2308,7 +2308,7 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const largeNote = step.balanced && !assemblyFailure && largest > LARGE_COEFFICIENT
       ? ` Note: the carbon compounds balance only with large coefficients (up to ${largest}); the step passes, but check that its products and byproducts are the intended ones.`
       : '';
-    const assemblyNote = assemblyFailure ? ` ${step.assemblyProblem}.` : '';
+    const assemblyNote = assemblyFailure ? ` ${sentence(step.assemblyProblem ?? '')}` : '';
     // A balanced step that only balanced because something moved off the reactant side. The
     // sentence is what makes the assumption reviewable; the verdict above now counts it as a
     // failure too, which it already did in the route header and in the per-step fix chip.
@@ -2316,7 +2316,7 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     // Printed for the same reason, and it is the more urgent of the two: a lone atom of a diatomic
     // element said nothing at all in this line, so the step named no fault while failing.
     const monatomicNote = step.monatomicSpecies ? ` ${step.monatomicSpecies}` : '';
-    const skeletonNote = skeletonFailure ? ` ${step.skeletonProblem}.` : skeletonFacts(step);
+    const skeletonNote = skeletonFailure ? ` ${sentence(step.skeletonProblem ?? '')}` : skeletonFacts(step);
     const agents = step.agents.length ? ` [agents: ${sideTrace(step.agents, names)}]` : '';
     const stepLabels = labels[step.index] ?? [];
     const reactantSide = groupedSideTrace(step.reactants, stepLabels.filter((entry) => entry.role === 'reactant'), names, step.balanced === true, step.products);
@@ -2526,6 +2526,12 @@ export function routeStepSummaries(audit: RouteAudit, labels: RouteSpeciesLabel[
   });
 }
 
+/** A message that is already a sentence keeps its own full stop. The checker ends most of its
+ *  messages with one, and appending another put ".." in front of the model on most routes. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+}
+
 export function routeStepFailure(step: RouteStepAudit): string | null {
   if (step.nameProblems?.length) return step.nameProblems.join('; ');
   if (!step.ok) return step.error ?? 'could not be parsed';
@@ -2707,7 +2713,7 @@ function repeatedFaultSummary(flagged: Array<{ step: RouteStepAudit; reasons: st
   if (!repeated.length) return [];
   return [
     'One fault repeats below, so this is one mistake made several times, not several mistakes. Fix the pattern rather than each step on its own:',
-    ...repeated.map((group) => `- step ${group.steps.join(', step ')} all fail the same way: ${group.sample.split('. ')[0]}.`),
+    ...repeated.map((group) => `- step ${group.steps.join(', step ')} all fail the same way: ${sentence(group.sample.split('. ')[0])}`),
     '',
   ];
 }

@@ -2024,6 +2024,21 @@ test('one fault repeated across steps is stated once, as a pattern', () => {
   if (single) assert.doesNotMatch(single.prompt, /One fault repeats below/);
 });
 
+test('a repeated fault that already ends in a full stop is not given a second one', () => {
+  // Measured: "— RDKit rejected the molecular graph.." reached the model. The pattern line keeps
+  // the first sentence and adds its own full stop, and a message with no ". " inside it IS its
+  // first sentence, full stop included.
+  const step = (index) => ({
+    index, reaction: 'a>>b', ok: false, error: '"COc1ccc2c(c1)CC" — RDKit rejected the molecular graph.',
+    balanced: false, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+  });
+  const audit = normalizeRouteAudit({ continuous: true, blocked: [], steps: [step(3), step(4)], links: [] });
+  const chips = routeFixChips(formatNamedRouteFixPrompts([[], [], [], [], []], audit));
+  const backwards = chips.find((chip) => chip.label === 'Fix from the target backwards');
+  assert.match(backwards.prompt, /step 4, step 5 all fail the same way: "COc1ccc2c\(c1\)CC" — RDKit rejected the molecular graph\.\n/);
+  assert.doesNotMatch(backwards.prompt, /graph\.\./);
+});
+
 test('distinct faults are not collapsed into a false pattern', () => {
   const audit = normalizeRouteAudit({
     continuous: true, blocked: [],

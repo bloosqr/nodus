@@ -55,7 +55,8 @@ import { chemistryStockDirectory } from './chemistryStock';
 import { textbookCitations, textbookSchemeDirectory } from './textbookSchemes';
 import { formatTextbookPrecedents, TEXTBOOK_ID } from '@shared/textbookSchemes';
 import { compatibilityFixLines, formatCompatibility, normalizeCompatibility, type StepCompatibility } from '@shared/stepCompatibility';
-import { invokeDisconnections, synthesisEvidenceWorkIds, textbookPassages } from './synthesisEvidence';
+import { invokeDisconnectionsEach, synthesisEvidenceWorkIds, textbookPassages } from './synthesisEvidence';
+import { opsinDirectory, pubchemMirrorDirectory } from './pubchemMirror';
 import type { ChemistryEvidenceScope } from './chemistryEvidenceScope';
 import { capabilityRegistry, pinCapabilitiesForTurn, type CapabilityProvider } from '../capabilities/registry';
 import { createTrustedCapabilityRunner } from '../capabilities/runner';
@@ -231,7 +232,25 @@ async function stereoEnumerationAvailable(provider: CapabilityProvider): Promise
   try { return Boolean(await reactionIndexService().localDirectory()); } catch { return false; }
 }
 
+/** The package's own words for a step it could not build (chemistryRouteAudit.ts), so a route
+ *  answered here reads exactly like one the package answered. */
+const UNBUILT_STEP = 'This step could not be built: a species it names has no resolved structure.';
+
 async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: string[], racemic?: boolean | boolean[], target?: string | null, labels?: RouteSpeciesLabel[][], declared: { rearrangement?: boolean[]; radical?: boolean[] } = {}): Promise<RouteAudit | null> {
+  // No step could be built — every one names a species that did not resolve. The package refuses
+  // such a route outright ("Provide at least one reaction SMILES step"), and that refusal used to
+  // end the check: the answer said only that the route check was unavailable, so the model was
+  // told nothing it could fix (B50, measured 2026-10-09 on a 12-step answer). Answer it here in
+  // the package's own shape for an unbuilt step, so the report and its fix prompts name the
+  // unresolved species exactly as they do when only some steps are unbuilt.
+  if (steps.length && !steps.some((step) => step.trim())) {
+    return normalizeRouteAudit({
+      continuous: false, links: [],
+      blocked: steps.map((_, index) => `Step ${index + 1}: ${UNBUILT_STEP}`),
+      steps: steps.map((_, index) => ({ index, reaction: '', ok: false, error: UNBUILT_STEP, balanced: false, chargeBalanced: false,
+        differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] })),
+    });
+  }
   // A package that predates `target`/`labels` ignores them, and the audit simply has no
   // target entry or name check. The schema probe keeps a 2.3.0 package from rejecting an
   // input it never declared.
@@ -403,8 +422,20 @@ function normalizeSpeciesResolution(entry: unknown): SpeciesResolution | null {
   };
 }
 
+/** The mirror directory, for a package whose tool declares it: an older package is never sent a
+ *  field its schema refuses. */
+function mirrorInput(provider: CapabilityProvider, toolId: string): { pubchemDir?: string; opsinDir?: string; localOnly?: boolean } {
+  const schema = provider.tools.find((tool) => tool.id === toolId)?.inputSchema as { properties?: Record<string, unknown> } | undefined;
+  if (!schema?.properties) return {};
+  const pubchem = 'pubchemDir' in schema.properties ? pubchemMirrorDirectory() : null;
+  const opsin = 'opsinDir' in schema.properties ? opsinDirectory() : null;
+  // A run that must stay local (a timing trace): the package consults no network for references.
+  const localOnly = process.env.NODUS_REFERENCES_LOCAL_ONLY === '1' && 'localOnly' in schema.properties;
+  return { ...(pubchem ? { pubchemDir: pubchem } : {}), ...(opsin ? { opsinDir: opsin } : {}), ...(localOnly ? { localOnly: true } : {}) };
+}
+
 async function invokeResolveNames(runner: Runner, provider: CapabilityProvider, names: string[]): Promise<SpeciesResolution[]> {
-  const result = await runner.invoke({ provider, toolId: RESOLVE_TOOL, input: { names } });
+  const result = await runner.invoke({ provider, toolId: RESOLVE_TOOL, input: { names, ...mirrorInput(provider, RESOLVE_TOOL) } });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'species-resolution');
   const data = artifact?.data as { results?: unknown } | undefined;
   const list = Array.isArray(data?.results) ? data.results as unknown[] : [];
@@ -446,7 +477,7 @@ function normalizeStructureName(entry: unknown): SpeciesStructureName | null {
 }
 
 async function invokeNameStructures(runner: Runner, provider: CapabilityProvider, smiles: string[]): Promise<SpeciesStructureName[]> {
-  const result = await runner.invoke({ provider, toolId: STRUCTURE_TOOL, input: { smiles } });
+  const result = await runner.invoke({ provider, toolId: STRUCTURE_TOOL, input: { smiles, ...mirrorInput(provider, STRUCTURE_TOOL) } });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'structure-naming');
   const data = artifact?.data as { results?: unknown } | undefined;
   const list = Array.isArray(data?.results) ? data.results as unknown[] : [];
@@ -744,7 +775,9 @@ async function buildStepSupport(
     }
     if (!products.size) return;
     const starting = findStartingSmiles(options.question ?? '', options.target);
-    const briefs = await invokeDisconnections(runner, [...new Set(products.values())], starting, 4, options);
+    // One process per product, side by side: one call worked through up to six large products in
+    // turn on one core (49 s of step support on a long route, 2026-10-09).
+    const briefs = await invokeDisconnectionsEach(runner, [...new Set(products.values())], starting, 4, options);
     if (!briefs) return;
     for (const [step, product] of products) {
       const brief = briefs.find((item) => item.input === product);
@@ -934,7 +967,9 @@ export async function appendRouteReportAndDrawings(
   // The names-first path derives the equations from the resolved names and passes them in.
   const steps = overrides.steps ?? [];
   const labels = overrides.labels ?? [];
-  if (!steps.length || !labels.some((entries) => entries.length)) return finalAnswer;
+  // A route where NOTHING resolved still has something to report when names failed: which ones,
+  // by step. Returning the bare answer there told the model nothing (B50).
+  if (!steps.length || (!labels.some((entries) => entries.length) && !overrides.unresolved?.length)) return finalAnswer;
   const conditions = findStepConditions(modelAnswer, steps.length);
   const stepProse = findStepProse(modelAnswer, steps.length);
   // Racemic is decided per step, from that step's own prose, as the rules ask: a sentence
