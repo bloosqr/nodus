@@ -72,6 +72,18 @@ interface ReplicaRuntime {
 const runtimes = new Map<string, ReplicaRuntime>();
 const readonlyPool = new Map<string, Database.Database>();
 
+/**
+ * Publications this build refused because their schema is newer than its own.
+ *
+ * Without this the refusal was rediscovered on every thirty-second tick: the stored ETag is
+ * the last revision APPLIED, so the server answered each poll with the whole snapshot again
+ * (36.7 MiB gzipped on a real academic library), which was then gunzipped and parsed on the
+ * main thread (0.7–1.6 s) only to be refused. Asking with the refused revision lets the
+ * server answer 304 until it publishes something else. In memory on purpose: installing the
+ * update that can read it restarts the app, which is when it must be fetched again.
+ */
+const refusedSnapshots = new Map<string, { revision: string; message: string }>();
+
 function runtimeFor(vaultId: string): ReplicaRuntime {
   let runtime = runtimes.get(vaultId);
   if (!runtime) {
@@ -467,10 +479,19 @@ export async function pullReplica(vaultId: string, options: { force?: boolean } 
     if (vault.active) await syncServerProfilePreferencesForVault(vault, undefined, { pull: true }).catch(() => undefined);
 
     const headers: Record<string, string> = { authorization: `Bearer ${token}` };
-    if (vault.remote.lastPulledRevision && !options.force) headers['if-none-match'] = `W/"${vault.remote.lastPulledRevision}"`;
+    const refused = refusedSnapshots.get(vaultId);
+    if (refused) headers['if-none-match'] = `W/"${refused.revision}"`;
+    else if (vault.remote.lastPulledRevision && !options.force) headers['if-none-match'] = `W/"${vault.remote.lastPulledRevision}"`;
     const response = await request(`${endpoint}/snapshot`, { headers });
 
     if (response.status === 401 || response.status === 403) { handleRevocation(vaultId, runtime); return; }
+    if (response.status === 304 && refused) {
+      // Still the publication this build cannot read. Same answer as when it was refused,
+      // without downloading it again.
+      runtime.phase = 'error';
+      runtime.lastError = refused.message;
+      return;
+    }
     if (response.status === 304) {
       const db = openReplicaDb(vault);
       if (db) await pullRelayOperations(vault, token, db, vault.remote.lastPulledRevision);
@@ -492,8 +513,12 @@ export async function pullReplica(vaultId: string, options: { force?: boolean } 
     const snapshot = JSON.parse(text) as { schemaVersion?: number; revision?: string; tables?: Record<string, unknown>; assets?: SnapshotAssetRef[] };
 
     if (Number(snapshot.schemaVersion) > SCHEMA_VERSION) {
-      throw new Error(`Este espacio se publica con un esquema más reciente (v${snapshot.schemaVersion}) que el de esta instalación (v${SCHEMA_VERSION}). Actualiza Nodus para recibirlo.`);
+      const message = `Este espacio se publica con un esquema más reciente (v${snapshot.schemaVersion}) que el de esta instalación (v${SCHEMA_VERSION}). Actualiza Nodus para recibirlo.`;
+      const refusedRevision = response.headers.get('x-nodus-revision') || snapshot.revision || null;
+      if (refusedRevision) refusedSnapshots.set(vaultId, { revision: refusedRevision, message });
+      throw new Error(message);
     }
+    refusedSnapshots.delete(vaultId);
 
     const db = openReplicaDb(vault);
     if (!db) throw new Error('No se ha podido abrir la base de datos de la réplica.');
