@@ -3,7 +3,7 @@ import { ChatAbortedNotice } from '../components/ChatAbortedNotice';
 import { ChatMarkdown } from '../components/ChatMarkdown';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type {
   AppSettings,
@@ -262,7 +262,7 @@ const ReaderFilesMenu = memo(function ReaderFilesMenu({
   );
 });
 
-function OriginalPagePreview({
+export function OriginalPagePreview({
   documentId, attachmentId, initialPage, title, onClose, onOpenFull,
 }: {
   documentId: string; attachmentId: string; initialPage: number; title: string; onClose: () => void; onOpenFull: () => void;
@@ -293,6 +293,9 @@ function OriginalPagePreview({
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
     let canceled = false;
+    // pdf.js refuses a second render() on a canvas that is still drawing, so paging or
+    // zooming quickly turned the preview into an error. The previous render is cancelled.
+    let renderTask: ReturnType<PDFPageProxy['render']> | null = null;
     void pdf.getPage(pageNumber).then(async (page) => {
       if (canceled || !canvasRef.current) return;
       const viewport = page.getViewport({ scale });
@@ -300,10 +303,11 @@ function OriginalPagePreview({
       const canvas = canvasRef.current;
       canvas.width = Math.ceil(viewport.width * ratio); canvas.height = Math.ceil(viewport.height * ratio);
       canvas.style.width = `${Math.ceil(viewport.width)}px`; canvas.style.height = `${Math.ceil(viewport.height)}px`;
-      await page.render({ canvasContext: canvas.getContext('2d')!, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] }).promise;
+      renderTask = page.render({ canvasContext: canvas.getContext('2d')!, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0] });
+      await renderTask.promise;
       page.cleanup();
-    }).catch((cause) => { if (!canceled) setError(errorText(cause)); });
-    return () => { canceled = true; };
+    }).catch((cause) => { if (!canceled && (cause as { name?: string } | null)?.name !== 'RenderingCancelledException') setError(errorText(cause)); });
+    return () => { canceled = true; renderTask?.cancel(); };
   }, [pdf, pageNumber, scale]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
