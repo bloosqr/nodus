@@ -1012,13 +1012,23 @@ export async function appendRouteReportAndDrawings(
     return promise.finally(() => timings.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}s`));
   };
   try {
+    // The index lookups, the compatibility check and the stock lines read the resolved labels and
+    // nothing of the audit, so they start beside it rather than after it: the audit is the longest
+    // single call in the report, and each of these used to wait for it before it began. Each is
+    // caught here so a failed audit, which returns at once, leaves nothing unhandled behind it.
+    // The index lookup is skipped entirely when the package has no such tool or the index has not
+    // been downloaded.
+    const queries = buildPrecedentQueries(labels);
+    const precedentPromise = timed('ORD precedent', lookupReactionPrecedent(runner, queries.map((query) => query.query), options));
+    precedentPromise.catch(() => undefined);
+    const textbookPromise = timed('textbook precedent', lookupTextbookPrecedent(runner, queries.map((query) => query.query), options).catch(() => null));
+    // Groups a step's reagents would attack (an ester through LiAlH4, a free OH beside a Grignard).
+    const compatibilityPromise = timed('compatibility', checkStepCompatibility(runner, labels, conditions, options).catch(() => [] as StepCompatibility[]));
+    // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
+    const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
     const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels, declared));
     const audit = checked ? implyRacemicTarget(checked, options.target) : checked;
     if (!audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit')}\n`;
-    // The index lookup runs alongside the review and the drawings; it is skipped entirely
-    // when the package has no such tool or the index has not been downloaded.
-    const queries = buildPrecedentQueries(labels);
-    const precedentPromise = timed('ORD precedent', lookupReactionPrecedent(runner, queries.map((query) => query.query), options));
     // One model review looks for plan problems the checker cannot see (prose vs names, a
     // product that is a different compound, a step that cannot work, a redundant step). It is
     // blocking: a finding marks the route not verified. An unreadable reply never blocks. It
@@ -1066,15 +1076,11 @@ export async function appendRouteReportAndDrawings(
       return formatReactionPrecedents(result.precedent, { queries, labels, target, drawings, support });
     }).catch(() => '');
     // The same steps in the reaction schemes of the user's own textbooks, cited by book and page.
-    const textbookSection = timed('textbook precedent', lookupTextbookPrecedent(runner, queries.map((query) => query.query), options).then((precedent) => {
+    const textbookSection = textbookPromise.then((precedent) => {
       if (!precedent) return '';
       const target = options.target ? { smiles: options.target, name: targetName(labels, audit, options.target) } : null;
       return formatTextbookPrecedents(precedent, (ids) => textbookCitations(ids, undefined, options.evidenceScope), { queries, target });
-    }).catch(() => ''));
-    // Groups a step's reagents would attack (an ester through LiAlH4, a free OH beside a Grignard).
-    const compatibilityPromise = timed('compatibility', checkStepCompatibility(runner, labels, conditions, options).catch(() => [] as StepCompatibility[]));
-    // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
-    const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
+    }).catch(() => '');
     const review = await reviewPromise;
     const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
     const finalReport = blockingReviewProblems(review).length ? drawings.replace(FINAL_REPORT_PASSED, FINAL_REPORT_REVIEW_HELD) : drawings;
