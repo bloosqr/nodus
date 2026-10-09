@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: an interpreter killed by a signal is a failure, not an empty success
+ok 1 - an interpreter killed by a signal is a failure, not an empty success
+  ---
+  duration_ms: 113.848699
+  type: 'test'
+  ...
+# Subtest: stderr is bounded in total and keeps the end, where the traceback is
+ok 2 - stderr is bounded in total and keeps the end, where the traceback is
+  ---
+  duration_ms: 94.037202
+  type: 'test'
+  ...
+# Subtest: multi-byte characters split across pipe reads arrive intact
+ok 3 - multi-byte characters split across pipe reads arrive intact
+  ---
+  duration_ms: 32.977491
+  type: 'test'
+  ...
+# Subtest: an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+ok 4 - an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+  ---
+  duration_ms: 226.866295
+  type: 'test'
+  ...
+# Subtest: cancelling a call also stops what the interpreter started
+ok 5 - cancelling a call also stops what the interpreter started
+  ---
+  duration_ms: 1589.328129
+  type: 'test'
+  ...
+# Subtest: interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget
+ok 6 - interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget
+  ---
+  duration_ms: 1372.979124
+  type: 'test'
+  ...
+# Subtest: a call cancelled while it waits for a slot never starts
+ok 7 - a call cancelled while it waits for a slot never starts
+  ---
+  duration_ms: 1029.865278
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4722.84016

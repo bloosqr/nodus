@@ -1,0 +1,34 @@
+TAP version 13
+# Subtest: an interpreter killed by a signal is a failure, not an empty success
+ok 1 - an interpreter killed by a signal is a failure, not an empty success
+  ---
+  duration_ms: 102.909499
+  type: 'test'
+  ...
+# Subtest: stderr is bounded in total and keeps the end, where the traceback is
+ok 2 - stderr is bounded in total and keeps the end, where the traceback is
+  ---
+  duration_ms: 87.363356
+  type: 'test'
+  ...
+# Subtest: multi-byte characters split across pipe reads arrive intact
+ok 3 - multi-byte characters split across pipe reads arrive intact
+  ---
+  duration_ms: 31.280986
+  type: 'test'
+  ...
+# Subtest: an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+ok 4 - an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+  ---
+  duration_ms: 227.966997
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 677.431467

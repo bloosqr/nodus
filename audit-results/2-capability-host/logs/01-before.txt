@@ -1,0 +1,83 @@
+TAP version 13
+# Subtest: an interpreter killed by a signal is a failure, not an empty success
+not ok 1 - an interpreter killed by a signal is a failure, not an empty success
+  ---
+  duration_ms: 91.412297
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-python-host.mjs:68:1'
+  failureType: 'testCodeFailure'
+  error: 'a process the kernel killed must not read as exit code 0'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 0
+  operator: 'notStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-python-host.mjs:73:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: stderr is bounded in total and keeps the end, where the traceback is
+not ok 2 - stderr is bounded in total and keeps the end, where the traceback is
+  ---
+  duration_ms: 109.858069
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-python-host.mjs:77:1'
+  failureType: 'testCodeFailure'
+  error: 'kept 19597575 characters of stderr'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-python-host.mjs:82:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: multi-byte characters split across pipe reads arrive intact
+not ok 3 - multi-byte characters split across pipe reads arrive intact
+  ---
+  duration_ms: 34.807792
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-python-host.mjs:86:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    300018 !== 300000
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 300000
+  actual: 300018
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-python-host.mjs:91:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+not ok 4 - an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+  ---
+  duration_ms: 24.278319
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-python-host.mjs:95:1'
+  failureType: 'uncaughtException'
+  error: 'write EPIPE'
+  code: 'EPIPE'
+  stack: |-
+    WriteWrap.onWriteComplete [as oncomplete] (node:internal/stream_base_commons:87:19)
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 0
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 715.317228

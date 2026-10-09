@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: an interpreter killed by a signal is a failure, not an empty success
+ok 1 - an interpreter killed by a signal is a failure, not an empty success
+  ---
+  duration_ms: 87.614852
+  type: 'test'
+  ...
+# Subtest: stderr is bounded in total and keeps the end, where the traceback is
+ok 2 - stderr is bounded in total and keeps the end, where the traceback is
+  ---
+  duration_ms: 83.651496
+  type: 'test'
+  ...
+# Subtest: multi-byte characters split across pipe reads arrive intact
+ok 3 - multi-byte characters split across pipe reads arrive intact
+  ---
+  duration_ms: 29.71699
+  type: 'test'
+  ...
+# Subtest: an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+ok 4 - an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+  ---
+  duration_ms: 224.119004
+  type: 'test'
+  ...
+# Subtest: cancelling a call also stops what the interpreter started
+not ok 5 - cancelling a call also stops what the interpreter started
+  ---
+  duration_ms: 5071.649873
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-python-host.mjs:112:1'
+  failureType: 'testCodeFailure'
+  error: 'the helper 4124 outlived the cancelled call'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-python-host.mjs:125:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 4
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5759.970185

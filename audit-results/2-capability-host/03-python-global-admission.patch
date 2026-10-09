@@ -1,0 +1,154 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01,02 applied first. Apply from the repository root with: git apply 03-python-global-admission.patch
+diff --git a/electron/capabilities/hostLimits.ts b/electron/capabilities/hostLimits.ts
+new file mode 100644
+index 00000000..9caa03b5
+--- /dev/null
++++ b/electron/capabilities/hostLimits.ts
+@@ -0,0 +1,61 @@
++/** Admission for the host resources a capability can ask for in bulk: interpreters, subworkers
++ *  and concurrent invocations of one tool.
++ *
++ *  Waiting is first come, first served and can be abandoned: a caller whose signal aborts while
++ *  it waits leaves the queue at once and never starts. The time spent waiting is the caller's
++ *  business, not the resource's — every budget the host enforces on the work itself starts when
++ *  the slot is granted, so a call queued behind its siblings is never reported as one that ran
++ *  out of time. */
++export class Semaphore {
++  private active = 0;
++  private readonly waiting: Array<{ grant: () => void; signal?: AbortSignal; onAbort?: () => void }> = [];
++
++  constructor(private limit: number) {
++    this.limit = Math.max(1, Math.floor(limit));
++  }
++
++  get size(): number { return this.limit; }
++  get running(): number { return this.active; }
++  get queued(): number { return this.waiting.length; }
++
++  /** Resolves with a release function once a slot is free. Releasing twice is harmless. */
++  async acquire(signal?: AbortSignal): Promise<() => void> {
++    signal?.throwIfAborted();
++    if (this.active < this.limit && !this.waiting.length) {
++      this.active += 1;
++      return this.releaser();
++    }
++    await new Promise<void>((resolve, reject) => {
++      const entry: { grant: () => void; signal?: AbortSignal; onAbort?: () => void } = { grant: resolve, signal };
++      if (signal) {
++        entry.onAbort = () => {
++          const at = this.waiting.indexOf(entry);
++          if (at >= 0) this.waiting.splice(at, 1);
++          reject(new DOMException('The request was cancelled while it waited for its turn.', 'AbortError'));
++        };
++        signal.addEventListener('abort', entry.onAbort, { once: true });
++      }
++      this.waiting.push(entry);
++    });
++    return this.releaser();
++  }
++
++  private releaser(): () => void {
++    let released = false;
++    return () => {
++      if (released) return;
++      released = true;
++      this.active -= 1;
++      this.drain();
++    };
++  }
++
++  private drain(): void {
++    while (this.active < this.limit && this.waiting.length) {
++      const next = this.waiting.shift()!;
++      if (next.signal && next.onAbort) next.signal.removeEventListener('abort', next.onAbort);
++      this.active += 1;
++      next.grant();
++    }
++  }
++}
+diff --git a/electron/capabilities/pythonRuntime.ts b/electron/capabilities/pythonRuntime.ts
+index eed4f7ba..df2c8729 100644
+--- a/electron/capabilities/pythonRuntime.ts
++++ b/electron/capabilities/pythonRuntime.ts
+@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
+ import { execFile, spawn, type ChildProcess } from 'node:child_process';
+ import { promisify } from 'node:util';
+ import { pluginsRuntimesRoot } from './pluginStoreV2';
++import { Semaphore } from './hostLimits';
+ import type { TrustedWorkerRuntime } from './workerHost';
+ 
+ /** Python environments a capability declares and the host builds.
+@@ -211,6 +212,13 @@ const STDERR_TAIL = 64_000;
+ const signalExitCode = (name: NodeJS.Signals | null): number =>
+   128 + ((name && os.constants.signals[name]) || 9);
+ 
++/** Interpreters running at once, across every capability and every turn. Each one is a CPU-bound
++ *  process carrying its own RDKit and index tables, and nothing else bounded them: one evidence
++ *  gather and one route check together started a dozen on a four-core machine. One core is left
++ *  for the main process, which serves every capability's host calls. */
++const pythonSlots = new Semaphore(Math.max(2, os.availableParallelism() - 1));
++export const pythonRuntimeConcurrency = (): number => pythonSlots.size;
++
+ /** Interpreters whose process group may still hold something, so a quit does not leave a
+  *  capability's helpers running after the application is gone. */
+ const liveInterpreters = new Set<ChildProcess>();
+@@ -239,6 +247,15 @@ export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request:
+   if (!root || !fs.existsSync(path.join(root, READY))) throw new Error('That capability runtime is not installed.');
+   if (request.args.some(argument => typeof argument !== 'string' || argument.length > 4_000)) throw new Error('Invalid runtime argument.');
+ 
++  // The deadline below is armed once the interpreter has a slot: time spent queued behind other
++  // calls is not time this one spent running, and must not be reported as it.
++  const release = await pythonSlots.acquire(signal);
++  try {
++    return await spawnInterpreter(root, request, signal);
++  } finally { release(); }
++}
++
++function spawnInterpreter(root: string, request: PythonRunRequest, signal: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
+   return new Promise((resolve, reject) => {
+     const child = spawn(interpreter(root), request.args, {
+       cwd: root, stdio: ['pipe', 'pipe', 'pipe'],
+diff --git a/scripts/test-capability-python-host.mjs b/scripts/test-capability-python-host.mjs
+index a68d7f2b..88aca376 100644
+--- a/scripts/test-capability-python-host.mjs
++++ b/scripts/test-capability-python-host.mjs
+@@ -125,3 +125,39 @@ test('cancelling a call also stops what the interpreter started', async (t) => {
+     assert.ok(await waitFor(() => !alive(helper)), `the helper ${helper} outlived the cancelled call`);
+   } finally { try { process.kill(helper, 'SIGKILL'); } catch { /* gone */ } }
+ });
++
++test('interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget', async (t) => {
++  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
++  installRuntime();
++  const limit = typeof lib.pythonRuntimeConcurrency === 'function' ? lib.pythonRuntimeConcurrency() : Math.max(2, os.availableParallelism() - 1);
++  const log = path.join(scratch, 'overlap.log');
++  fs.writeFileSync(log, '');
++  const body = `import time\nopen(${JSON.stringify(log)}, "a").write("+\\n")\ntime.sleep(0.6)\nopen(${JSON.stringify(log)}, "a").write("-\\n")\n`;
++  const calls = Array.from({ length: limit + 3 }, () => run(body));
++  // Queued behind every slot for at least 0.6 s, with a one-second budget for 0.1 s of work.
++  const late = run('import time\ntime.sleep(0.1)\nprint("done")\n', { timeoutMs: 1_000 });
++  const results = await Promise.all([...calls, late]);
++  assert.ok(results.every(result => result.code === 0));
++  assert.equal(results.at(-1).stdout.trim(), 'done');
++  let running = 0, peak = 0;
++  for (const mark of fs.readFileSync(log, 'utf8').trim().split('\n')) { running += mark === '+' ? 1 : -1; peak = Math.max(peak, running); }
++  assert.ok(peak <= limit, `${peak} interpreters ran at once with a limit of ${limit}`);
++});
++
++test('a call cancelled while it waits for a slot never starts', async (t) => {
++  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
++  installRuntime();
++  const limit = typeof lib.pythonRuntimeConcurrency === 'function' ? lib.pythonRuntimeConcurrency() : Math.max(2, os.availableParallelism() - 1);
++  const marker = path.join(scratch, 'started.marker');
++  const busy = Array.from({ length: limit }, () => run('import time\ntime.sleep(1.0)\n'));
++  const controller = new AbortController();
++  const queued = run(`open(${JSON.stringify(marker)}, "w").write("started")\n`, {}, controller.signal);
++  queued.catch(() => {});
++  await new Promise(resolve => setTimeout(resolve, 200));
++  controller.abort();
++  const started = Date.now();
++  await assert.rejects(queued, { name: 'AbortError' });
++  assert.ok(Date.now() - started < 300, 'the cancellation did not wait for a slot');
++  await Promise.all(busy);
++  assert.ok(!fs.existsSync(marker), 'the cancelled call ran anyway');
++});

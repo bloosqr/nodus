@@ -1,0 +1,4 @@
+known-reactions (6 steps, 6 similar)     one-shot   2100 ms | served: first   1786 ms, then    332 ms | saving   1768 ms/call | identical output: true
+propose-disconnections (1 target)        one-shot    706 ms | served: first    533 ms, then     26 ms | saving    679 ms/call | identical output: true
+verify-route stereo (6 molecules)        one-shot    527 ms | served: first    434 ms, then    151 ms | saving    375 ms/call | identical output: true
+check-compatibility (6 steps)            one-shot    222 ms | served: first    234 ms, then      7 ms | saving    215 ms/call | identical output: true
