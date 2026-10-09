@@ -1,0 +1,42 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Route report: a model review that failed is disclosed instead of reading like a clean review.
+diff --git a/electron/ai/moleculeInspection.ts b/electron/ai/moleculeInspection.ts
+index 105a1f3c..33f0b5e1 100644
+--- a/electron/ai/moleculeInspection.ts
++++ b/electron/ai/moleculeInspection.ts
+@@ -1055,7 +1055,10 @@ export async function appendRouteReportAndDrawings(
+     // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
+     const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
+     const review = await reviewPromise;
+-    const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
++    // A review that failed or returned nothing readable is null; one that found nothing is `ok`.
++    // The verdict stands on the deterministic checks either way, but the reader is told which, as
++    // the interim report told them the verdict was waiting for it.
++    const report = `${formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []).trimEnd()}${review ? '' : '\n\n_The model review did not run (its call failed or its reply could not be read), so this verdict rests on the balance and continuity checks alone._'}`;
+     const precedentText = await precedentSection;
+     const support = await supportPromise;
+     // A step's high-severity clashes ride along in its fix prompt, as evidence.
+diff --git a/scripts/test-molecule-inspection-compatibility.mjs b/scripts/test-molecule-inspection-compatibility.mjs
+index 97b1f5eb..59fde1ad 100644
+--- a/scripts/test-molecule-inspection-compatibility.mjs
++++ b/scripts/test-molecule-inspection-compatibility.mjs
+@@ -92,3 +92,20 @@ test('a route where NO step could be built still gets a route check the model ca
+   assert.match(measured, /could not be built/);
+   assert.doesNotMatch(measured, /Route check unavailable/);
+ });
++
++test('a route review that never answered is said to be missing, not read as a clean review', async () => {
++  // The review is the blocking check a balance cannot do. When its call fails (a timeout, a
++  // provider error) the report used to print the same verdict as a review that found nothing.
++  const passingSteps = [passing(0, 'CCO>>CC=O'), passing(1, 'CC=O>>CC(=O)O')];
++  const two = ['CCO>>CC=O', 'CC=O>>CC(=O)O'];
++  const runner = { async invoke({ toolId }) {
++    assert.equal(toolId, 'verify-route');
++    return { artifacts: [{ artifactType: 'route-audit', data: { steps: passingSteps, continuous: true, blocked: [], links: [] } }] };
++  } };
++  const warn = console.warn; const info = console.info; console.warn = () => {}; console.info = () => {};
++  let answer;
++  try { answer = await appendRouteReportAndDrawings('Route prose', '', { runner }, { steps: two, labels: two.map(() => [{ role: 'reactant', byproduct: false, name: 'ethanol', smiles: 'CCO' }]) }); }
++  finally { console.warn = warn; console.info = info; }
++  assert.match(answer, /Route checked: balanced and connected/);
++  assert.match(answer, /model review did not run/i);
++});
