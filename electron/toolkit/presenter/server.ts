@@ -80,7 +80,18 @@ function serveStatic(req: IncomingMessage, res: ServerResponse): void {
   fs.createReadStream(filePath).pipe(res);
 }
 
+/** Anything a LAN client can make throw — a malformed escape, an unparsable Host — runs before
+ *  the PIN check; uncaught it left the socket hanging and logged an uncaught exception per
+ *  request. It is answered 400 instead. */
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
+  try { handleRequestUnsafe(req, res); }
+  catch {
+    if (!res.headersSent) res.writeHead(400).end('Bad request');
+    else res.destroy();
+  }
+}
+
+function handleRequestUnsafe(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const remote = req.socket.remoteAddress;
 

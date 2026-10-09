@@ -99,7 +99,9 @@ export function safePdfPath(baseDir: string, id: string): string | null {
  * it. `urlPath` is the request path ("/assets/x.js"); "/" maps to the mobile page.
  */
 export function safeStaticPath(distDir: string, urlPath: string): string | null {
-  let rel = decodeURIComponent(urlPath.split('?')[0]);
+  let rel: string;
+  // A malformed escape (`/%`) is no path at all, not an exception on an unauthenticated socket.
+  try { rel = decodeURIComponent(urlPath.split('?')[0]); } catch { return null; }
   if (rel === '/' || rel === '') rel = '/presenterRemote.html';
   const resolved = path.resolve(distDir, `.${rel}`);
   const root = path.resolve(distDir) + path.sep;
