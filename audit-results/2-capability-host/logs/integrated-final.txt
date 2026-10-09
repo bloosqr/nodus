@@ -1,0 +1,33 @@
+base-run1  evidence gather (disconnections: target, then 3 side by side)                          2.36 s
+base-run1  round 1: resolve → name structures → structure check → verify-route (sequential)       12.84 s
+base-run1  round 1: precedent ×2, support, compatibility, stock (side by side)                    3.93 s
+base-run1  round 2: resolve → name structures → structure check → verify-route (sequential)       12.64 s
+base-run1  round 2: precedent ×2, support, compatibility, stock (side by side)                    3.72 s
+base-run1  round 3: resolve → name structures → structure check → verify-route (sequential)       13.05 s
+base-run1  round 3: precedent ×2, support, compatibility, stock (side by side)                    3.68 s
+base-run1  TOTAL                                                                                  52.22 s · 108 reference requests (answered locally from a synthetic table)
+patched-run1 evidence gather (disconnections: target, then 3 side by side)                          1.64 s
+patched-run1 round 1: resolve → name structures → structure check → verify-route (sequential)       8.38 s
+patched-run1 round 1: precedent ×2, support, compatibility, stock (side by side)                    2.83 s
+patched-run1 round 2: resolve → name structures → structure check → verify-route (sequential)       3.44 s
+patched-run1 round 2: precedent ×2, support, compatibility, stock (side by side)                    1.96 s
+patched-run1 round 3: resolve → name structures → structure check → verify-route (sequential)       3.30 s
+patched-run1 round 3: precedent ×2, support, compatibility, stock (side by side)                    2.33 s
+patched-run1 TOTAL                                                                                  23.87 s · 68 reference requests (answered locally from a synthetic table)
+base-run2  evidence gather (disconnections: target, then 3 side by side)                          1.84 s
+base-run2  round 1: resolve → name structures → structure check → verify-route (sequential)       12.60 s
+base-run2  round 1: precedent ×2, support, compatibility, stock (side by side)                    3.71 s
+base-run2  round 2: resolve → name structures → structure check → verify-route (sequential)       12.38 s
+base-run2  round 2: precedent ×2, support, compatibility, stock (side by side)                    3.63 s
+base-run2  round 3: resolve → name structures → structure check → verify-route (sequential)       11.73 s
+base-run2  round 3: precedent ×2, support, compatibility, stock (side by side)                    3.69 s
+base-run2  TOTAL                                                                                  49.59 s · 108 reference requests (answered locally from a synthetic table)
+patched-run2 evidence gather (disconnections: target, then 3 side by side)                          1.59 s
+patched-run2 round 1: resolve → name structures → structure check → verify-route (sequential)       8.80 s
+patched-run2 round 1: precedent ×2, support, compatibility, stock (side by side)                    3.17 s
+patched-run2 round 2: resolve → name structures → structure check → verify-route (sequential)       3.37 s
+patched-run2 round 2: precedent ×2, support, compatibility, stock (side by side)                    2.10 s
+patched-run2 round 3: resolve → name structures → structure check → verify-route (sequential)       3.36 s
+patched-run2 round 3: precedent ×2, support, compatibility, stock (side by side)                    2.21 s
+patched-run2 TOTAL                                                                                  24.60 s · 68 reference requests (answered locally from a synthetic table)
+audits identical: true

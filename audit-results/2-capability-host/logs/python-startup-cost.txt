@@ -1,0 +1,6 @@
+# python start-up per call (spawn-cost.mjs), 4 cores, Python 3.13.16, RDKit 2026.03.6
+bare interpreter (-I -c pass)                      median 26 ms  (min 19, max 29, n=7)
+import rdkit.Chem + AllChem                        median 333 ms  (min 280, max 401, n=7)
+worker --check (rdkit, numpy, faiss, zstandard)    median 414 ms  (min 390, max 512, n=7)
+worker stereoChoices, 4 small molecules            median 530 ms  (min 472, max 596, n=7)
+worker compatibility, 1 step                       median 265 ms  (min 227, max 302, n=7)

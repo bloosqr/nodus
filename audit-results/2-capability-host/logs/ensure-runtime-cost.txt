@@ -1,0 +1,1 @@
+ensurePythonRuntime on a built environment: median 59 ms alone (3 interpreter spawns: version, executable, --version); four at once 70 ms (serialized by the provisioning lock)

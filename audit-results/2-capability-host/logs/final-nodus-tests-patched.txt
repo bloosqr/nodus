@@ -1,0 +1,2362 @@
+TAP version 13
+# Subtest: 3D is a core capability, named for what it does and not for a discipline
+ok 1 - 3D is a core capability, named for what it does and not for a discipline
+  ---
+  duration_ms: 2.822128
+  type: 'test'
+  ...
+# Subtest: a self-contained GLB is accepted, and says what it is
+ok 2 - a self-contained GLB is accepted, and says what it is
+  ---
+  duration_ms: 1.387884
+  type: 'test'
+  ...
+# Subtest: a self-contained glTF is accepted, including data URIs
+ok 3 - a self-contained glTF is accepted, including data URIs
+  ---
+  duration_ms: 0.752637
+  type: 'test'
+  ...
+# Subtest: a model that reaches outside itself is refused
+ok 4 - a model that reaches outside itself is refused
+  ---
+  duration_ms: 2.922776
+  type: 'test'
+  ...
+# Subtest: only glTF 2.0 is opened
+ok 5 - only glTF 2.0 is opened
+  ---
+  duration_ms: 0.663567
+  type: 'test'
+  ...
+# Subtest: a container that lies about its own shape is refused
+ok 6 - a container that lies about its own shape is refused
+  ---
+  duration_ms: 1.026824
+  type: 'test'
+  ...
+# Subtest: a model with nothing to draw is refused
+ok 7 - a model with nothing to draw is refused
+  ---
+  duration_ms: 0.291746
+  type: 'test'
+  ...
+# Subtest: an extension the viewer does not implement is refused rather than ignored
+ok 8 - an extension the viewer does not implement is refused rather than ignored
+  ---
+  duration_ms: 0.414223
+  type: 'test'
+  ...
+# Subtest: anything that is not a model is refused before it is parsed
+ok 9 - anything that is not a model is refused before it is parsed
+  ---
+  duration_ms: 1.557499
+  type: 'test'
+  ...
+# Subtest: a capability returns a model the way it returns a drawing
+ok 10 - a capability returns a model the way it returns a drawing
+  ---
+  duration_ms: 2.813922
+  type: 'test'
+  ...
+# Subtest: a model node cannot carry bytes, a path, or a format the core does not open
+ok 11 - a model node cannot carry bytes, a path, or a format the core does not open
+  ---
+  duration_ms: 0.938851
+  type: 'test'
+  ...
+# Subtest: reaching the 3D services is a declared permission, and widening it needs approval
+ok 12 - reaching the 3D services is a declared permission, and widening it needs approval
+  ---
+  duration_ms: 1.274069
+  type: 'test'
+  ...
+# Subtest: the host channel exists and is spelled the same on both sides
+ok 13 - the host channel exists and is spelled the same on both sides
+  ---
+  duration_ms: 0.154963
+  type: 'test'
+  ...
+# Subtest: an attachment a saved result points at is not collected
+ok 14 - an attachment a saved result points at is not collected
+  ---
+  duration_ms: 35.989905
+  type: 'test'
+  ...
+# Subtest: a capability manifest describes one provider, its tools and exactly what it may reach
+ok 15 - a capability manifest describes one provider, its tools and exactly what it may reach
+  ---
+  duration_ms: 5.899284
+  type: 'test'
+  ...
+# Subtest: core capabilities stay in the core and community ids stay namespaced
+ok 16 - core capabilities stay in the core and community ids stay namespaced
+  ---
+  duration_ms: 7.604683
+  type: 'test'
+  ...
+# Subtest: only a NodusResearch package may claim a reserved capability
+ok 17 - only a NodusResearch package may claim a reserved capability
+  ---
+  duration_ms: 0.79838
+  type: 'test'
+  ...
+# Subtest: a v1 plugin cannot reach the privileged runtime
+ok 18 - a v1 plugin cannot reach the privileged runtime
+  ---
+  duration_ms: 0.72328
+  type: 'test'
+  ...
+# Subtest: a tool cannot promise an artifact its capability never declared
+ok 19 - a tool cannot promise an artifact its capability never declared
+  ---
+  duration_ms: 0.542589
+  type: 'test'
+  ...
+# Subtest: a chat protocol must agree with the tool it names, in both directions
+ok 20 - a chat protocol must agree with the tool it names, in both directions
+  ---
+  duration_ms: 1.78899
+  type: 'test'
+  ...
+# Subtest: a settings secret must be a permission the package actually declared
+ok 21 - a settings secret must be a permission the package actually declared
+  ---
+  duration_ms: 1.123462
+  type: 'test'
+  ...
+# Subtest: plugin targets are explicit and a portable package cannot also be platform specific
+ok 22 - plugin targets are explicit and a portable package cannot also be platform specific
+  ---
+  duration_ms: 1.683624
+  type: 'test'
+  ...
+# Subtest: a permission fingerprint is order independent and an update that widens is detected
+ok 23 - a permission fingerprint is order independent and an update that widens is detected
+  ---
+  duration_ms: 0.997479
+  type: 'test'
+  ...
+# Subtest: permissions reject plaintext origins, unknown endpoints and unbounded downloads
+ok 24 - permissions reject plaintext origins, unknown endpoints and unbounded downloads
+  ---
+  duration_ms: 0.946287
+  type: 'test'
+  ...
+# Subtest: a view document carries data, never markup or behaviour
+ok 25 - a view document carries data, never markup or behaviour
+  ---
+  duration_ms: 2.603379
+  type: 'test'
+  ...
+# Subtest: a view document cannot be made unbounded by nesting or by row count
+ok 26 - a view document cannot be made unbounded by nesting or by row count
+  ---
+  duration_ms: 3.241014
+  type: 'test'
+  ...
+# Subtest: an artifact is wrapped by the core, not by the worker that produced it
+ok 27 - an artifact is wrapped by the core, not by the worker that produced it
+  ---
+  duration_ms: 0.876444
+  type: 'test'
+  ...
+# Subtest: a projection is data: it cannot smuggle a fence or an invisible instruction back to the model
+ok 28 - a projection is data: it cannot smuggle a fence or an invisible instruction back to the model
+  ---
+  duration_ms: 1.041528
+  type: 'test'
+  ...
+# Subtest: the reply is parsed once into a generic tree and serializes back unchanged
+ok 29 - the reply is parsed once into a generic tree and serializes back unchanged
+  ---
+  duration_ms: 0.586603
+  type: 'test'
+  ...
+# Subtest: a chat hook returns typed mutations and may only address the nodes it was given
+ok 30 - a chat hook returns typed mutations and may only address the nodes it was given
+  ---
+  duration_ms: 0.588934
+  type: 'test'
+  ...
+# Subtest: finalize cannot turn a result into the next instruction
+ok 31 - finalize cannot turn a result into the next instruction
+  ---
+  duration_ms: 0.774984
+  type: 'test'
+  ...
+# Subtest: a malformed frame fails one call instead of the process that received it
+ok 32 - a malformed frame fails one call instead of the process that received it
+  ---
+  duration_ms: 1.028483
+  type: 'test'
+  ...
+# Subtest: a release manifest verifies against the exact bytes that were signed
+ok 33 - a release manifest verifies against the exact bytes that were signed
+  ---
+  duration_ms: 9.595966
+  type: 'test'
+  ...
+# Subtest: downgrades and republished versions are refused without asking the user to adjudicate
+ok 34 - downgrades and republished versions are refused without asking the user to adjudicate
+  ---
+  duration_ms: 0.38803
+  type: 'test'
+  ...
+# Subtest: a secret is reported as configured and never round-trips its value
+ok 35 - a secret is reported as configured and never round-trips its value
+  ---
+  duration_ms: 1.535686
+  type: 'test'
+  ...
+# Subtest: short capability names normalize, and normalizing is not resolving
+ok 36 - short capability names normalize, and normalizing is not resolving
+  ---
+  duration_ms: 0.556987
+  type: 'test'
+  ...
+# Subtest: the SDK is contract only: nothing it exports reaches Electron
+ok 37 - the SDK is contract only: nothing it exports reaches Electron
+  ---
+  duration_ms: 3.112393
+  type: 'test'
+  ...
+# Subtest: a published signed release matching the pin passes
+ok 38 - a published signed release matching the pin passes
+  ---
+  duration_ms: 84.698064
+  type: 'test'
+  ...
+# Subtest: an unpublished release cannot pass a source-only cross-repo check
+ok 39 - an unpublished release cannot pass a source-only cross-repo check
+  ---
+  duration_ms: 1.656782
+  type: 'test'
+  ...
+# Subtest: the release signature must verify
+ok 40 - the release signature must verify
+  ---
+  duration_ms: 2.239888
+  type: 'test'
+  ...
+# Subtest: the published version must match the pin
+ok 41 - the published version must match the pin
+  ---
+  duration_ms: 2.599718
+  type: 'test'
+  ...
+# Subtest: a pin cannot substitute a different digest
+ok 42 - a pin cannot substitute a different digest
+  ---
+  duration_ms: 2.351916
+  type: 'test'
+  ...
+# Subtest: a signed manifest with no downloadable archive is refused
+ok 43 - a signed manifest with no downloadable archive is refused
+  ---
+  duration_ms: 3.540914
+  type: 'test'
+  ...
+# Subtest: the published archive size must match
+ok 44 - the published archive size must match
+  ---
+  duration_ms: 2.073446
+  type: 'test'
+  ...
+# Subtest: an older signed published bootstrap can coexist with a newer marketplace
+ok 45 - an older signed published bootstrap can coexist with a newer marketplace
+  ---
+  duration_ms: 6.600955
+  type: 'test'
+  ...
+# Subtest: an older source-only pin and a version ahead of the marketplace are refused
+ok 46 - an older source-only pin and a version ahead of the marketplace are refused
+  ---
+  duration_ms: 1.068469
+  type: 'test'
+  ...
+# Subtest: a clean install runs the core stages and nothing else
+ok 47 - a clean install runs the core stages and nothing else
+  ---
+  duration_ms: 3.571259
+  type: 'test'
+  ...
+# Subtest: a claimed fence becomes an artifact, and the request block does not survive
+ok 48 - a claimed fence becomes an artifact, and the request block does not survive
+  ---
+  duration_ms: 1.710827
+  type: 'test'
+  ...
+# Subtest: a stored result fence is not a request and is never executed
+ok 49 - a stored result fence is not a request and is never executed
+  ---
+  duration_ms: 0.620998
+  type: 'test'
+  ...
+# Subtest: providers run in declared priority order, and replace-answer runs before everything
+ok 50 - providers run in declared priority order, and replace-answer runs before everything
+  ---
+  duration_ms: 0.948219
+  type: 'test'
+  ...
+# Subtest: a prepare hook can claim the drawing lane, and the core then leaves SVG alone
+ok 51 - a prepare hook can claim the drawing lane, and the core then leaves SVG alone
+  ---
+  duration_ms: 2.057345
+  type: 'test'
+  ...
+# Subtest: a hook may only address the blocks it claimed
+ok 52 - a hook may only address the blocks it claimed
+  ---
+  duration_ms: 0.642696
+  type: 'test'
+  ...
+# Subtest: finalize can add an artifact or a notice, and cannot create a request
+ok 53 - finalize can add an artifact or a notice, and cannot create a request
+  ---
+  duration_ms: 7.38614
+  type: 'test'
+  ...
+# Subtest: per-reply limits are enforced by the core, not by the provider
+ok 54 - per-reply limits are enforced by the core, not by the provider
+  ---
+  duration_ms: 0.778039
+  type: 'test'
+  ...
+# Subtest: a failing or truncated request becomes inert text, never a re-readable request
+ok 55 - a failing or truncated request becomes inert text, never a re-readable request
+  ---
+  duration_ms: 1.364694
+  type: 'test'
+  ...
+# Subtest: an exclusive claim stands down every other provider for that reply
+ok 56 - an exclusive claim stands down every other provider for that reply
+  ---
+  duration_ms: 0.917799
+  type: 'test'
+  ...
+# Subtest: a claim on the drawing lane retires a hand-drawn SVG from the same reply
+ok 57 - a claim on the drawing lane retires a hand-drawn SVG from the same reply
+  ---
+  duration_ms: 0.613199
+  type: 'test'
+  ...
+# Subtest: a nested mistake in a tool input is named by path
+ok 58 - a nested mistake in a tool input is named by path
+  ---
+  duration_ms: 1.543069
+  type: 'test'
+  ...
+# Subtest: cancellation propagates instead of being swallowed as a provider problem
+ok 59 - cancellation propagates instead of being swallowed as a provider problem
+  ---
+  duration_ms: 0.793493
+  type: 'test'
+  ...
+# Subtest: a refusal over a size limit names the size that arrived, not the type
+ok 60 - a refusal over a size limit names the size that arrived, not the type
+  ---
+  duration_ms: 0.678785
+  type: 'test'
+  ...
+# Subtest: a too-short string and an out-of-range number are reported the same way
+ok 61 - a too-short string and an out-of-range number are reported the same way
+  ---
+  duration_ms: 0.672106
+  type: 'test'
+  ...
+# Subtest: a refusal seen by one worker holds for every worker of the plugin until the server said
+ok 62 - a refusal seen by one worker holds for every worker of the plugin until the server said
+  ---
+  duration_ms: 1166.103608
+  type: 'test'
+  ...
+# Subtest: a clean 5.4.0 install is never mistaken for a profile that predates the library
+ok 63 - a clean 5.4.0 install is never mistaken for a profile that predates the library
+  ---
+  duration_ms: 113.173446
+  type: 'test'
+  ...
+# Subtest: a profile from before the library is still recognised after the defaults are written
+ok 64 - a profile from before the library is still recognised after the defaults are written
+  ---
+  duration_ms: 78.001831
+  type: 'test'
+  ...
+# Subtest: a profile that already had a library carries no implicit activation
+ok 65 - a profile that already had a library carries no implicit activation
+  ---
+  duration_ms: 54.685994
+  type: 'test'
+  ...
+# Subtest: the answer does not change when it is asked again
+ok 66 - the answer does not change when it is asked again
+  ---
+  duration_ms: 62.796898
+  type: 'test'
+  ...
+# Subtest: a legacy block resolves to the package that claims its fence, with the file it pointed at
+ok 67 - a legacy block resolves to the package that claims its fence, with the file it pointed at
+  ---
+  duration_ms: 12.856536
+  type: 'test'
+  ...
+# Subtest: a package only opens the formats its own artifact type says it decodes
+ok 68 - a package only opens the formats its own artifact type says it decodes
+  ---
+  duration_ms: 12.201218
+  type: 'test'
+  ...
+# Subtest: a fence nobody claims resolves to nothing rather than to somebody else
+ok 69 - a fence nobody claims resolves to nothing rather than to somebody else
+  ---
+  duration_ms: 10.417208
+  type: 'test'
+  ...
+# Subtest: an oversized saved block is refused instead of being read into memory
+ok 70 - an oversized saved block is refused instead of being read into memory
+  ---
+  duration_ms: 11.220655
+  type: 'test'
+  ...
+# Subtest: a finished legacy block is a result, and a claimed request fence is still pending
+ok 71 - a finished legacy block is a result, and a claimed request fence is still pending
+  ---
+  duration_ms: 15.977224
+  type: 'test'
+  ...
+# Subtest: the release build bundles the capability packages before it packages the application
+ok 72 - the release build bundles the capability packages before it packages the application
+  ---
+  duration_ms: 2.445936
+  type: 'test'
+  ...
+# Subtest: the bootstrap pins exactly the packages the migration can need
+ok 73 - the bootstrap pins exactly the packages the migration can need
+  ---
+  duration_ms: 3.597178
+  type: 'test'
+  ...
+# Subtest: maps is reserved core, tools have valid schemas, and permission expansion is explicit
+ok 74 - maps is reserved core, tools have valid schemas, and permission expansion is explicit
+  ---
+  duration_ms: 6.392547
+  type: 'test'
+  ...
+# Subtest: valid geometry is copied; malformed coordinates, rings, empty and nested geometry fail
+ok 75 - valid geometry is copied; malformed coordinates, rings, empty and nested geometry fail
+  ---
+  duration_ms: 2.127352
+  type: 'test'
+  ...
+# Subtest: projection, bounds, sources, styling and overlay inputs fail closed
+ok 76 - projection, bounds, sources, styling and overlay inputs fail closed
+  ---
+  duration_ms: 2.803497
+  type: 'test'
+  ...
+# Subtest: three projections create deterministic, attributed SVG and preserve source geometry
+ok 77 - three projections create deterministic, attributed SVG and preserve source geometry
+  ---
+  duration_ms: 41.512961
+  type: 'test'
+  ...
+# Subtest: a label that cannot be read without covering another is dropped, not printed
+ok 78 - a label that cannot be read without covering another is dropped, not printed
+  ---
+  duration_ms: 4.701846
+  type: 'test'
+  ...
+# Subtest: all seven GeoJSON types render, including a lone point and unfilled line geometry
+ok 79 - all seven GeoJSON types render, including a lone point and unfilled line geometry
+  ---
+  duration_ms: 8.010138
+  type: 'test'
+  ...
+# Subtest: unknown territories and color categories never fabricate success
+ok 80 - unknown territories and color categories never fabricate success
+  ---
+  duration_ms: 2.791173
+  type: 'test'
+  ...
+# Subtest: ring winding and holes do not invert the world, and dateline routes are explicit
+ok 81 - ring winding and holes do not invert the world, and dateline routes are explicit
+  ---
+  duration_ms: 7.760607
+  type: 'test'
+  ...
+# Subtest: exact marker placement follows projection; out-of-bounds and polar Mercator markers reject
+ok 82 - exact marker placement follows projection; out-of-bounds and polar Mercator markers reject
+  ---
+  duration_ms: 5.071614
+  type: 'test'
+  ...
+# Subtest: projected marker coordinates and every curved/straight route endpoint agree numerically
+ok 83 - projected marker coordinates and every curved/straight route endpoint agree numerically
+  ---
+  duration_ms: 3.291192
+  type: 'test'
+  ...
+# Subtest: polygon holes, tiny valid rings and inert attribution survive; degenerate data fails
+ok 84 - polygon holes, tiny valid rings and inert attribution survive; degenerate data fails
+  ---
+  duration_ms: 6.270401
+  type: 'test'
+  ...
+# Subtest: provider retrieval pins location, checks metadata/licence, stamps provenance and isolates dataset tokens
+ok 85 - provider retrieval pins location, checks metadata/licence, stamps provenance and isolates dataset tokens
+  ---
+  duration_ms: 6.964328
+  type: 'test'
+  ...
+# Subtest: provider and network restrictions reject arbitrary URLs, redirects via metadata and unknown licences
+ok 86 - provider and network restrictions reject arbitrary URLs, redirects via metadata and unknown licences
+  ---
+  duration_ms: 2.496223
+  type: 'test'
+  ...
+# Subtest: Git LFS retrieval verifies the pinned bytes and rejects oversized or modified data
+ok 87 - Git LFS retrieval verifies the pinned bytes and rejects oversized or modified data
+  ---
+  duration_ms: 3.826669
+  type: 'test'
+  ...
+# Subtest: HTTP transport denies other origins/paths and private DNS, omits credentials, refuses redirects and bounds streams
+ok 88 - HTTP transport denies other origins/paths and private DNS, omits credentials, refuses redirects and bounds streams
+  ---
+  duration_ms: 67.745057
+  type: 'test'
+  ...
+# Subtest: historical query does not substitute modern data or contact a provider
+ok 89 - historical query does not substitute modern data or contact a provider
+  ---
+  duration_ms: 0.80488
+  type: 'test'
+  ...
+# Subtest: OpenHistoricalMap is retrieved by frame and period, and only what its own dates support
+ok 90 - OpenHistoricalMap is retrieved by frame and period, and only what its own dates support
+  ---
+  duration_ms: 8.525003
+  type: 'test'
+  ...
+# Subtest: OpenHistoricalMap fails closed on licences, frames, levels and volume
+ok 91 - OpenHistoricalMap fails closed on licences, frames, levels and volume
+  ---
+  duration_ms: 9.050111
+  type: 'test'
+  ...
+# Subtest: a rate-limited provider answer is waited out once, then reported as busy
+ok 92 - a rate-limited provider answer is waited out once, then reported as busy
+  ---
+  duration_ms: 9009.25274
+  type: 'test'
+  ...
+# Subtest: an OpenHistoricalMap request is retrieved inside a map, not as a bare dataset
+ok 93 - an OpenHistoricalMap request is retrieved inside a map, not as a bare dataset
+  ---
+  duration_ms: 2.500598
+  type: 'test'
+  ...
+# Subtest: failures and parallel calls consume bounded budgets
+ok 94 - failures and parallel calls consume bounded budgets
+  ---
+  duration_ms: 9.030531
+  type: 'test'
+  ...
+# Subtest: cancellation aborts before work and during retrieval; late data is discarded
+ok 95 - cancellation aborts before work and during retrieval; late data is discarded
+  ---
+  duration_ms: 6.630904
+  type: 'test'
+  ...
+# Subtest: the service supplies its fixed deadline to network operations
+ok 96 - the service supplies its fixed deadline to network operations
+  ---
+  duration_ms: 1.705632
+  type: 'test'
+  ...
+# Subtest: a stalled transport cannot prevent cancellation or later register its result
+ok 97 - a stalled transport cannot prevent cancellation or later register its result
+  ---
+  duration_ms: 0.988826
+  type: 'test'
+  ...
+# Subtest: historical dates support ISO expanded BCE years and chronological ordering
+ok 98 - historical dates support ISO expanded BCE years and chronological ordering
+  ---
+  duration_ms: 0.807387
+  type: 'test'
+  ...
+# Subtest: a package is installed only when something in the profile actually asked for it
+ok 99 - a package is installed only when something in the profile actually asked for it
+  ---
+  duration_ms: 5.30871
+  type: 'test'
+  ...
+# Subtest: a skill the user wrote keeps working, even with every default switched off
+ok 100 - a skill the user wrote keeps working, even with every default switched off
+  ---
+  duration_ms: 0.658986
+  type: 'test'
+  ...
+# Subtest: a downloaded copy of an official skill is the same package by another route
+ok 101 - a downloaded copy of an official skill is the same package by another route
+  ---
+  duration_ms: 0.67834
+  type: 'test'
+  ...
+# Subtest: a profile from before the library existed had chemistry on, and that is honoured
+ok 102 - a profile from before the library existed had chemistry on, and that is honoured
+  ---
+  duration_ms: 0.309996
+  type: 'test'
+  ...
+# Subtest: adoption keeps the identity and turns the user's edits into overlays
+ok 103 - adoption keeps the identity and turns the user's edits into overlays
+  ---
+  duration_ms: 0.772698
+  type: 'test'
+  ...
+# Subtest: two identical copies become one skill; two different ones keep the user's words
+ok 104 - two identical copies become one skill; two different ones keep the user's words
+  ---
+  duration_ms: 0.763159
+  type: 'test'
+  ...
+# Subtest: the migration installs, adopts and records itself, in place
+ok 105 - the migration installs, adopts and records itself, in place
+  ---
+  duration_ms: 23.052546
+  type: 'test'
+  ...
+# Subtest: a second run changes nothing and installs nothing again
+ok 106 - a second run changes nothing and installs nothing again
+  ---
+  duration_ms: 13.169569
+  type: 'test'
+  ...
+# Subtest: a failure leaves the skill enabled, the data intact and something to retry
+ok 107 - a failure leaves the skill enabled, the data intact and something to retry
+  ---
+  duration_ms: 22.279984
+  type: 'test'
+  ...
+# Subtest: a crash after any phase resumes instead of restarting
+ok 108 - a crash after any phase resumes instead of restarting
+  ---
+  duration_ms: 81.084387
+  type: 'test'
+  ...
+# Subtest: the bundled package is preferred, and the network is only the fallback
+ok 109 - the bundled package is preferred, and the network is only the fallback
+  ---
+  duration_ms: 5.803492
+  type: 'test'
+  ...
+# Subtest: the bundled packages are inert until something asks for one
+ok 110 - the bundled packages are inert until something asks for one
+  ---
+  duration_ms: 5.367656
+  type: 'test'
+  ...
+# Subtest: an entry nothing can still advance is retired, so the retry can finish
+ok 111 - an entry nothing can still advance is retired, so the retry can finish
+  ---
+  duration_ms: 11.830585
+  type: 'test'
+  ...
+# Subtest: retiring never forgets a move that actually happened
+ok 112 - retiring never forgets a move that actually happened
+  ---
+  duration_ms: 15.271734
+  type: 'test'
+  ...
+# Subtest: a signed package installs, registers its capability and pins its own digest
+ok 113 - a signed package installs, registers its capability and pins its own digest
+  ---
+  duration_ms: 56.387755
+  type: 'test'
+  ...
+# Subtest: a slot that holds newer content reports BOTH the content version and the slot label
+ok 114 - a slot that holds newer content reports BOTH the content version and the slot label
+  ---
+  duration_ms: 23.031877
+  type: 'test'
+  ...
+# Subtest: nothing installs without a signature that verifies against a trusted key
+ok 115 - nothing installs without a signature that verifies against a trusted key
+  ---
+  duration_ms: 14.672088
+  type: 'test'
+  ...
+# Subtest: the archive must be the bytes the manifest pinned, and agree with the package inside
+ok 116 - the archive must be the bytes the manifest pinned, and agree with the package inside
+  ---
+  duration_ms: 33.563254
+  type: 'test'
+  ...
+# Subtest: a package published for another platform is not installed here
+ok 117 - a package published for another platform is not installed here
+  ---
+  duration_ms: 6.207341
+  type: 'test'
+  ...
+# Subtest: the archive format cannot write outside its own root or smuggle a non-regular file
+ok 118 - the archive format cannot write outside its own root or smuggle a non-regular file
+  ---
+  duration_ms: 3.993706
+  type: 'test'
+  ...
+# Subtest: the archive format bounds entry count and expanded size
+ok 119 - the archive format bounds entry count and expanded size
+  ---
+  duration_ms: 4603.816701
+  type: 'test'
+  ...
+# Subtest: an update that widens permissions waits instead of taking them
+ok 120 - an update that widens permissions waits instead of taking them
+  ---
+  duration_ms: 30.199108
+  type: 'test'
+  ...
+# Subtest: an update that narrows permissions is not treated as an expansion
+ok 121 - an update that narrows permissions is not treated as an expansion
+  ---
+  duration_ms: 25.543284
+  type: 'test'
+  ...
+# Subtest: downgrades and republished versions are refused
+ok 122 - downgrades and republished versions are refused
+  ---
+  duration_ms: 15.809722
+  type: 'test'
+  ...
+# Subtest: two plugins cannot provide one capability, or claim one protocol
+ok 123 - two plugins cannot provide one capability, or claim one protocol
+  ---
+  duration_ms: 19.097444
+  type: 'test'
+  ...
+# Subtest: a package cannot claim a core capability or an identifier outside its own namespace
+ok 124 - a package cannot claim a core capability or an identifier outside its own namespace
+  ---
+  duration_ms: 25.630861
+  type: 'test'
+  ...
+# Subtest: uninstalling keeps the work and removes the credentials, and a reinstall finds its place
+ok 125 - uninstalling keeps the work and removes the credentials, and a reinstall finds its place
+  ---
+  duration_ms: 27.971344
+  type: 'test'
+  ...
+# Subtest: a package is not announced until its data has climbed its own migration ladder
+ok 126 - a package is not announced until its data has climbed its own migration ladder
+  ---
+  duration_ms: 15.13669
+  type: 'test'
+  ...
+# Subtest: a build with no publishing key installs nothing at all
+ok 127 - a build with no publishing key installs nothing at all
+  ---
+  duration_ms: 35.551136
+  type: 'test'
+  ...
+# Subtest: a first install that asks for permissions can be answered either way
+ok 128 - a first install that asks for permissions can be answered either way
+  ---
+  duration_ms: 20.359803
+  type: 'test'
+  ...
+# Subtest: refusing a first install leaves nothing behind
+ok 129 - refusing a first install leaves nothing behind
+  ---
+  duration_ms: 17.114913
+  type: 'test'
+  ...
+# Subtest: refusing an update keeps the version that was already running
+ok 130 - refusing an update keeps the version that was already running
+  ---
+  duration_ms: 19.721505
+  type: 'test'
+  ...
+# Subtest: an interpreter killed by a signal is a failure, not an empty success
+ok 131 - an interpreter killed by a signal is a failure, not an empty success
+  ---
+  duration_ms: 102.928691
+  type: 'test'
+  ...
+# Subtest: stderr is bounded in total and keeps the end, where the traceback is
+ok 132 - stderr is bounded in total and keeps the end, where the traceback is
+  ---
+  duration_ms: 117.131943
+  type: 'test'
+  ...
+# Subtest: multi-byte characters split across pipe reads arrive intact
+ok 133 - multi-byte characters split across pipe reads arrive intact
+  ---
+  duration_ms: 43.648173
+  type: 'test'
+  ...
+# Subtest: an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+ok 134 - an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+  ---
+  duration_ms: 228.570005
+  type: 'test'
+  ...
+# Subtest: cancelling a call also stops what the interpreter started
+ok 135 - cancelling a call also stops what the interpreter started
+  ---
+  duration_ms: 1315.246038
+  type: 'test'
+  ...
+# Subtest: interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget
+ok 136 - interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget
+  ---
+  duration_ms: 1386.032104
+  type: 'test'
+  ...
+# Subtest: a call cancelled while it waits for a slot never starts
+ok 137 - a call cancelled while it waits for a slot never starts
+  ---
+  duration_ms: 1034.526747
+  type: 'test'
+  ...
+# Subtest: a persistent script is started once and answers call after call
+ok 138 - a persistent script is started once and answers call after call
+  ---
+  duration_ms: 1646.664138
+  type: 'test'
+  ...
+# Subtest: a call that carries a secret is never given a persistent interpreter
+ok 139 - a call that carries a secret is never given a persistent interpreter
+  ---
+  duration_ms: 44.519289
+  type: 'test'
+  ...
+# Subtest: a runtime found ready is not re-examined with three interpreter starts on every call
+ok 140 - a runtime found ready is not re-examined with three interpreter starts on every call
+  ---
+  duration_ms: 244.616742
+  type: 'test'
+  ...
+# Subtest: a runtime check cancelled while another call is building the environment leaves at once
+ok 141 - a runtime check cancelled while another call is building the environment leaves at once
+  ---
+  duration_ms: 3058.975735
+  type: 'test'
+  ...
+# Subtest: a credential reaches the interpreter on stdin, and appears nowhere else
+ok 142 - a credential reaches the interpreter on stdin, and appears nowhere else
+  ---
+  duration_ms: 4581.696637
+  type: 'test'
+  ...
+# Subtest: a worker cannot ask for a credential the manifest did not declare for this runtime
+ok 143 - a worker cannot ask for a credential the manifest did not declare for this runtime
+  ---
+  duration_ms: 2.323963
+  type: 'test'
+  ...
+# Subtest: an environment is shared by lock digest across capabilities
+ok 144 - an environment is shared by lock digest across capabilities
+  ---
+  duration_ms: 77.342777
+  type: 'test'
+  ...
+# Subtest: a runtime that was never built refuses to run anything
+ok 145 - a runtime that was never built refuses to run anything
+  ---
+  duration_ms: 1.466979
+  type: 'test'
+  ...
+# Subtest: an undeclared runtime is refused before anything is spawned
+ok 146 - an undeclared runtime is refused before anything is spawned
+  ---
+  duration_ms: 0.747633
+  type: 'test'
+  ...
+# Subtest: the committed locks describe an installable set
+ok 147 - the committed locks describe an installable set
+  ---
+  duration_ms: 0.460253
+  type: 'test'
+  ...
+# Subtest: a formula is TeX and the words that say it
+ok 148 - a formula is TeX and the words that say it
+  ---
+  duration_ms: 3.688071
+  type: 'test'
+  ...
+# Subtest: a chart is values, not a drawing
+ok 149 - a chart is values, not a drawing
+  ---
+  duration_ms: 4.19634
+  type: 'test'
+  ...
+# Subtest: a tree is bounded in both directions
+ok 150 - a tree is bounded in both directions
+  ---
+  duration_ms: 0.830215
+  type: 'test'
+  ...
+# Subtest: a mark points inside the text it came with, and nowhere else
+ok 151 - a mark points inside the text it came with, and nowhere else
+  ---
+  duration_ms: 0.597427
+  type: 'test'
+  ...
+# Subtest: a comparison carries two texts and lets the core find the differences
+ok 152 - a comparison carries two texts and lets the core find the differences
+  ---
+  duration_ms: 2.608422
+  type: 'test'
+  ...
+# Subtest: a map takes GeoJSON, which cannot point anywhere else
+ok 153 - a map takes GeoJSON, which cannot point anywhere else
+  ---
+  duration_ms: 38.273328
+  type: 'test'
+  ...
+# Subtest: an image or a sound file refers to an attachment and declares a format the core opens
+ok 154 - an image or a sound file refers to an attachment and declares a format the core opens
+  ---
+  duration_ms: 1.721545
+  type: 'test'
+  ...
+# Subtest: a declared type is a claim, and the bytes decide
+ok 155 - a declared type is a claim, and the bytes decide
+  ---
+  duration_ms: 3.09996
+  type: 'test'
+  ...
+# Subtest: a tiled image names a service, and nothing it could smuggle past one
+ok 156 - a tiled image names a service, and nothing it could smuggle past one
+  ---
+  duration_ms: 1.410632
+  type: 'test'
+  ...
+# Subtest: handing bytes to the core is a declared permission
+ok 157 - handing bytes to the core is a declared permission
+  ---
+  duration_ms: 1.714345
+  type: 'test'
+  ...
+# Subtest: every kind survives a round trip through the validator
+ok 158 - every kind survives a round trip through the validator
+  ---
+  duration_ms: 0.855829
+  type: 'test'
+  ...
+# Subtest: the difference between two texts is found, not declared
+ok 159 - the difference between two texts is found, not declared
+  ---
+  duration_ms: 2.79028
+  type: 'test'
+  ...
+# Subtest: overlapping marks resolve the same way for every package
+ok 160 - overlapping marks resolve the same way for every package
+  ---
+  duration_ms: 0.467989
+  type: 'test'
+  ...
+# Subtest: concurrent provisioning: success
+ok 161 - concurrent provisioning: success
+  ---
+  duration_ms: 5550.767023
+  type: 'test'
+  ...
+# Subtest: concurrent provisioning: failed-owner
+ok 162 - concurrent provisioning: failed-owner
+  ---
+  duration_ms: 5231.790411
+  type: 'test'
+  ...
+# Subtest: concurrent provisioning: cancelled-waiter
+ok 163 - concurrent provisioning: cancelled-waiter
+  ---
+  duration_ms: 5827.857926
+  type: 'test'
+  ...
+# 2026-10-09T07:22:11.174Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# 2026-10-09T07:22:11.177Z [capability] nodus:probe subworker echo.js ok in 0.0s of a 10s budget · reused
+# 2026-10-09T07:22:11.181Z [capability] nodus:probe subworker echo.js failed in 0.0s of a 10s budget · reused — refused
+# 2026-10-09T07:22:11.184Z [capability] nodus:probe subworker echo.js ok in 0.0s of a 10s budget · reused
+# Subtest: a subworker that answered is kept for the next request
+ok 164 - a subworker that answered is kept for the next request
+  ---
+  duration_ms: 105.370357
+  type: 'test'
+  ...
+# 2026-10-09T07:22:11.251Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# 2026-10-09T07:22:12.255Z [capability] nodus:probe subworker echo.js failed in 1.0s of a 1s budget · reused — The capability subworker exceeded its time limit of 1 seconds.
+# 2026-10-09T07:22:12.325Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# 2026-10-09T07:22:12.427Z [capability] nodus:probe subworker echo.js failed in 0.1s of a 10s budget · reused — The capability subworker was cancelled.
+# 2026-10-09T07:22:12.498Z [capability] nodus:probe subworker echo.js failed in 0.1s of a 10s budget · started — The capability subworker exited without a result.
+# 2026-10-09T07:22:12.577Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# Subtest: a subworker that timed out, was cancelled or exited is never reused
+ok 165 - a subworker that timed out, was cancelled or exited is never reused
+  ---
+  duration_ms: 1390.829048
+  type: 'test'
+  ...
+# 2026-10-09T07:22:13.237Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget · started
+# 2026-10-09T07:22:13.240Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget · started
+# 2026-10-09T07:22:13.840Z [capability] nodus:probe subworker echo.js ok in 0.6s of a 10s budget · reused · queued 0.7s
+# 2026-10-09T07:22:13.842Z [capability] nodus:probe subworker echo.js ok in 0.6s of a 10s budget · reused · queued 0.7s
+# 2026-10-09T07:22:13.943Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 1s budget · reused · queued 1.3s
+# Subtest: no more subworkers run at once than the manifest allows, and a queued request keeps its whole budget
+ok 166 - no more subworkers run at once than the manifest allows, and a queued request keeps its whole budget
+  ---
+  duration_ms: 1365.832415
+  type: 'test'
+  ...
+# 2026-10-09T07:22:14.804Z [capability] nodus:probe subworker echo.js ok in 0.9s of a 10s budget · started
+# Subtest: a request cancelled while it waits for a slot never starts
+ok 167 - a request cancelled while it waits for a slot never starts
+  ---
+  duration_ms: 861.377894
+  type: 'test'
+  ...
+# Subtest: a tile is fetched only for a capability that is installed now
+ok 168 - a tile is fetched only for a capability that is installed now
+  ---
+  duration_ms: 4.016596
+  type: 'test'
+  ...
+# Subtest: a tile cannot reach where its package was not already permitted to reach
+ok 169 - a tile cannot reach where its package was not already permitted to reach
+  ---
+  duration_ms: 1.457113
+  type: 'test'
+  ...
+# Subtest: a service URL is not a prefix for the rest of the host
+ok 170 - a service URL is not a prefix for the rest of the host
+  ---
+  duration_ms: 2.35109
+  type: 'test'
+  ...
+# Subtest: a tile service is https, and never carries credentials
+ok 171 - a tile service is https, and never carries credentials
+  ---
+  duration_ms: 2.328817
+  type: 'test'
+  ...
+# Subtest: a tile cannot be aimed at the machine the conversation is opened on
+ok 172 - a tile cannot be aimed at the machine the conversation is opened on
+  ---
+  duration_ms: 2.12697
+  type: 'test'
+  ...
+# Subtest: what comes back is checked before the renderer sees it
+ok 173 - what comes back is checked before the renderer sees it
+  ---
+  duration_ms: 2.781873
+  type: 'test'
+  ...
+# Subtest: an update is fetched, verified, migrated and announced
+ok 174 - an update is fetched, verified, migrated and announced
+  ---
+  duration_ms: 75.019267
+  type: 'test'
+  ...
+# Subtest: a package already at the catalog version is left alone
+ok 175 - a package already at the catalog version is left alone
+  ---
+  duration_ms: 35.73372
+  type: 'test'
+  ...
+# Subtest: automatic updates off means nothing is installed without being asked
+ok 176 - automatic updates off means nothing is installed without being asked
+  ---
+  duration_ms: 42.832796
+  type: 'test'
+  ...
+# Subtest: an update that wants more than was approved waits for a person
+ok 177 - an update that wants more than was approved waits for a person
+  ---
+  duration_ms: 29.102677
+  type: 'test'
+  ...
+# Subtest: a catalog offering an older version cannot walk a package backwards
+ok 178 - a catalog offering an older version cannot walk a package backwards
+  ---
+  duration_ms: 19.020521
+  type: 'test'
+  ...
+# Subtest: a version number republished over different bytes is refused
+ok 179 - a version number republished over different bytes is refused
+  ---
+  duration_ms: 20.030854
+  type: 'test'
+  ...
+# Subtest: an unreachable source is not a failed update
+ok 180 - an unreachable source is not a failed update
+  ---
+  duration_ms: 17.347246
+  type: 'test'
+  ...
+# Subtest: uninstalling keeps the work, removes the credentials, and a reinstall finds its place
+ok 181 - uninstalling keeps the work, removes the credentials, and a reinstall finds its place
+  ---
+  duration_ms: 28.608452
+  type: 'test'
+  ...
+# Subtest: an explicit purge is the only thing that takes the data
+ok 182 - an explicit purge is the only thing that takes the data
+  ---
+  duration_ms: 27.352073
+  type: 'test'
+  ...
+# Subtest: bundled workflows wait for migrations, then survive updates and rollback with local edits
+ok 183 - bundled workflows wait for migrations, then survive updates and rollback with local edits
+  ---
+  duration_ms: 31.709422
+  type: 'test'
+  ...
+# Subtest: capability views render in both themes without overflowing the message column
+ok 184 - capability views render in both themes without overflowing the message column # SKIP Chrome/Chromium not installed
+  ---
+  duration_ms: 2.680298
+  type: 'test'
+  ...
+# /home/user/nodus/node_modules/bindings/bindings.js:126
+#   err = new Error(
+#         ^
+# Error: Could not locate the bindings file. Tried:
+#  → /home/user/nodus/node_modules/better-sqlite3/build/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/build/Debug/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/out/Debug/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/Debug/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/out/Release/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/Release/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/build/default/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/compiled/24.18.1/linux/x64/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/addon-build/release/install-root/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/addon-build/debug/install-root/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/addon-build/default/install-root/better_sqlite3.node
+#  → /home/user/nodus/node_modules/better-sqlite3/lib/binding/node-v148-linux-x64/better_sqlite3.node
+#     at bindings (/home/user/nodus/node_modules/bindings/bindings.js:126:9)
+#     at new Database (/home/user/nodus/node_modules/better-sqlite3/lib/database.js:48:64)
+#     at openDatabase (/home/user/apply-check/electron/db/database.ts:136:16)
+#     at getDb (/home/user/apply-check/electron/db/database.ts:232:14)
+#     at readRaw (/home/user/apply-check/electron/db/settingsRepo.ts:302:38)
+#     at getSettings (/home/user/apply-check/electron/db/settingsRepo.ts:327:17)
+#     at Object.updateSettings (/home/user/apply-check/electron/db/settingsRepo.ts:583:22)
+#     at file:///home/user/apply-check/scripts/test-capability-vision-transport.mjs:27:62
+#     at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+#   tries: [
+#     '/home/user/nodus/node_modules/better-sqlite3/build/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/build/Debug/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/out/Debug/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/Debug/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/out/Release/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/Release/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/build/default/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/compiled/24.18.1/linux/x64/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/addon-build/release/install-root/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/addon-build/debug/install-root/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/addon-build/default/install-root/better_sqlite3.node',
+#     '/home/user/nodus/node_modules/better-sqlite3/lib/binding/node-v148-linux-x64/better_sqlite3.node'
+#   ]
+# }
+# Node.js v24.18.1
+# node:internal/errors:983
+#   const err = new Error(message);
+#               ^
+# Error: Command failed: /home/user/nodus/node_modules/electron/dist/electron /home/user/apply-check/scripts/test-capability-vision-transport.mjs --electron-vision-transport
+#     at genericNodeError (node:internal/errors:983:15)
+#     at wrappedFn (node:internal/errors:537:14)
+#     at checkExecSyncError (node:child_process:916:11)
+#     at execFileSync (node:child_process:952:15)
+#     at requireElectronRuntime (file:///home/user/apply-check/scripts/lib/tsRuntimeHooks.mjs:120:3)
+#     at file:///home/user/apply-check/scripts/test-capability-vision-transport.mjs:10:5
+#     at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+#     at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+#     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+#   status: 1,
+#   signal: null,
+#   output: [ null, null, null ],
+#   pid: 16941,
+#   stdout: null,
+#   stderr: null
+# }
+# Node.js v22.22.0
+# Subtest: scripts/test-capability-vision-transport.mjs
+not ok 18 - scripts/test-capability-vision-transport.mjs
+  ---
+  duration_ms: 2154.237513
+  type: 'test'
+  location: '/home/user/apply-check/scripts/test-capability-vision-transport.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: core registry contract and manifest permission expansion
+ok 186 - core registry contract and manifest permission expansion
+  ---
+  duration_ms: 5.535809
+  type: 'test'
+  ...
+# Subtest: support is provider-aware, unknown fails closed, explicit negative wins
+ok 187 - support is provider-aware, unknown fails closed, explicit negative wins
+  ---
+  duration_ms: 0.846209
+  type: 'test'
+  ...
+# Subtest: real raster decoding, metadata stripping and bounded dimensions
+ok 188 - real raster decoding, metadata stripping and bounded dimensions
+  ---
+  duration_ms: 128.273339
+  type: 'test'
+  ...
+# Subtest: relevant selection sends actual normalized images in deterministic order to both transport formats
+ok 189 - relevant selection sends actual normalized images in deterministic order to both transport formats
+  ---
+  duration_ms: 10.936249
+  type: 'test'
+  ...
+# Subtest: all rejected explicitly; a second search batch can succeed without recursive completions
+ok 190 - all rejected explicitly; a second search batch can succeed without recursive completions
+  ---
+  duration_ms: 9.946275
+  type: 'test'
+  ...
+# Subtest: text-only fallback does not need or inspect image bytes and never bills
+ok 191 - text-only fallback does not need or inspect image bytes and never bills
+  ---
+  duration_ms: 0.852774
+  type: 'test'
+  ...
+# Subtest: privacy context stops before discovery or transmission
+ok 192 - privacy context stops before discovery or transmission
+  ---
+  duration_ms: 0.693029
+  type: 'test'
+  ...
+# Subtest: three rounds across all callers, failed/skipped attempts count and lower permission limits apply
+ok 193 - three rounds across all callers, failed/skipped attempts count and lower permission limits apply
+  ---
+  duration_ms: 38.282001
+  type: 'test'
+  ...
+# Subtest: forged, duplicate, extra or missing model scores cannot create inspection/selection results
+ok 194 - forged, duplicate, extra or missing model scores cannot create inspection/selection results
+  ---
+  duration_ms: 21.675645
+  type: 'test'
+  ...
+# Subtest: handles cannot be forged, relabelled or reused in a different session
+ok 195 - handles cannot be forged, relabelled or reused in a different session
+  ---
+  duration_ms: 6.599638
+  type: 'test'
+  ...
+# Subtest: bounded candidate schema denies file access, URLs, unsafe metadata, duplicates and oversized lists
+ok 196 - bounded candidate schema denies file access, URLs, unsafe metadata, duplicates and oversized lists
+  ---
+  duration_ms: 1.153876
+  type: 'test'
+  ...
+# Subtest: public intake requires approved paths, public addresses and no secret injection
+ok 197 - public intake requires approved paths, public addresses and no secret injection
+  ---
+  duration_ms: 4.161339
+  type: 'test'
+  ...
+# Subtest: cancellation reaches the completion, discards late output and prevents concurrent calls
+ok 198 - cancellation reaches the completion, discards late output and prevents concurrent calls
+  ---
+  duration_ms: 9.552523
+  type: 'test'
+  ...
+# Subtest: provider failures return sanitized errors without repair or hidden calls
+ok 199 - provider failures return sanitized errors without repair or hidden calls
+  ---
+  duration_ms: 4.844513
+  type: 'test'
+  ...
+# Subtest: receipt schemas cannot invent inspection or selection; native boundaries validate them
+ok 200 - receipt schemas cannot invent inspection or selection; native boundaries validate them
+  ---
+  duration_ms: 7.153379
+  type: 'test'
+  ...
+# Subtest: an expired total deadline cannot make another model request
+ok 201 - an expired total deadline cannot make another model request
+  ---
+  duration_ms: 8.435551
+  type: 'test'
+  ...
+# Subtest: per-operation deadline aborts even an adapter that ignores cancellation
+ok 202 - per-operation deadline aborts even an adapter that ignores cancellation
+  ---
+  duration_ms: 19.467952
+  type: 'test'
+  ...
+# Subtest: public intake pins DNS, disallows redirects and enforces response bytes without auth
+ok 203 - public intake pins DNS, disallows redirects and enforces response bytes without auth
+  ---
+  duration_ms: 4.698346
+  type: 'test'
+  ...
+# Subtest: documented Gemini 3.1 Flash-Lite is supported only on Gemini with a live catalog match
+ok 204 - documented Gemini 3.1 Flash-Lite is supported only on Gemini with a live catalog match
+  ---
+  duration_ms: 0.515345
+  type: 'test'
+  ...
+# Subtest: one call past its deadline does not take the calls beside it down
+ok 205 - one call past its deadline does not take the calls beside it down
+  ---
+  duration_ms: 3597.663189
+  type: 'test'
+  ...
+# Subtest: a cancelled caller cancels its own call only
+ok 206 - a cancelled caller cancels its own call only
+  ---
+  duration_ms: 3079.66139
+  type: 'test'
+  ...
+# Subtest: a host call is answered with the services of the call that made it
+ok 207 - a host call is answered with the services of the call that made it
+  ---
+  duration_ms: 79.392249
+  type: 'test'
+  ...
+# Subtest: a tool runs no more invocations at once than its manifest concurrency, and a queued one keeps its whole budget
+ok 208 - a tool runs no more invocations at once than its manifest concurrency, and a queued one keeps its whole budget
+  ---
+  duration_ms: 2694.595038
+  type: 'test'
+  ...
+# Subtest: a result that cannot be sent fails its own call, not the process
+ok 209 - a result that cannot be sent fails its own call, not the process
+  ---
+  duration_ms: 1569.425753
+  type: 'test'
+  ...
+# Subtest: cancellation during the worker handshake settles promptly and never invokes the tool
+ok 210 - cancellation during the worker handshake settles promptly and never invokes the tool
+  ---
+  duration_ms: 9.493763
+  type: 'test'
+  ...
+# Subtest: cancellation arriving with the ready frame still prevents the tool call
+ok 211 - cancellation arriving with the ready frame still prevents the tool call
+  ---
+  duration_ms: 0.864435
+  type: 'test'
+  ...
+# Subtest: a live caller completes normally and an already aborted caller never forks
+ok 212 - a live caller completes normally and an already aborted caller never forks
+  ---
+  duration_ms: 4.150087
+  type: 'test'
+  ...
+# Subtest: removing or updating a plugin stops the workers it started
+ok 213 - removing or updating a plugin stops the workers it started
+  ---
+  duration_ms: 10.828819
+  type: 'test'
+  ...
+# Subtest: what a worker logs reaches the main log
+ok 214 - what a worker logs reaches the main log
+  ---
+  duration_ms: 2.99546
+  type: 'test'
+  ...
+# 2026-10-09T07:22:31.227Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# 2026-10-09T07:22:31.229Z [capability] nodus:probe count ok in 0.0s of a 10s budget
+# 2026-10-09T07:22:31.295Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# Subtest: runners of one scope share one worker, and what it holds, across phases
+ok 215 - runners of one scope share one worker, and what it holds, across phases
+  ---
+  duration_ms: 130.638126
+  type: 'test'
+  ...
+# 2026-10-09T07:22:31.356Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# 2026-10-09T07:22:31.416Z [capability] nodus:probe count ok in 0.1s of a 10s budget
+# Subtest: a runner without a scope keeps its worker to itself and stops it when disposed
+ok 216 - a runner without a scope keeps its worker to itself and stops it when disposed
+  ---
+  duration_ms: 123.973058
+  type: 'test'
+  ...
+# Subtest: stock is on by default and off by setting or NODUS_STOCK_DIR=off
+ok 217 - stock is on by default and off by setting or NODUS_STOCK_DIR=off
+  ---
+  duration_ms: 2.967279
+  type: 'test'
+  ...
+# Subtest: the route target is the last step's organic product
+ok 218 - the route target is the last step's organic product
+  ---
+  duration_ms: 0.513977
+  type: 'test'
+  ...
+# Subtest: target availability: exact, another form, orderable, none
+ok 219 - target availability: exact, another form, orderable, none
+  ---
+  duration_ms: 0.708889
+  type: 'test'
+  ...
+# Subtest: the payload carries target availability and the rule explains it
+ok 220 - the payload carries target availability and the rule explains it
+  ---
+  duration_ms: 0.331828
+  type: 'test'
+  ...
+#   ../../../tmp/nodus-compute-3RwL2U/computeHost.cjs  9.5kb
+# ⚡ Done in 7ms
+# \# compute worker timeout tests passed
+# Subtest: scripts/test-compute-worker-timeout.mjs
+ok 25 - scripts/test-compute-worker-timeout.mjs
+  ---
+  duration_ms: 2682.643736
+  type: 'test'
+  ...
+# Subtest: each step gets its own ORD result and the citations in its own section
+ok 222 - each step gets its own ORD result and the citations in its own section
+  ---
+  duration_ms: 5.006373
+  type: 'test'
+  ...
+# Subtest: the table names the four sources, resolves library titles and counts model-only steps
+ok 223 - the table names the four sources, resolves library titles and counts model-only steps
+  ---
+  duration_ms: 1.115318
+  type: 'test'
+  ...
+# Subtest: without the ORD index every step still gets a row
+ok 224 - without the ORD index every step still gets a row
+  ---
+  duration_ms: 0.437198
+  type: 'test'
+  ...
+# Subtest: bold lead-in steps, the check's own passage, and a closing section kept out of the last step
+ok 225 - bold lead-in steps, the check's own passage, and a closing section kept out of the last step
+  ---
+  duration_ms: 0.759761
+  type: 'test'
+  ...
+# Subtest: an idea citation counts as library support, not as model knowledge
+ok 226 - an idea citation counts as library support, not as model knowledge
+  ---
+  duration_ms: 0.746436
+  type: 'test'
+  ...
+# Subtest: no steps, no table
+ok 227 - no steps, no table
+  ---
+  duration_ms: 0.319721
+  type: 'test'
+  ...
+# Subtest: the table is not replayed to the model in later turns
+ok 228 - the table is not replayed to the model in later turns
+  ---
+  duration_ms: 1.166171
+  type: 'test'
+  ...
+# Subtest: a passage from a scanned book is marked in the table
+ok 229 - a passage from a scanned book is marked in the table
+  ---
+  duration_ms: 0.391005
+  type: 'test'
+  ...
+# [routeReview] call failed after 0.0s (budget 3000 tokens, 3 steps): test must not call a model
+# 2026-10-09T07:22:34.837Z [routeReport] 0.0s · audit 0.0s · ORD precedent 0.0s · review 0.0s · compatibility 0.0s · stock 0.0s · textbook precedent 0.0s · step support 0.0s
+# [routeReview] call failed after 0.0s (budget 3000 tokens, 3 steps): test must not call a model
+# 2026-10-09T07:22:34.840Z [routeReport] 0.0s · audit 0.0s · ORD precedent 0.0s · review 0.0s · compatibility 0.0s · stock 0.0s · textbook precedent 0.0s · step support 0.0s
+# [routeReview] call failed after 0.0s (budget 3000 tokens, 3 steps): test must not call a model
+# 2026-10-09T07:22:34.843Z [routeReport] 0.0s · audit 0.0s · ORD precedent 0.0s · review 0.0s · compatibility 0.0s · stock 0.0s · textbook precedent 0.0s · step support 0.0s
+# Subtest: an installed 2.5.6-style checker cannot attach shifted labels or corrections
+ok 230 - an installed 2.5.6-style checker cannot attach shifted labels or corrections
+  ---
+  duration_ms: 8.012916
+  type: 'test'
+  ...
+# Subtest: a checker that keeps the count but renumbers steps is also refused
+ok 231 - a checker that keeps the count but renumbers steps is also refused
+  ---
+  duration_ms: 0.823241
+  type: 'test'
+  ...
+# Subtest: a 2.5.7-style checker preserves the failed step and the following step number
+ok 232 - a 2.5.7-style checker preserves the failed step and the following step number
+  ---
+  duration_ms: 7.090334
+  type: 'test'
+  ...
+# Subtest: a route where NO step could be built still gets a route check the model can act on (B50)
+ok 233 - a route where NO step could be built still gets a route check the model can act on (B50)
+  ---
+  duration_ms: 5.57046
+  type: 'test'
+  ...
+# Subtest: detects a line-wrapped SMILES and reassembles it
+ok 234 - detects a line-wrapped SMILES and reassembles it
+  ---
+  duration_ms: 3.671398
+  type: 'test'
+  ...
+# Subtest: ignores ordinary prose
+ok 235 - ignores ordinary prose
+  ---
+  duration_ms: 2.7535
+  type: 'test'
+  ...
+# Subtest: sentence punctuation glued to a SMILES is peeled off, not parsed as part of it
+ok 236 - sentence punctuation glued to a SMILES is peeled off, not parsed as part of it
+  ---
+  duration_ms: 0.689569
+  type: 'test'
+  ...
+# Subtest: a verified dossier survives normalization and formats its stereo
+ok 237 - a verified dossier survives normalization and formats its stereo
+  ---
+  duration_ms: 0.788176
+  type: 'test'
+  ...
+# Subtest: malformed artifact data is rejected rather than injected
+ok 238 - malformed artifact data is rejected rather than injected
+  ---
+  duration_ms: 0.210872
+  type: 'test'
+  ...
+# Subtest: the system rule names the authoritative field
+ok 239 - the system rule names the authoritative field
+  ---
+  duration_ms: 0.178887
+  type: 'test'
+  ...
+# Subtest: answer audit extracts every species from backticked reactions and quoted species
+ok 240 - answer audit extracts every species from backticked reactions and quoted species
+  ---
+  duration_ms: 0.703185
+  type: 'test'
+  ...
+# Subtest: answer audit reads only code spans, never free prose
+ok 241 - answer audit reads only code spans, never free prose
+  ---
+  duration_ms: 0.37479
+  type: 'test'
+  ...
+# Subtest: a bare bond or stereo fragment is not treated as a species
+ok 242 - a bare bond or stereo fragment is not treated as a species
+  ---
+  duration_ms: 0.496126
+  type: 'test'
+  ...
+# Subtest: a names-first step backticking its role labels does not report the labels as molecules
+ok 243 - a names-first step backticking its role labels does not report the labels as molecules
+  ---
+  duration_ms: 1.189316
+  type: 'test'
+  ...
+# Subtest: answer audit marks verified and unparseable species deterministically
+ok 244 - answer audit marks verified and unparseable species deterministically
+  ---
+  duration_ms: 0.681661
+  type: 'test'
+  ...
+# Subtest: step conditions are read from the prose and aligned with the reaction lines
+ok 245 - step conditions are read from the prose and aligned with the reaction lines
+  ---
+  duration_ms: 1.548803
+  type: 'test'
+  ...
+# Subtest: a malformed route audit degrades to no audit instead of junk
+ok 246 - a malformed route audit degrades to no audit instead of junk
+  ---
+  duration_ms: 0.416571
+  type: 'test'
+  ...
+# Subtest: a long route audit keeps every step (a route of dozens of steps runs past 16)
+ok 247 - a long route audit keeps every step (a route of dozens of steps runs past 16)
+  ---
+  duration_ms: 1.570767
+  type: 'test'
+  ...
+# Subtest: a route audit is normalized defensively and formatted deterministically
+ok 248 - a route audit is normalized defensively and formatted deterministically
+  ---
+  duration_ms: 2.064814
+  type: 'test'
+  ...
+# Subtest: a route review blocks the verdict and is shown as a model finding
+ok 249 - a route review blocks the verdict and is shown as a model finding
+  ---
+  duration_ms: 0.741296
+  type: 'test'
+  ...
+# Subtest: an advisory review finding is shown but never blocks the route
+ok 250 - an advisory review finding is shown but never blocks the route
+  ---
+  duration_ms: 0.778036
+  type: 'test'
+  ...
+# Subtest: an unreadable review is not a problem and never blocks
+ok 251 - an unreadable review is not a problem and never blocks
+  ---
+  duration_ms: 0.306849
+  type: 'test'
+  ...
+# Subtest: a review finding is kept whole or cut on a word boundary, never mid-word
+ok 252 - a review finding is kept whole or cut on a word boundary, never mid-word
+  ---
+  duration_ms: 0.211453
+  type: 'test'
+  ...
+# Subtest: the route review is told not to re-check balance and to allow one-pot cascades
+ok 253 - the route review is told not to re-check balance and to allow one-pot cascades
+  ---
+  duration_ms: 2.13085
+  type: 'test'
+  ...
+# Subtest: the continuity rule is names-first, never a reaction SMILES line
+ok 254 - the continuity rule is names-first, never a reaction SMILES line
+  ---
+  duration_ms: 0.305371
+  type: 'test'
+  ...
+# Subtest: the synthesis template is applied only to chemistry synthesis requests
+ok 255 - the synthesis template is applied only to chemistry synthesis requests
+  ---
+  duration_ms: 0.883376
+  type: 'test'
+  ...
+# Subtest: the template asks for names and roles only, and forbids the model from writing SMILES
+ok 256 - the template asks for names and roles only, and forbids the model from writing SMILES
+  ---
+  duration_ms: 0.285714
+  type: 'test'
+  ...
+# Subtest: a declared racemate is formatted as a caveat, not a refusal
+ok 257 - a declared racemate is formatted as a caveat, not a refusal
+  ---
+  duration_ms: 1.591063
+  type: 'test'
+  ...
+# Subtest: a step orphaned by a duplicate names the pair, not just the orphan
+ok 258 - a step orphaned by a duplicate names the pair, not just the orphan
+  ---
+  duration_ms: 2.485016
+  type: 'test'
+  ...
+# Subtest: a genuinely missing step still gets the original advice
+ok 259 - a genuinely missing step still gets the original advice
+  ---
+  duration_ms: 0.745779
+  type: 'test'
+  ...
+# Subtest: the requested target is read from the synthesis request
+ok 260 - the requested target is read from the synthesis request
+  ---
+  duration_ms: 2.53496
+  type: 'test'
+  ...
+# Subtest: a target written bare, the way a person types it, is found
+ok 261 - a target written bare, the way a person types it, is found
+  ---
+  duration_ms: 1.874484
+  type: 'test'
+  ...
+# Subtest: every generated correction prompt is recognised, a request is not
+ok 262 - every generated correction prompt is recognised, a request is not
+  ---
+  duration_ms: 1.05267
+  type: 'test'
+  ...
+# Subtest: the verified verdict only claims a formed target when one was checked
+ok 263 - the verified verdict only claims a formed target when one was checked
+  ---
+  duration_ms: 0.405948
+  type: 'test'
+  ...
+# Subtest: the route report shows the solved coefficients and flags a large balance
+ok 264 - the route report shows the solved coefficients and flags a large balance
+  ---
+  duration_ms: 0.684451
+  type: 'test'
+  ...
+# Subtest: the route review is given each species structure, not just its name
+ok 265 - the route review is given each species structure, not just its name
+  ---
+  duration_ms: 0.487086
+  type: 'test'
+  ...
+# Subtest: the route review is shown canonical SMILES, so an identical compound reads identically
+ok 266 - the route review is shown canonical SMILES, so an identical compound reads identically
+  ---
+  duration_ms: 0.279913
+  type: 'test'
+  ...
+# Subtest: the route review is told SMILES identity is canonical and the target check is deterministic
+ok 267 - the route review is told SMILES identity is canonical and the target check is deterministic
+  ---
+  duration_ms: 0.122109
+  type: 'test'
+  ...
+# Subtest: each step heading and its prose are read for the review, not just the species
+ok 268 - each step heading and its prose are read for the review, not just the species
+  ---
+  duration_ms: 2.462999
+  type: 'test'
+  ...
+# Subtest: the route review request carries each step description and says a named reaction is possible
+ok 269 - the route review request carries each step description and says a named reaction is possible
+  ---
+  duration_ms: 0.526407
+  type: 'test'
+  ...
+# Subtest: a step that cannot be assembled is FAIL and named in the verdict
+ok 270 - a step that cannot be assembled is FAIL and named in the verdict
+  ---
+  duration_ms: 1.829427
+  type: 'test'
+  ...
+# Subtest: the rules say a consumed species is a Reactant, never an Agent
+ok 271 - the rules say a consumed species is a Reactant, never an Agent
+  ---
+  duration_ms: 2.453932
+  type: 'test'
+  ...
+# Subtest: the route report shows the IUPAC names the answer gave
+ok 272 - the route report shows the IUPAC names the answer gave
+  ---
+  duration_ms: 0.37319
+  type: 'test'
+  ...
+# Subtest: a name that denotes another structure is reported, not silently accepted
+ok 273 - a name that denotes another structure is reported, not silently accepted
+  ---
+  duration_ms: 0.256845
+  type: 'test'
+  ...
+# Subtest: a step whose supplied name denotes another structure fails the check and is not drawn
+ok 274 - a step whose supplied name denotes another structure fails the check and is not drawn
+  ---
+  duration_ms: 0.403713
+  type: 'test'
+  ...
+# Subtest: the template asks for a systematic IUPAC name for every species and all four roles
+ok 275 - the template asks for a systematic IUPAC name for every species and all four roles
+  ---
+  duration_ms: 0.185321
+  type: 'test'
+  ...
+# Subtest: the step count comes from the headings or the role cycle
+ok 276 - the step count comes from the headings or the role cycle
+  ---
+  duration_ms: 0.906372
+  type: 'test'
+  ...
+# Subtest: a non-step section such as an alternative is neither counted nor grouped as a step
+ok 277 - a non-step section such as an alternative is neither counted nor grouped as a step
+  ---
+  duration_ms: 2.145203
+  type: 'test'
+  ...
+# Subtest: a prose summary heading and a species-list heading for the same step are one step
+ok 278 - a prose summary heading and a species-list heading for the same step are one step
+  ---
+  duration_ms: 0.611871
+  type: 'test'
+  ...
+# Subtest: named species are read per step, per role, without any SMILES
+ok 279 - named species are read per step, per role, without any SMILES
+  ---
+  duration_ms: 0.648287
+  type: 'test'
+  ...
+# Subtest: in-place annotation does not split a longer name or touch headings and prose
+ok 280 - in-place annotation does not split a longer name or touch headings and prose
+  ---
+  duration_ms: 0.45377
+  type: 'test'
+  ...
+# Subtest: a species written as a bare SMILES is recognised, but a systematic name is never mistaken for one
+ok 281 - a species written as a bare SMILES is recognised, but a systematic name is never mistaken for one
+  ---
+  duration_ms: 0.200276
+  type: 'test'
+  ...
+# Subtest: reaction lines are derived from resolved species, never the model
+ok 282 - reaction lines are derived from resolved species, never the model
+  ---
+  duration_ms: 0.350359
+  type: 'test'
+  ...
+# Subtest: precedent queries leave byproducts out, as the Open Reaction Database records the main product
+ok 283 - precedent queries leave byproducts out, as the Open Reaction Database records the main product
+  ---
+  duration_ms: 0.496441
+  type: 'test'
+  ...
+# Subtest: two salts sharing an ion each keep their own stoichiometry
+ok 284 - two salts sharing an ion each keep their own stoichiometry
+  ---
+  duration_ms: 0.226755
+  type: 'test'
+  ...
+# Subtest: the resolved SMILES is attached to the name in place, replacing any declared one
+ok 285 - the resolved SMILES is attached to the name in place, replacing any declared one
+  ---
+  duration_ms: 0.297456
+  type: 'test'
+  ...
+# Subtest: corrections are summarized for the user, and the feedback prompt parses
+ok 286 - corrections are summarized for the user, and the feedback prompt parses
+  ---
+  duration_ms: 1.118994
+  type: 'test'
+  ...
+# Subtest: an author-supplied structure is disclosed, and the feedback prompt offers the fallback
+ok 287 - an author-supplied structure is disclosed, and the feedback prompt offers the fallback
+  ---
+  duration_ms: 0.217374
+  type: 'test'
+  ...
+# Subtest: a route derived from names is corrected with a names-only chip set, never a SMILES
+ok 288 - a route derived from names is corrected with a names-only chip set, never a SMILES
+  ---
+  duration_ms: 0.937532
+  type: 'test'
+  ...
+# Subtest: every flagged step gets a chip, emitted last-first, and passing steps get none
+ok 289 - every flagged step gets a chip, emitted last-first, and passing steps get none
+  ---
+  duration_ms: 1.272011
+  type: 'test'
+  ...
+# Subtest: a review-only block still offers chips, with the review findings folded in
+ok 290 - a review-only block still offers chips, with the review findings folded in
+  ---
+  duration_ms: 2.634052
+  type: 'test'
+  ...
+# Subtest: the backwards correction names the requested target with its structure
+ok 291 - the backwards correction names the requested target with its structure
+  ---
+  duration_ms: 1.278755
+  type: 'test'
+  ...
+# Subtest: the first request and every correction carry the same species rules, once
+ok 292 - the first request and every correction carry the same species rules, once
+  ---
+  duration_ms: 1.372048
+  type: 'test'
+  ...
+# Subtest: a route with no species lists offers a one-click prompt to add them
+ok 293 - a route with no species lists offers a one-click prompt to add them
+  ---
+  duration_ms: 0.310245
+  type: 'test'
+  ...
+# Subtest: replayed history keeps the app route reports for the latest answer only
+ok 294 - replayed history keeps the app route reports for the latest answer only
+  ---
+  duration_ms: 1.023087
+  type: 'test'
+  ...
+# Subtest: carbon is found only where the SMILES has a carbon atom
+ok 295 - carbon is found only where the SMILES has a carbon atom
+  ---
+  duration_ms: 0.364771
+  type: 'test'
+  ...
+# Subtest: an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+ok 296 - an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+  ---
+  duration_ms: 0.393421
+  type: 'test'
+  ...
+# Subtest: a checker message reaches the correction prompt whole
+ok 297 - a checker message reaches the correction prompt whole
+  ---
+  duration_ms: 0.684524
+  type: 'test'
+  ...
+# Subtest: the route review blocks a workup folded into another transformation
+ok 298 - the route review blocks a workup folded into another transformation
+  ---
+  duration_ms: 0.124618
+  type: 'test'
+  ...
+# Subtest: the first request draws the target from its SMILES when the request gives one
+ok 299 - the first request draws the target from its SMILES when the request gives one
+  ---
+  duration_ms: 0.248515
+  type: 'test'
+  ...
+# Subtest: an unbuildable step keeps every later step on its own number
+ok 300 - an unbuildable step keeps every later step on its own number
+  ---
+  duration_ms: 0.22118
+  type: 'test'
+  ...
+# Subtest: the report, the drawings and the corrections share one step verdict
+ok 301 - the report, the drawings and the corrections share one step verdict
+  ---
+  duration_ms: 0.202403
+  type: 'test'
+  ...
+# Subtest: the shared rules keep a workup as its own step, as the review requires
+ok 302 - the shared rules keep a workup as its own step, as the review requires
+  ---
+  duration_ms: 0.200884
+  type: 'test'
+  ...
+# Subtest: history drops the review and known reactions of superseded answers, and repeated correction rules
+ok 303 - history drops the review and known reactions of superseded answers, and repeated correction rules
+  ---
+  duration_ms: 0.292257
+  type: 'test'
+  ...
+# Subtest: the interim report says checks passed, not verified, while the review runs
+ok 304 - the interim report says checks passed, not verified, while the review runs
+  ---
+  duration_ms: 0.312382
+  type: 'test'
+  ...
+# Subtest: conditions and prose are read inside each step, not by position
+ok 305 - conditions and prose are read inside each step, not by position
+  ---
+  duration_ms: 0.832276
+  type: 'test'
+  ...
+# Subtest: a named new route never inherits a different target, including Spanish requests
+ok 306 - a named new route never inherits a different target, including Spanish requests
+  ---
+  duration_ms: 0.45597
+  type: 'test'
+  ...
+# Subtest: correction drawing plans preserve backslashes in stereochemical SMILES
+ok 307 - correction drawing plans preserve backslashes in stereochemical SMILES
+  ---
+  duration_ms: 0.353599
+  type: 'test'
+  ...
+# Subtest: reaction precedent is normalized defensively
+ok 308 - reaction precedent is normalized defensively
+  ---
+  duration_ms: 1.099568
+  type: 'test'
+  ...
+# Subtest: similarity reads as a plain-language band
+ok 309 - similarity reads as a plain-language band
+  ---
+  duration_ms: 0.271082
+  type: 'test'
+  ...
+# Subtest: only a step without an exact match gets its closest known reaction drawn
+ok 310 - only a step without an exact match gets its closest known reaction drawn
+  ---
+  duration_ms: 0.191301
+  type: 'test'
+  ...
+# Subtest: the precedent section is titled by route step, names the target and explains similarity
+ok 311 - the precedent section is titled by route step, names the target and explains similarity
+  ---
+  duration_ms: 1.215144
+  type: 'test'
+  ...
+# Subtest: replayed history keeps the app route reports for the latest answer only
+ok 312 - replayed history keeps the app route reports for the latest answer only
+  ---
+  duration_ms: 0.257915
+  type: 'test'
+  ...
+# Subtest: carbon is found only where the SMILES has a carbon atom
+ok 313 - carbon is found only where the SMILES has a carbon atom
+  ---
+  duration_ms: 0.234586
+  type: 'test'
+  ...
+# Subtest: an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+ok 314 - an inorganic co-product listed as a Product becomes a byproduct, and the equation is unchanged
+  ---
+  duration_ms: 0.314438
+  type: 'test'
+  ...
+# Subtest: a checker message reaches the correction prompt whole
+ok 315 - a checker message reaches the correction prompt whole
+  ---
+  duration_ms: 1.119139
+  type: 'test'
+  ...
+# Subtest: the route review blocks a workup folded into another transformation
+ok 316 - the route review blocks a workup folded into another transformation
+  ---
+  duration_ms: 0.207144
+  type: 'test'
+  ...
+# Subtest: the first request draws the target from its SMILES when the request gives one
+ok 317 - the first request draws the target from its SMILES when the request gives one
+  ---
+  duration_ms: 0.317942
+  type: 'test'
+  ...
+# Subtest: an unbuildable step keeps every later step on its own number
+ok 318 - an unbuildable step keeps every later step on its own number
+  ---
+  duration_ms: 0.179552
+  type: 'test'
+  ...
+# Subtest: the report, the drawings and the corrections share one step verdict
+ok 319 - the report, the drawings and the corrections share one step verdict
+  ---
+  duration_ms: 0.15922
+  type: 'test'
+  ...
+# Subtest: the shared rules keep a workup as its own step, as the review requires
+ok 320 - the shared rules keep a workup as its own step, as the review requires
+  ---
+  duration_ms: 0.120676
+  type: 'test'
+  ...
+# Subtest: history drops the review and known reactions of superseded answers, and repeated correction rules
+ok 321 - history drops the review and known reactions of superseded answers, and repeated correction rules
+  ---
+  duration_ms: 0.305979
+  type: 'test'
+  ...
+# Subtest: the interim report says checks passed, not verified, while the review runs
+ok 322 - the interim report says checks passed, not verified, while the review runs
+  ---
+  duration_ms: 0.281113
+  type: 'test'
+  ...
+# Subtest: conditions and prose are read inside each step, not by position
+ok 323 - conditions and prose are read inside each step, not by position
+  ---
+  duration_ms: 0.357191
+  type: 'test'
+  ...
+# Subtest: a step carries its reaction class, a textbook passage and the index alternatives
+ok 324 - a step carries its reaction class, a textbook passage and the index alternatives
+  ---
+  duration_ms: 1.842132
+  type: 'test'
+  ...
+# Subtest: the route rules agree with each other and with what the checker does
+ok 325 - the route rules agree with each other and with what the checker does
+  ---
+  duration_ms: 0.376725
+  type: 'test'
+  ...
+# Subtest: a target requested without stereochemistry is racemic by the request
+ok 326 - a target requested without stereochemistry is racemic by the request
+  ---
+  duration_ms: 1.048441
+  type: 'test'
+  ...
+# Subtest: a racemic outcome is declared per step, and "achiral" is not a declaration
+ok 327 - a racemic outcome is declared per step, and "achiral" is not a declaration
+  ---
+  duration_ms: 0.125824
+  type: 'test'
+  ...
+# Subtest: a fix chip names the species that did not resolve, not only the balance it broke
+ok 328 - a fix chip names the species that did not resolve, not only the balance it broke
+  ---
+  duration_ms: 2.912927
+  type: 'test'
+  ...
+# Subtest: an unresolved species in a step that otherwise passes still gets a fix chip
+ok 329 - an unresolved species in a step that otherwise passes still gets a fix chip
+  ---
+  duration_ms: 0.51084
+  type: 'test'
+  ...
+# Subtest: a salt is shown whole with its count, and water at 7 in a dichromate oxidation is not called suspicious
+ok 330 - a salt is shown whole with its count, and water at 7 in a dichromate oxidation is not called suspicious
+  ---
+  duration_ms: 1.391892
+  type: 'test'
+  ...
+# Subtest: a spectator ion the solver left at 1:1 still lets the salts show whole (caprolactam, Suite 2b)
+ok 331 - a spectator ion the solver left at 1:1 still lets the salts show whole (caprolactam, Suite 2b)
+  ---
+  duration_ms: 0.650721
+  type: 'test'
+  ...
+# Subtest: a stereo declaration counts wherever it sits in the step, and a bold lead-in keeps its prose (Sonnet 5.5, hard suite)
+ok 332 - a stereo declaration counts wherever it sits in the step, and a bold lead-in keeps its prose (Sonnet 5.5, hard suite)
+  ---
+  duration_ms: 2.522511
+  type: 'test'
+  ...
+# Subtest: an unspecified-stereo failure names the product that carries the open centres
+ok 333 - an unspecified-stereo failure names the product that carries the open centres
+  ---
+  duration_ms: 0.428011
+  type: 'test'
+  ...
+# Subtest: steps written as a numbered list are found, and a numbered list inside one step is not (Opus 4.8, camphor)
+ok 334 - steps written as a numbered list are found, and a numbered list inside one step is not (Opus 4.8, camphor)
+  ---
+  duration_ms: 1.188769
+  type: 'test'
+  ...
+# Subtest: a route request asks for backwards, one-step planning without hand-balancing or mechanisms, before the format
+ok 335 - a route request asks for backwards, one-step planning without hand-balancing or mechanisms, before the format
+  ---
+  duration_ms: 0.169027
+  type: 'test'
+  ...
+# Subtest: open stereocentres that cannot reach the target pass, and say so
+ok 336 - open stereocentres that cannot reach the target pass, and say so
+  ---
+  duration_ms: 0.383227
+  type: 'test'
+  ...
+# Subtest: a step whose bond changes cannot happen is FAIL, and the fix prompt carries the checker's sentence
+ok 337 - a step whose bond changes cannot happen is FAIL, and the fix prompt carries the checker's sentence
+  ---
+  duration_ms: 1.257305
+  type: 'test'
+  ...
+# Subtest: a passing step states the bonds it forms, so the reviewer reads the checker's facts
+ok 338 - a passing step states the bonds it forms, so the reviewer reads the checker's facts
+  ---
+  duration_ms: 0.591055
+  type: 'test'
+  ...
+# Subtest: rearrangement and radical declarations are read per step, and a negated mention is not one
+ok 339 - rearrangement and radical declarations are read per step, and a negated mention is not one
+  ---
+  duration_ms: 2.259497
+  type: 'test'
+  ...
+# Subtest: step prose stays aligned when bold lead-in steps and full-line step headings are mixed
+ok 340 - step prose stays aligned when bold lead-in steps and full-line step headings are mixed
+  ---
+  duration_ms: 0.208633
+  type: 'test'
+  ...
+# Subtest: a route the model draws in a capability fence does not turn its own labels into species
+ok 341 - a route the model draws in a capability fence does not turn its own labels into species
+  ---
+  duration_ms: 0.855208
+  type: 'test'
+  ...
+# Subtest: a closed inline SVG is masked too, and a species name that is markup is dropped
+ok 342 - a closed inline SVG is masked too, and a species name that is markup is dropped
+  ---
+  duration_ms: 0.319403
+  type: 'test'
+  ...
+# Subtest: a step the application could not build is reported as UNBUILT and names the species
+ok 343 - a step the application could not build is reported as UNBUILT and names the species
+  ---
+  duration_ms: 0.403389
+  type: 'test'
+  ...
+# Subtest: the resolution source of every structure is reported
+ok 344 - the resolution source of every structure is reported
+  ---
+  duration_ms: 0.362947
+  type: 'test'
+  ...
+# Subtest: a placeholder where a species belongs is called a placeholder, not an unresolvable name
+ok 345 - a placeholder where a species belongs is called a placeholder, not an unresolvable name
+  ---
+  duration_ms: 0.258584
+  type: 'test'
+  ...
+# Subtest: every fragment of every species reaches the equation, including repeated counterions
+ok 346 - every fragment of every species reaches the equation, including repeated counterions
+  ---
+  duration_ms: 0.170681
+  type: 'test'
+  ...
+# Subtest: the configuration report names each block, what was measured, and what the name asserts
+ok 347 - the configuration report names each block, what was measured, and what the name asserts
+  ---
+  duration_ms: 0.951054
+  type: 'test'
+  ...
+# Subtest: what a name asserts about configuration is read, and only when it says something
+ok 348 - what a name asserts about configuration is read, and only when it says something
+  ---
+  duration_ms: 0.25721
+  type: 'test'
+  ...
+# Subtest: a systematic name with braces is a species, not markup
+ok 349 - a systematic name with braces is a species, not markup
+  ---
+  duration_ms: 0.449395
+  type: 'test'
+  ...
+# Subtest: one fault repeated across steps is stated once, as a pattern
+ok 350 - one fault repeated across steps is stated once, as a pattern
+  ---
+  duration_ms: 1.541534
+  type: 'test'
+  ...
+# Subtest: a repeated fault that already ends in a full stop is not given a second one
+ok 351 - a repeated fault that already ends in a full stop is not given a second one
+  ---
+  duration_ms: 1.006041
+  type: 'test'
+  ...
+# Subtest: distinct faults are not collapsed into a false pattern
+ok 352 - distinct faults are not collapsed into a false pattern
+  ---
+  duration_ms: 0.940284
+  type: 'test'
+  ...
+# Subtest: a bond check that could not run is said out loud, and does not fail the route
+ok 353 - a bond check that could not run is said out loud, and does not fail the route
+  ---
+  duration_ms: 0.495151
+  type: 'test'
+  ...
+# Subtest: a replayed answer carries its text, never its drawings
+ok 354 - a replayed answer carries its text, never its drawings
+  ---
+  duration_ms: 0.729619
+  type: 'test'
+  ...
+# Subtest: a correction that re-states no route says so, instead of returning prose in silence
+ok 355 - a correction that re-states no route says so, instead of returning prose in silence
+  ---
+  duration_ms: 0.295315
+  type: 'test'
+  ...
+# Subtest: a route answer the checker cannot read says nothing was checked
+ok 356 - a route answer the checker cannot read says nothing was checked
+  ---
+  duration_ms: 0.264476
+  type: 'test'
+  ...
+# Subtest: a route conversation stays one when the author types a follow-up
+ok 357 - a route conversation stays one when the author types a follow-up
+  ---
+  duration_ms: 0.823518
+  type: 'test'
+  ...
+# Subtest: the report starts the step support before it waits on the final report
+ok 358 - the report starts the step support before it waits on the final report
+  ---
+  duration_ms: 63.950597
+  type: 'test'
+  ...
+# Subtest: a step that balanced only by refiling a declared reactant is a failing step
+ok 359 - a step that balanced only by refiling a declared reactant is a failing step
+  ---
+  duration_ms: 0.26729
+  type: 'test'
+  ...
+# Subtest: a route answer draws only through the final report
+ok 360 - a route answer draws only through the final report
+  ---
+  duration_ms: 0.299981
+  type: 'test'
+  ...
+# Subtest: every step of a passing route is summarised the same way the check reports it
+ok 361 - every step of a passing route is summarised the same way the check reports it
+  ---
+  duration_ms: 0.591791
+  type: 'test'
+  ...
+# Subtest: the step line and the route verdict cannot disagree about which step failed
+ok 362 - the step line and the route verdict cannot disagree about which step failed
+  ---
+  duration_ms: 0.570997
+  type: 'test'
+  ...
+# Subtest: conditions are validated: ids, yield range, references, names
+ok 363 - conditions are validated: ids, yield range, references, names
+  ---
+  duration_ms: 3.228011
+  type: 'test'
+  ...
+# Subtest: one line per recorded run; SMILES-like names in code spans
+ok 364 - one line per recorded run; SMILES-like names in code spans
+  ---
+  duration_ms: 0.462522
+  type: 'test'
+  ...
+# Subtest: the route report shows conditions under an exact match and the closest recorded reaction
+ok 365 - the route report shows conditions under an exact match and the closest recorded reaction
+  ---
+  duration_ms: 2.290573
+  type: 'test'
+  ...
+# Subtest: identical runs are shown once
+ok 366 - identical runs are shown once
+  ---
+  duration_ms: 0.385398
+  type: 'test'
+  ...
+# Subtest: without conditions the report is as before
+ok 367 - without conditions the report is as before
+  ---
+  duration_ms: 1.669851
+  type: 'test'
+  ...
+# Subtest: the model sees one plain conditions line per recorded preparation and recorded disconnection
+ok 368 - the model sees one plain conditions line per recorded preparation and recorded disconnection
+  ---
+  duration_ms: 1.458835
+  type: 'test'
+  ...
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# [skill-plugins] update failed for nodus-test/plugins: Could not reach GitHub. Check your connection and try again; the previous catalog is preserved.
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# [skill-plugins] update failed for test/origin: Source no longer exists.
+# Subtest: temporary Git repository imports, updates, gates permissions, preserves overlays and rolls back atomically
+ok 369 - temporary Git repository imports, updates, gates permissions, preserves overlays and rolls back atomically
+  ---
+  duration_ms: 871.115343
+  type: 'test'
+  ...
+# Subtest: registry contracts normalize built-ins and reject unsafe packages and schemas
+ok 370 - registry contracts normalize built-ins and reject unsafe packages and schemas
+  ---
+  duration_ms: 0.870227
+  type: 'test'
+  ...
+# Subtest: all seven chat orchestrators share the skill prompt and central dispatcher
+ok 371 - all seven chat orchestrators share the skill prompt and central dispatcher
+  ---
+  duration_ms: 2.276769
+  type: 'test'
+  ...
+# Subtest: the auto-update cycle installs a compatible release, gates a wider one and survives a broken network
+ok 372 - the auto-update cycle installs a compatible release, gates a wider one and survives a broken network
+  ---
+  duration_ms: 1347.526113
+  type: 'test'
+  ...
+# Subtest: inbox packages are reviewable, path-bounded and never active before approval
+ok 373 - inbox packages are reviewable, path-bounded and never active before approval
+  ---
+  duration_ms: 55.748877
+  type: 'test'
+  ...
+# Subtest: an overlay can be reset to the author version, and results outlive the plugin that made them
+ok 374 - an overlay can be reset to the author version, and results outlive the plugin that made them
+  ---
+  duration_ms: 169.4359
+  type: 'test'
+  ...
+1..374
+# tests 374
+# suites 0
+# pass 372
+# fail 1
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 133767.513211

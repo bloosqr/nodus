@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: one call past its deadline does not take the calls beside it down
+ok 1 - one call past its deadline does not take the calls beside it down
+  ---
+  duration_ms: 3598.060925
+  type: 'test'
+  ...
+# Subtest: a cancelled caller cancels its own call only
+ok 2 - a cancelled caller cancels its own call only
+  ---
+  duration_ms: 3064.625244
+  type: 'test'
+  ...
+# Subtest: a host call is answered with the services of the call that made it
+ok 3 - a host call is answered with the services of the call that made it
+  ---
+  duration_ms: 69.725817
+  type: 'test'
+  ...
+# Subtest: a tool runs no more invocations at once than its manifest concurrency, and a queued one keeps its whole budget
+ok 4 - a tool runs no more invocations at once than its manifest concurrency, and a queued one keeps its whole budget
+  ---
+  duration_ms: 2668.704736
+  type: 'test'
+  ...
+# Subtest: a result that cannot be sent fails its own call, not the process
+ok 5 - a result that cannot be sent fails its own call, not the process
+  ---
+  duration_ms: 1576.462432
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11252.138018

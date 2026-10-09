@@ -1,0 +1,68 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-13 applied first. Apply from the repository root with: git apply 14-abortable-provisioning-lock.patch
+diff --git a/electron/capabilities/pythonRuntime.ts b/electron/capabilities/pythonRuntime.ts
+index ddfa1e60..d563ecbb 100644
+--- a/electron/capabilities/pythonRuntime.ts
++++ b/electron/capabilities/pythonRuntime.ts
+@@ -35,15 +35,24 @@ const MAX_WHEEL_BYTES = 256 * 1024 * 1024;
+ // profile), then recheck READY: another capability may have completed it while we waited.
+ const runtimeBuilds = new Map<string, Promise<void>>();
+ 
+-async function withRuntimeLock<T>(root: string, action: () => Promise<T>): Promise<T> {
++async function withRuntimeLock<T>(root: string, action: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+   const previous = runtimeBuilds.get(root) ?? Promise.resolve();
+-  const result = previous.then(action);
++  // A caller cancelled while another build holds the lock leaves at once instead of waiting out
++  // that build (pip has fifteen minutes); its turn in the chain still passes, without running.
++  const result = previous.then(() => { signal?.throwIfAborted(); return action(); });
+   const settled = result.then(() => {}, () => {});
+   runtimeBuilds.set(root, settled);
++  void settled.then(() => { if (runtimeBuilds.get(root) === settled) runtimeBuilds.delete(root); });
++  if (!signal) return result;
++  let onAbort: (() => void) | undefined;
+   try {
+-    return await result;
++    return await Promise.race([result, new Promise<never>((_resolve, reject) => {
++      onAbort = () => reject(new DOMException('The runtime check was cancelled.', 'AbortError'));
++      signal.addEventListener('abort', onAbort, { once: true });
++      if (signal.aborted) onAbort();
++    })]);
+   } finally {
+-    if (runtimeBuilds.get(root) === settled) runtimeBuilds.delete(root);
++    if (onAbort) signal.removeEventListener('abort', onAbort);
+   }
+ }
+ 
+@@ -148,7 +157,7 @@ export async function ensurePythonRuntime(runtime: TrustedWorkerRuntime, runtime
+   if (!lock) return { ready: false, detail: `This package publishes no pinned dependency set for Python ${minor} on ${process.platform}-${process.arch}.` };
+   const lockDigest = createHash('sha256').update(JSON.stringify(lock)).digest('hex');
+   const root = sharedRuntimeDir(lockDigest);
+-  return withRuntimeLock(root, () => provisionPythonRuntime(pointer, root, lockDigest, lock, python, context));
++  return withRuntimeLock(root, () => provisionPythonRuntime(pointer, root, lockDigest, lock, python, context), context.signal);
+ }
+ 
+ async function provisionPythonRuntime(
+diff --git a/scripts/test-capability-python-host.mjs b/scripts/test-capability-python-host.mjs
+index bd40efa6..52e640d8 100644
+--- a/scripts/test-capability-python-host.mjs
++++ b/scripts/test-capability-python-host.mjs
+@@ -252,3 +252,20 @@ test('a runtime found ready is not re-examined with three interpreter starts on
+     assert.equal(rebuilt.ready, false, 'a half-rebuilt environment is not reported ready from memory');
+   } finally { process.env.PATH = savedPath; }
+ });
++
++test('a runtime check cancelled while another call is building the environment leaves at once', async (t) => {
++  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
++  // A lock no environment exists for yet: the first caller starts building it, and its download
++  // takes a while; the second caller queues behind it, then is cancelled.
++  const lock = { schemaVersion: 1, python: '3.12', platform: `${process.platform}-${process.arch}`, packages: [{ name: 'slow-1.0-py3-none-any.whl', requirement: 'slow==1.0', url: 'https://files.pythonhosted.org/packages/slow.whl', bytes: 1, sha256: 'd'.repeat(64) }] };
++  const ensure = (download, signal) => lib.ensurePythonRuntime(runtime, 'probe', { download, minVersion: '3.8', selectLock: () => lib.validateRuntimeLock(lock), signal });
++  const building = ensure(() => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('offline')), 3_000)), new AbortController().signal);
++  await new Promise(resolve => setTimeout(resolve, 300));
++  const controller = new AbortController();
++  const queued = ensure(async () => { throw new Error('must not download'); }, controller.signal);
++  setTimeout(() => controller.abort(), 100);
++  const started = Date.now();
++  await assert.rejects(Promise.race([queued, new Promise((_resolve, reject) => setTimeout(() => reject(new Error('still waiting for the other build')), 1_500))]), { name: 'AbortError' });
++  assert.ok(Date.now() - started < 1_000);
++  assert.equal((await building).ready, false);
++});

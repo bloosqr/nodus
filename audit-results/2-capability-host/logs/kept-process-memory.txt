@@ -1,0 +1,4 @@
+served Python after stereo enumeration:           102 MB
+... after a disconnection search (templates):    157 MB
+... after a precedent lookup (1.9 M index keys): 563 MB
+validator subworker after a route audit:         134 MB

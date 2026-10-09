@@ -1,0 +1,121 @@
+# Repository: bloosqr/nodus-research-skill-marketplace — unified diff against branch audit/2026-10-09 with 04b,08b,09b applied first. Apply from the repository root with: git apply 12b-python-failures-say-why-plugin.patch
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index 48a2b37..eeef3f3 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -60,6 +60,14 @@ const REACTIONS_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)),
+ // sets NODUS_PYTHON_SERVE=1, so RDKit and the index tables load once per process instead of once
+ // per call. A host that does not know the flag ignores it and runs the script once per call.
+ 
++/** What a failed Python call says about itself: its exit code and the interpreter's last line of
++ *  stderr (the exception). A failure used to reach the author as "The reaction lookup failed." with
++ *  the traceback thrown away, and the two calls that fall back silently said nothing at all. */
++function pythonFailure(what: string, run: { code: number; stderr: string }): string {
++  const last = run.stderr.trim().split('\n').filter(Boolean).at(-1)?.slice(0, 300);
++  return `${what} (exit ${run.code}${last ? `: ${last}` : ''}).`;
++}
++
+ interface ChatNode { id: string; kind: 'prose' | 'fence'; fence?: string; content: string; complete: boolean }
+ 
+ export default function createWorker(capabilityHost: CapabilityHost) {
+@@ -562,7 +570,7 @@ async function localReferencesFor(input: { pubchemDir?: unknown; opsinDir?: unkn
+   try {
+     const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT], persistent: true,
+       stdin: JSON.stringify({ ...(pubchemDir ? { pubchemDir } : {}), ...(opsinDir ? { opsinDir } : {}), pubchemNames: names, pubchemSmiles: smiles }), timeoutMs: 120_000 });
+-    if (run.code !== 0) return {};
++    if (run.code !== 0) { host().log('warn', pythonFailure('The local references were not consulted', run)); return {}; }
+     const data = JSON.parse(run.stdout) as {
+       pubchem?: { available?: boolean; names?: Record<string, { cid: number; smiles: string; formula?: string }>; smiles?: Record<string, { cid: number; name?: string; formula?: string }> };
+       opsin?: Record<string, { status: string; smiles?: string; warnings?: string[]; message?: string }>;
+@@ -571,7 +579,8 @@ async function localReferencesFor(input: { pubchemDir?: unknown; opsinDir?: unkn
+       ...(data.pubchem?.available ? { pubchemMirror: { names: new Map(Object.entries(data.pubchem.names ?? {})), smiles: new Map(Object.entries(data.pubchem.smiles ?? {})) } } : {}),
+       ...(data.opsin && Object.keys(data.opsin).length ? { opsinLocal: new Map(Object.entries(data.opsin)) } : {}),
+     };
+-  } catch {
++  } catch (error) {
++    host().log('warn', `The local references were not consulted: ${error instanceof Error ? error.message : String(error)}`);
+     return {};
+   }
+ }
+@@ -765,9 +774,10 @@ async function productStereoChoices(steps: string[]): Promise<Record<string, { o
+     const ready = await host().python.ensureRuntime(REACTIONS_RUNTIME_ID);
+     if (!ready.ready) return {};
+     const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT], persistent: true, stdin: JSON.stringify({ stereoChoices: products }), timeoutMs: 60_000 });
+-    if (run.code !== 0) return {};
++    if (run.code !== 0) { host().log('warn', pythonFailure('Stereo choices were not enumerated', run)); return {}; }
+     return (JSON.parse(run.stdout) as { stereoChoices?: Record<string, { open: number; mirrorOnly: boolean } | number | null> }).stereoChoices ?? {};
+-  } catch {
++  } catch (error) {
++    host().log('warn', `Stereo choices were not enumerated: ${error instanceof Error ? error.message : String(error)}`);
+     return {};
+   }
+ }
+@@ -823,7 +833,7 @@ async function knownReactions(input: { indexDir?: string; reactions?: string[];
+     }),
+     timeoutMs: 240_000,
+   });
+-  if (run.code !== 0) throw new Error('The reaction lookup failed.');
++  if (run.code !== 0) throw new Error(pythonFailure('The reaction lookup failed', run));
+   const data = JSON.parse(run.stdout) as { reactions?: Array<{ count: number }>; products?: Array<{ count: number }> };
+   const exact = data.reactions?.filter(entry => entry.count > 0).length ?? 0;
+   const made = data.products?.filter(entry => entry.count > 0).length ?? 0;
+@@ -859,7 +869,7 @@ async function proposeDisconnections(input: { indexDir?: string; targets?: strin
+     }),
+     timeoutMs: 240_000,
+   });
+-  if (run.code !== 0) throw new Error('The disconnection search failed.');
++  if (run.code !== 0) throw new Error(pythonFailure('The disconnection search failed', run));
+   const data = JSON.parse(run.stdout) as { disconnections?: Array<{ madeBy?: unknown[]; proposals?: unknown[] }> };
+   const entries = data.disconnections ?? [];
+   const recorded = entries.filter(entry => (entry.madeBy?.length ?? 0) > 0).length;
+@@ -883,7 +893,7 @@ async function checkStock(input: { stockDir?: string; molecules?: string[] }) {
+     stdin: JSON.stringify({ stock: molecules, stockDir }),
+     timeoutMs: 60_000,
+   });
+-  if (run.code !== 0) throw new Error('The stock check failed.');
++  if (run.code !== 0) throw new Error(pythonFailure('The stock check failed', run));
+   const data = JSON.parse(run.stdout) as { stock?: Record<string, string[]>; orderable?: Record<string, string[]>; lists?: string[]; orderLists?: string[] };
+   const found = Object.values(data.stock ?? {}).filter(vendors => vendors.length > 0).length;
+   const orderable = Object.entries(data.orderable ?? {}).filter(([molecule, vendors]) => vendors.length > 0 && !(data.stock?.[molecule]?.length)).length;
+@@ -920,7 +930,7 @@ async function searchRoutes(input: { indexDirs?: string[]; target?: string; star
+     // The worker returns at its budget; the margin covers loading the indexes.
+     timeoutMs: (budgetSeconds + 60) * 1000,
+   });
+-  if (run.code !== 0) throw new Error('The route search failed.');
++  if (run.code !== 0) throw new Error(pythonFailure('The route search failed', run));
+   const data = JSON.parse(run.stdout) as { route?: { routes?: unknown[]; expanded?: number; timedOut?: boolean } };
+   const route = data.route ?? {};
+   const summary = `Route search: ${route.routes?.length ?? 0} complete route(s) after ${route.expanded ?? 0} expansion(s)${route.timedOut ? ', stopped at the time budget' : ''}.`;
+@@ -949,7 +959,7 @@ async function checkCompatibility(input: { steps?: CompatibilityStepInput[]; tex
+     stdin: JSON.stringify({ compatibility: steps, ...(typeof input.textbookDir === 'string' && input.textbookDir ? { textbookDir: input.textbookDir } : {}) }),
+     timeoutMs: 90_000,
+   });
+-  if (run.code !== 0) throw new Error('The compatibility check failed.');
++  if (run.code !== 0) throw new Error(pythonFailure('The compatibility check failed', run));
+   const data = JSON.parse(run.stdout) as { compatibility?: Array<{ hazards?: Array<{ severity?: string }> }> };
+   const hazards = (data.compatibility ?? []).flatMap(step => step.hazards ?? []);
+   const high = hazards.filter(hazard => hazard.severity === 'high').length;
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index e1df9d6..c1b7d6b 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3194,3 +3194,19 @@ test('resolve-names answers a name this worker already resolved without asking t
+   await fresh.invoke({ invocationId: 'n3', toolId: 'resolve-names', locale: 'en', input: { names: ['3-methylhexan-2-one'] } });
+   assert.ok(host.calls.length > before);
+ });
++
++test('a failed Python call says why, and a silent fallback is logged', async () => {
++  const logged = [];
++  const host = stubHost();
++  host.log = (level, message) => logged.push(`${level}: ${message}`);
++  host.python = { ensureRuntime: async () => ({ ready: true }), run: async () => ({ code: 1, stdout: '', stderr: 'Traceback (most recent call last):\n  ...\nSystemExit: the reaction index is missing exact.tsv.zst\n' }) };
++  const worker = lib.createWorker(host);
++  await assert.rejects(worker.invoke({ invocationId: 'k1', toolId: 'known-reactions', locale: 'en', input: { indexDir: '/idx', reactions: ['CCO>>CC=O'] } }),
++    /reaction lookup failed \(exit 1: SystemExit: the reaction index is missing exact\.tsv\.zst\)/);
++  // The local mirror falls back to the network without failing the call — and now says so.
++  await worker.invoke({ invocationId: 'k2', toolId: 'resolve-names', locale: 'en', input: { names: ['ethanol'], pubchemDir: '/mirror' } });
++  assert.ok(logged.some(line => line.startsWith('warn:') && line.includes('local references') && line.includes('missing exact.tsv.zst')), JSON.stringify(logged));
++  // So does the stereo enumeration of the route check.
++  await worker.invoke({ invocationId: 'k3', toolId: 'verify-route', locale: 'en', input: { steps: ['CC(=O)C>>CC(O)C'], enumerateStereo: true } });
++  assert.ok(logged.some(line => line.includes('Stereo choices were not enumerated')), JSON.stringify(logged));
++});

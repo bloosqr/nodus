@@ -2,992 +2,998 @@ TAP version 13
 # Subtest: the package reads only the fences it needs, and does not promote ordinary code
 ok 1 - the package reads only the fences it needs, and does not promote ordinary code
   ---
-  duration_ms: 5.685395
+  duration_ms: 5.749442
   type: 'test'
   ...
 # Subtest: a named species is resolved against references and drawn as a verified document
 ok 2 - a named species is resolved against references and drawn as a verified document
   ---
-  duration_ms: 3191.247935
+  duration_ms: 3590.165143
   type: 'test'
   ...
 # Subtest: the read-only inspector returns a verified graph, never a drawing
 ok 3 - the read-only inspector returns a verified graph, never a drawing
   ---
-  duration_ms: 66.560119
+  duration_ms: 81.129267
   type: 'test'
   ...
 # Subtest: a stored drawing is a view-ready <svg> fragment, not a full XML document
 ok 4 - a stored drawing is a view-ready <svg> fragment, not a full XML document
   ---
-  duration_ms: 0.41411
+  duration_ms: 0.576851
   type: 'test'
   ...
 # Subtest: the route checker balances every step and confirms the intermediate is carried over
 ok 5 - the route checker balances every step and confirms the intermediate is carried over
   ---
-  duration_ms: 52.860494
+  duration_ms: 82.87346
   type: 'test'
   ...
 # Subtest: a convergent coupling with a large leaving group is not refused (Wittig: stilbene + Ph3P=O)
 ok 6 - a convergent coupling with a large leaving group is not refused (Wittig: stilbene + Ph3P=O)
   ---
-  duration_ms: 159.348452
+  duration_ms: 191.077563
   type: 'test'
   ...
 # Subtest: skeleton: the twistane ring closure and Wolff–Kishner are explained, and their facts are kept
 ok 7 - skeleton: the twistane ring closure and Wolff–Kishner are explained, and their facts are kept
   ---
-  duration_ms: 172.913674
+  duration_ms: 165.455386
   type: 'test'
   ...
 # Subtest: bond ledger: N–O, O–O and C–N changes are counted too (an oxime, a peroxide oxidation)
 ok 8 - bond ledger: N–O, O–O and C–N changes are counted too (an oxime, a peroxide oxidation)
   ---
-  duration_ms: 45.243432
+  duration_ms: 45.3513
   type: 'test'
   ...
 # Subtest: skeleton: a ring closed from an unactivated carbon is refused (wrong regiochemistry)
 ok 9 - skeleton: a ring closed from an unactivated carbon is refused (wrong regiochemistry)
   ---
-  duration_ms: 115.9946
+  duration_ms: 129.562405
   type: 'test'
   ...
 # Subtest: skeleton: a 1,2-shift is refused unless the step declares a rearrangement (pinacol)
 ok 10 - skeleton: a 1,2-shift is refused unless the step declares a rearrangement (pinacol)
   ---
-  duration_ms: 38.903722
+  duration_ms: 49.93231
   type: 'test'
   ...
 # Subtest: skeleton: real balanced-but-impossible steps from harness routes are refused
 ok 11 - skeleton: real balanced-but-impossible steps from harness routes are refused
   ---
-  duration_ms: 59.633176
+  duration_ms: 81.975204
   type: 'test'
   ...
 # Subtest: skeleton: a double Claisen onto diethyl carbonate is explained (two acetate α-carbons, both activated)
 ok 12 - skeleton: a double Claisen onto diethyl carbonate is explained (two acetate α-carbons, both activated)
   ---
-  duration_ms: 54.060487
+  duration_ms: 78.358952
   type: 'test'
   ...
 # Subtest: skeleton: a C–heteroatom bond at an unactivated carbon is refused (bromination beyond the α-carbon)
 ok 13 - skeleton: a C–heteroatom bond at an unactivated carbon is refused (bromination beyond the α-carbon)
   ---
-  duration_ms: 70.55952
+  duration_ms: 117.092112
   type: 'test'
   ...
 # Subtest: skeleton: an SN2 substitution is one change at one carbon, so a symmetric product does not mislead (Williamson)
 ok 14 - skeleton: an SN2 substitution is one change at one carbon, so a symmetric product does not mislead (Williamson)
   ---
-  duration_ms: 21.395401
+  duration_ms: 38.085861
   type: 'test'
   ...
 # Subtest: skeleton: unchanged spectators are set aside, so their symmetry cannot hide the right mapping (t-butoxide)
 ok 15 - skeleton: unchanged spectators are set aside, so their symmetry cannot hide the right mapping (t-butoxide)
   ---
-  duration_ms: 59.827132
+  duration_ms: 92.139445
   type: 'test'
   ...
 # Subtest: skeleton: omitted by-products are opt-in — a recorded reaction may drop whole carbon fragments, a checked route may not
 ok 16 - skeleton: omitted by-products are opt-in — a recorded reaction may drop whole carbon fragments, a checked route may not
   ---
-  duration_ms: 221.13497
+  duration_ms: 264.163814
   type: 'test'
   ...
 # Subtest: peptide building blocks: the dictionary resolves standard protected residues and all entries are valid
 ok 17 - peptide building blocks: the dictionary resolves standard protected residues and all entries are valid
   ---
-  duration_ms: 1.230737
+  duration_ms: 1.49271
   type: 'test'
   ...
 # Subtest: resin-bound names are flagged (need SMILES), plain residues are not
 ok 18 - resin-bound names are flagged (need SMILES), plain residues are not
   ---
-  duration_ms: 0.767577
+  duration_ms: 0.767306
   type: 'test'
   ...
 # Subtest: the comparison path reads the built-in dictionary, and needs no network to do it
 ok 19 - the comparison path reads the built-in dictionary, and needs no network to do it
   ---
-  duration_ms: 1.299161
+  duration_ms: 2.815327
   type: 'test'
   ...
 # Subtest: solid support: a solid-phase route keeps its resin as one conserved * and checks every step
 ok 20 - solid support: a solid-phase route keeps its resin as one conserved * and checks every step
   ---
-  duration_ms: 458.611882
+  duration_ms: 497.360283
   type: 'test'
   ...
 # Subtest: skeleton: a radical C–H halogenation is refused unless the step declares it
 ok 21 - skeleton: a radical C–H halogenation is refused unless the step declares it
   ---
-  duration_ms: 49.946942
+  duration_ms: 64.868449
   type: 'test'
   ...
 # Subtest: skeleton: an internal reorganisation is refused unless declared (Cope; a cascade whose branches sit on the wrong carbons)
 ok 22 - skeleton: an internal reorganisation is refused unless declared (Cope; a cascade whose branches sit on the wrong carbons)
   ---
-  duration_ms: 36.766502
+  duration_ms: 30.358716
   type: 'test'
   ...
 # Subtest: skeleton: rearrangement-free classics stay unrefused (Diels–Alder, aldol, Robinson tropinone)
 ok 23 - skeleton: rearrangement-free classics stay unrefused (Diels–Alder, aldol, Robinson tropinone)
   ---
-  duration_ms: 105.830383
+  duration_ms: 94.230277
   type: 'test'
   ...
 # Subtest: the route checker names an unbalanced step and a disconnected step
 ok 24 - the route checker names an unbalanced step and a disconnected step
   ---
-  duration_ms: 55.592041
+  duration_ms: 52.773835
   type: 'test'
   ...
 # Subtest: a merged step is accepted when it survives balance and refused when it does not
 ok 25 - a merged step is accepted when it survives balance and refused when it does not
   ---
-  duration_ms: 78.955776
+  duration_ms: 72.806449
   type: 'test'
   ...
 # Subtest: charge balance is enforced even when the element totals match
 ok 26 - charge balance is enforced even when the element totals match
   ---
-  duration_ms: 9.247329
+  duration_ms: 8.638866
   type: 'test'
   ...
 # Subtest: a reactant-side species that takes no part is filed as an agent; an idle product is refused
 ok 27 - a reactant-side species that takes no part is filed as an agent; an idle product is refused
   ---
-  duration_ms: 151.785758
+  duration_ms: 144.965015
   type: 'test'
   ...
 # Subtest: a species listed on the wrong side is named when moving it balances the step
 ok 28 - a species listed on the wrong side is named when moving it balances the step
   ---
-  duration_ms: 81.80805
+  duration_ms: 79.250948
   type: 'test'
   ...
 # Subtest: a solvent the step also forms is named: ethanol in a malonic ester alkylation
 ok 29 - a solvent the step also forms is named: ethanol in a malonic ester alkylation
   ---
-  duration_ms: 118.113599
+  duration_ms: 115.695341
   type: 'test'
   ...
 # Subtest: fixed bridgeheads are not unspecified stereocentres: the Robinson tropinone synthesis
 ok 30 - fixed bridgeheads are not unspecified stereocentres: the Robinson tropinone synthesis
   ---
-  duration_ms: 172.496894
+  duration_ms: 228.436631
   type: 'test'
   ...
 # Subtest: racemic in, racemic out: α-pinene without descriptors makes camphene racemic
 ok 31 - racemic in, racemic out: α-pinene without descriptors makes camphene racemic
   ---
-  duration_ms: 81.041379
+  duration_ms: 129.605293
   type: 'test'
   ...
 # Subtest: an unbalanced step gets advice from its actual difference
 ok 32 - an unbalanced step gets advice from its actual difference
   ---
-  duration_ms: 63.573125
+  duration_ms: 93.929952
   type: 'test'
   ...
 # Subtest: stereo that cannot reach the target is not required; a target requested with stereo keeps every step strict
 ok 33 - stereo that cannot reach the target is not required; a target requested with stereo keeps every step strict
   ---
-  duration_ms: 440.973859
+  duration_ms: 486.291206
   type: 'test'
   ...
 # Subtest: hydrogenation with H2 is checked, and a permanganate oxidation needing 14 water balances
 ok 34 - hydrogenation with H2 is checked, and a permanganate oxidation needing 14 water balances
   ---
-  duration_ms: 79.566364
+  duration_ms: 132.898284
   type: 'test'
   ...
 # Subtest: a step that cannot be parsed names the offending species
 ok 35 - a step that cannot be parsed names the offending species
   ---
-  duration_ms: 8.914633
+  duration_ms: 10.938629
   type: 'test'
   ...
 # Subtest: an empty extra field in a reaction SMILES is tolerated, not rejected
 ok 36 - an empty extra field in a reaction SMILES is tolerated, not rejected
   ---
-  duration_ms: 17.46756
+  duration_ms: 25.697375
   type: 'test'
   ...
 # Subtest: a reaction written with one separator is read as having no agents
 ok 37 - a reaction written with one separator is read as having no agents
   ---
-  duration_ms: 11.777964
+  duration_ms: 18.388908
   type: 'test'
   ...
 # Subtest: catalysts and solvents are drawn above the arrow
 ok 38 - catalysts and solvents are drawn above the arrow
   ---
-  duration_ms: 5223.341004
+  duration_ms: 5774.88704
   type: 'test'
   ...
 # Subtest: carbon-free reagents are written as formula text, organic species stay drawn
 ok 39 - carbon-free reagents are written as formula text, organic species stay drawn
   ---
-  duration_ms: 1756.752128
+  duration_ms: 1708.238685
   type: 'test'
   ...
 # Subtest: a declared racemic step is drawn with its open centre instead of refused
 ok 40 - a declared racemic step is drawn with its open centre instead of refused
   ---
-  duration_ms: 3471.457524
+  duration_ms: 3048.178163
   type: 'test'
   ...
 # Subtest: an accepted step is drawn with an open reactant centre, without a caveat
 ok 41 - an accepted step is drawn with an open reactant centre, without a caveat
   ---
-  duration_ms: 5672.525747
+  duration_ms: 5102.045609
   type: 'test'
   ...
 # Subtest: openStereo draws an open product centre without the racemic caveat
 ok 42 - openStereo draws an open product centre without the racemic caveat
   ---
-  duration_ms: 40.839781
+  duration_ms: 42.34896
   type: 'test'
   ...
 # Subtest: a step whose species has an open double bond is drawn, not refused
 ok 43 - a step whose species has an open double bond is drawn, not refused
   ---
-  duration_ms: 8011.785569
+  duration_ms: 7497.973907
   type: 'test'
   ...
 # Subtest: a step with a species the ChemFig dialect cannot render still draws, as formula text
 ok 44 - a step with a species the ChemFig dialect cannot render still draws, as formula text
   ---
-  duration_ms: 5413.192506
+  duration_ms: 5588.824008
   type: 'test'
   ...
 # Subtest: a structure the request left under-specified is drawn with open centres
 ok 45 - a structure the request left under-specified is drawn with open centres
   ---
-  duration_ms: 10.2434
+  duration_ms: 10.193876
   type: 'test'
   ...
 # Subtest: step conditions are written beneath the arrow, and dropped rather than fail the drawing
 ok 46 - step conditions are written beneath the arrow, and dropped rather than fail the drawing
   ---
-  duration_ms: 2957.647195
+  duration_ms: 2829.322305
   type: 'test'
   ...
 # Subtest: a common inorganic reagent is labelled in the formula a chemist writes
 ok 47 - a common inorganic reagent is labelled in the formula a chemist writes
   ---
-  duration_ms: 20.73948
+  duration_ms: 25.765935
   type: 'test'
   ...
 # Subtest: a declared racemate is reported, not refused, when a centre is left open on purpose
 ok 48 - a declared racemate is reported, not refused, when a centre is left open on purpose
   ---
-  duration_ms: 38.131119
+  duration_ms: 31.518255
   type: 'test'
   ...
 # Subtest: a convergent route is continuous when independent branches feed one step
 ok 49 - a convergent route is continuous when independent branches feed one step
   ---
-  duration_ms: 58.917138
+  duration_ms: 48.341396
   type: 'test'
   ...
 # Subtest: water made in one step and used in another does not connect them
 ok 50 - water made in one step and used in another does not connect them
   ---
-  duration_ms: 50.572628
+  duration_ms: 44.010231
   type: 'test'
   ...
 # Subtest: a spectator counterion does not connect two steps
 ok 51 - a spectator counterion does not connect two steps
   ---
-  duration_ms: 142.897538
+  duration_ms: 110.393838
   type: 'test'
   ...
 # Subtest: a step that only prepares an inorganic reagent still feeds the step that uses it
 ok 52 - a step that only prepares an inorganic reagent still feeds the step that uses it
   ---
-  duration_ms: 63.861105
+  duration_ms: 71.979844
   type: 'test'
   ...
 # Subtest: a named target must be formed by the route, with its stereochemistry
 ok 53 - a named target must be formed by the route, with its stereochemistry
   ---
-  duration_ms: 136.012567
+  duration_ms: 161.662355
   type: 'test'
   ...
 # Subtest: the same constitution with different stereochemistry is not the same intermediate
 ok 54 - the same constitution with different stereochemistry is not the same intermediate
   ---
-  duration_ms: 22.525329
+  duration_ms: 33.229756
   type: 'test'
   ...
 # Subtest: a declared carrier is checked by identity, and unspecified stereochemistry is reported
 ok 55 - a declared carrier is checked by identity, and unspecified stereochemistry is reported
   ---
-  duration_ms: 73.854894
+  duration_ms: 89.028677
   type: 'test'
   ...
 # Subtest: an identity that no reference supports is not drawn from the model instead
 ok 56 - an identity that no reference supports is not drawn from the model instead
   ---
-  duration_ms: 2.122214
+  duration_ms: 2.150467
   type: 'test'
   ...
 # Subtest: when the verified lane abstains, a fallback drawing is labelled unverified everywhere
 ok 57 - when the verified lane abstains, a fallback drawing is labelled unverified everywhere
   ---
-  duration_ms: 2.537121
+  duration_ms: 2.488658
   type: 'test'
   ...
 # Subtest: a direct compile with no chat node does not spend a model call on a fallback
 ok 58 - a direct compile with no chat node does not spend a model call on a fallback
   ---
-  duration_ms: 0.771727
+  duration_ms: 0.698366
   type: 'test'
   ...
 # Subtest: a drawing intent written as ordinary JSON is adopted, and two of them are refused
 ok 59 - a drawing intent written as ordinary JSON is adopted, and two of them are refused
   ---
-  duration_ms: 0.716692
+  duration_ms: 0.709091
   type: 'test'
   ...
 # Subtest: only one plan is drawn per reply, and a truncated one is not run
 ok 60 - only one plan is drawn per reply, and a truncated one is not run
   ---
-  duration_ms: 0.265135
+  duration_ms: 0.300699
   type: 'test'
   ...
 # Subtest: what the model may see later is the identities, never the picture
 ok 61 - what the model may see later is the identities, never the picture
   ---
-  duration_ms: 7.97315
+  duration_ms: 7.768693
   type: 'test'
   ...
 # Subtest: the worker satisfies the capability contract it declares
 ok 62 - the worker satisfies the capability contract it declares
   ---
-  duration_ms: 36.74246
+  duration_ms: 52.187556
   type: 'test'
   ...
 # Subtest: the migration adopts the outcome log the built-in kept
 ok 63 - the migration adopts the outcome log the built-in kept
   ---
-  duration_ms: 0.537889
+  duration_ms: 0.728673
   type: 'test'
   ...
 # Subtest: a log the package has already written is not replaced by an older one
 ok 64 - a log the package has already written is not replaced by an older one
   ---
-  duration_ms: 0.358192
+  duration_ms: 0.207506
   type: 'test'
   ...
 # Subtest: a diagnostic log that cannot be written never fails the migration
 ok 65 - a diagnostic log that cannot be written never fails the migration
   ---
-  duration_ms: 0.238549
+  duration_ms: 0.244453
   type: 'test'
   ...
 # Subtest: a drawing and a warning saved by the built-in still render
 ok 66 - a drawing and a warning saved by the built-in still render
   ---
-  duration_ms: 7.333384
+  duration_ms: 11.621309
   type: 'test'
   ...
 # Subtest: a lone pair is counted, never supplied
 ok 67 - a lone pair is counted, never supplied
   ---
-  duration_ms: 0.784912
+  duration_ms: 1.314517
   type: 'test'
   ...
 # Subtest: a tetrahedral centre that wedges nothing is given a perspective
 ok 68 - a tetrahedral centre that wedges nothing is given a perspective
   ---
-  duration_ms: 0.563415
+  duration_ms: 0.892635
   type: 'test'
   ...
 # Subtest: a depiction that was asked for is the one that is drawn
 ok 69 - a depiction that was asked for is the one that is drawn
   ---
-  duration_ms: 0.802565
+  duration_ms: 0.861221
   type: 'test'
   ...
 # Subtest: the coefficients are solved, not taken on trust
 ok 70 - the coefficients are solved, not taken on trust
   ---
-  duration_ms: 0.383945
+  duration_ms: 0.709816
   type: 'test'
   ...
 # Subtest: a metal reagent that comes out at zero is never advised deleted
 ok 71 - a metal reagent that comes out at zero is never advised deleted
   ---
-  duration_ms: 1.960156
+  duration_ms: 2.631371
   type: 'test'
   ...
 # Subtest: a species on both sides that takes part is balanced by its net amount
 ok 72 - a species on both sides that takes part is balanced by its net amount
   ---
-  duration_ms: 1.854925
+  duration_ms: 2.881468
   type: 'test'
   ...
 # Subtest: an agent takes no part in the balance
 ok 73 - an agent takes no part in the balance
   ---
-  duration_ms: 0.204887
+  duration_ms: 0.405319
   type: 'test'
   ...
 # Subtest: a counterion carried on both sides cancels instead of making the equation ambiguous
 ok 74 - a counterion carried on both sides cancels instead of making the equation ambiguous
   ---
-  duration_ms: 0.352526
+  duration_ms: 0.4744
   type: 'test'
   ...
 # Subtest: what cannot be balanced says what is missing
 ok 75 - what cannot be balanced says what is missing
   ---
-  duration_ms: 2.001248
+  duration_ms: 2.069349
   type: 'test'
   ...
 # Subtest: the route checker confirms a supplied IUPAC name denotes the structure it was written beside
 ok 76 - the route checker confirms a supplied IUPAC name denotes the structure it was written beside
   ---
-  duration_ms: 31.482936
+  duration_ms: 30.402413
   type: 'test'
   ...
 # Subtest: a name that denotes a different compound is refused like an unbalanced step
 ok 77 - a name that denotes a different compound is refused like an unbalanced step
   ---
-  duration_ms: 21.7329
+  duration_ms: 28.945245
   type: 'test'
   ...
 # Subtest: a declared name that is not systematic is reported without being called IUPAC
 ok 78 - a declared name that is not systematic is reported without being called IUPAC
   ---
-  duration_ms: 23.988482
+  duration_ms: 28.451038
   type: 'test'
   ...
 # Subtest: a structure left partly undrawn has its name left unchecked, not called a mismatch
 ok 79 - a structure left partly undrawn has its name left unchecked, not called a mismatch
   ---
-  duration_ms: 29.822507
+  duration_ms: 34.834326
   type: 'test'
   ...
 # Subtest: a refused SMILES names the delimiter that is wrong, not just that RDKit refused
 ok 80 - a refused SMILES names the delimiter that is wrong, not just that RDKit refused
   ---
-  duration_ms: 2.266747
+  duration_ms: 2.983439
   type: 'test'
   ...
 # Subtest: the two species real runs were refused for are each diagnosed down to the count
 ok 81 - the two species real runs were refused for are each diagnosed down to the count
   ---
-  duration_ms: 1.119627
+  duration_ms: 2.249922
   type: 'test'
   ...
 # Subtest: an unresolvable name is reported as unchecked, never as a disagreement
 ok 82 - an unresolvable name is reported as unchecked, never as a disagreement
   ---
-  duration_ms: 19.673092
+  duration_ms: 23.73825
   type: 'test'
   ...
 # Subtest: a byproduct label is carried through onto the product side
 ok 83 - a byproduct label is carried through onto the product side
   ---
-  duration_ms: 31.444152
+  duration_ms: 41.795823
   type: 'test'
   ...
 # Subtest: resolve-names prefers PubChem and does not let OPSIN override a curated record
 ok 84 - resolve-names prefers PubChem and does not let OPSIN override a curated record
   ---
-  duration_ms: 217.369149
+  duration_ms: 214.193749
   type: 'test'
   ...
 # Subtest: resolve-names falls back to OPSIN when PubChem has no exact match
 ok 85 - resolve-names falls back to OPSIN when PubChem has no exact match
   ---
-  duration_ms: 192.131749
+  duration_ms: 195.646407
   type: 'test'
   ...
 # Subtest: a salt name that resolves to unbalanced charges is refused with feedback
 ok 86 - a salt name that resolves to unbalanced charges is refused with feedback
   ---
-  duration_ms: 409.515621
+  duration_ms: 410.808176
   type: 'test'
   ...
 # Subtest: "hydrogen" resolves to dihydrogen, not the hydrogen atom
 ok 87 - "hydrogen" resolves to dihydrogen, not the hydrogen atom
   ---
-  duration_ms: 192.605971
+  duration_ms: 188.933824
   type: 'test'
   ...
 # Subtest: a covalent metal oxide returned as bare ions resolves to the covalent oxide (CrO3, OsO4)
 ok 88 - a covalent metal oxide returned as bare ions resolves to the covalent oxide (CrO3, OsO4)
   ---
-  duration_ms: 610.933793
+  duration_ms: 618.645822
   type: 'test'
   ...
 # Subtest: an ambiguous PubChem match and a partial OPSIN parse are reported with feedback
 ok 89 - an ambiguous PubChem match and a partial OPSIN parse are reported with feedback
   ---
-  duration_ms: 386.336734
+  duration_ms: 376.451176
   type: 'test'
   ...
 # Subtest: an entirely unknown name is unresolved with feedback, and duplicates are resolved once
 ok 90 - an entirely unknown name is unresolved with feedback, and duplicates are resolved once
   ---
-  duration_ms: 199.666575
+  duration_ms: 199.179008
   type: 'test'
   ...
 # Subtest: resolve-names rejects an empty request
 ok 91 - resolve-names rejects an empty request
   ---
-  duration_ms: 0.673644
+  duration_ms: 0.497886
   type: 'test'
   ...
 # Subtest: resolve-names returns the canonical isomeric SMILES, not the reference writing
 ok 92 - resolve-names returns the canonical isomeric SMILES, not the reference writing
   ---
-  duration_ms: 412.913019
+  duration_ms: 418.52347
   type: 'test'
   ...
 # Subtest: the route label check reuses the resolve pass and does not hit the network twice
 ok 93 - the route label check reuses the resolve pass and does not hit the network twice
   ---
-  duration_ms: 415.581047
+  duration_ms: 403.523295
   type: 'test'
   ...
 # Subtest: resolve-structure names a structure PubChem holds and canonicalises it
 ok 94 - resolve-structure names a structure PubChem holds and canonicalises it
   ---
-  duration_ms: 389.131675
+  duration_ms: 397.1158
   type: 'test'
   ...
 # Subtest: resolve-structure leaves a structure PubChem does not hold unnamed, with its canonical form
 ok 95 - resolve-structure leaves a structure PubChem does not hold unnamed, with its canonical form
   ---
-  duration_ms: 195.971299
+  duration_ms: 200.063344
   type: 'test'
   ...
 # Subtest: resolve-structure remembers a name it was given, and never remembers a miss
 ok 96 - resolve-structure remembers a name it was given, and never remembers a miss
   ---
-  duration_ms: 1002.218299
+  duration_ms: 988.456456
   type: 'test'
   ...
 # Subtest: a local PubChem mirror answers lookups it is sure of, and the network still answers the rest
 ok 97 - a local PubChem mirror answers lookups it is sure of, and the network still answers the rest
   ---
-  duration_ms: 414.412954
+  duration_ms: 408.728932
   type: 'test'
   ...
 # Subtest: a local OPSIN answers names by the web service rules: a warning still means unresolved
 ok 98 - a local OPSIN answers names by the web service rules: a warning still means unresolved
   ---
-  duration_ms: 588.885747
+  duration_ms: 590.849895
   type: 'test'
   ...
 # Subtest: the local OPSIN wrapper runs and reports warnings per name (needs CHEMISTRY_TEST_PYTHON and a local OPSIN)
 ok 99 - the local OPSIN wrapper runs and reports warnings per name (needs CHEMISTRY_TEST_PYTHON and a local OPSIN) # SKIP
   ---
-  duration_ms: 0.319498
+  duration_ms: 0.182905
   type: 'test'
   ...
 # Subtest: the Python mirror lookup answers only what it is sure of (needs CHEMISTRY_TEST_PYTHON)
 ok 100 - the Python mirror lookup answers only what it is sure of (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 190.432485
+  duration_ms: 279.438385
   type: 'test'
   ...
 # Subtest: PubChem's throttling is obeyed: a refusal stops all requests, and a Yellow grade slows them
 ok 101 - PubChem's throttling is obeyed: a refusal stops all requests, and a Yellow grade slows them
   ---
-  duration_ms: 1459.713951
+  duration_ms: 1449.811867
   type: 'test'
   ...
 # Subtest: local references only: no request leaves the machine, and the local sources still answer
 ok 102 - local references only: no request leaves the machine, and the local sources still answer
   ---
-  duration_ms: 38.718869
+  duration_ms: 36.07522
   type: 'test'
   ...
 # Subtest: resolve-structure rejects an empty request
 ok 103 - resolve-structure rejects an empty request
   ---
-  duration_ms: 0.610341
+  duration_ms: 0.400267
   type: 'test'
   ...
 # Subtest: the per-step species cap is a generous backstop, not the old 12
 ok 104 - the per-step species cap is a generous backstop, not the old 12
   ---
-  duration_ms: 269.321892
+  duration_ms: 245.865407
   type: 'test'
   ...
 # Subtest: a shared counterion written once per side balances uniquely; repeated tokens do not
 ok 105 - a shared counterion written once per side balances uniquely; repeated tokens do not
   ---
-  duration_ms: 1440.650853
+  duration_ms: 1312.480376
   type: 'test'
   ...
 # Subtest: a step that inverts a stereocentre is refused, though its equation balances
 ok 106 - a step that inverts a stereocentre is refused, though its equation balances
   ---
-  duration_ms: 108.460239
+  duration_ms: 95.12051
   type: 'test'
   ...
 # Subtest: creating a stereocentre is not reported as an inversion
 ok 107 - creating a stereocentre is not reported as an inversion
   ---
-  duration_ms: 33.637553
+  duration_ms: 28.798915
   type: 'test'
   ...
 # Subtest: a salt name prefers the reference that shows the metal as an ion
 ok 108 - a salt name prefers the reference that shows the metal as an ion
   ---
-  duration_ms: 212.413724
+  duration_ms: 210.675463
   type: 'test'
   ...
 # Subtest: a metal name keeps PubChem when both references show the metal as an ion
 ok 109 - a metal name keeps PubChem when both references show the metal as an ion
   ---
-  duration_ms: 395.770255
+  duration_ms: 397.49377
   type: 'test'
   ...
 # Subtest: a name without a metal is still PubChem-first
 ok 110 - a name without a metal is still PubChem-first
   ---
-  duration_ms: 402.188116
+  duration_ms: 404.03928
   type: 'test'
   ...
 # Subtest: a diatomic element answers the same whatever the references say
 ok 111 - a diatomic element answers the same whatever the references say
   ---
-  duration_ms: 6.610468
+  duration_ms: 6.237908
   type: 'test'
   ...
 # Subtest: when only one reference resolves a metal name, that one is used
 ok 112 - when only one reference resolves a metal name, that one is used
   ---
-  duration_ms: 191.385556
+  duration_ms: 193.42841
   type: 'test'
   ...
 # Subtest: a solution that zeroes the principal species is not reported as an idle molecule to delete
 ok 113 - a solution that zeroes the principal species is not reported as an idle molecule to delete
   ---
-  duration_ms: 20.613541
+  duration_ms: 28.858144
   type: 'test'
   ...
 # Subtest: a spurious byproduct is still named however heavy it is
 ok 114 - a spurious byproduct is still named however heavy it is
   ---
-  duration_ms: 34.798926
+  duration_ms: 40.329065
   type: 'test'
   ...
 # Subtest: a cumulated system is refused only when both of its ends could twist — carbodiimides pass
 ok 115 - a cumulated system is refused only when both of its ends could twist — carbodiimides pass
   ---
-  duration_ms: 34.290723
+  duration_ms: 24.604438
   type: 'test'
   ...
 # Subtest: a bare counterion does not downgrade the document, but a bonded out-of-set element does
 ok 116 - a bare counterion does not downgrade the document, but a bonded out-of-set element does
   ---
-  duration_ms: 13.274709
+  duration_ms: 14.186727
   type: 'test'
   ...
 # Subtest: an unbalanced step names an Agent that carries the missing atoms
 ok 117 - an unbalanced step names an Agent that carries the missing atoms
   ---
-  duration_ms: 53.604369
+  duration_ms: 42.12362
   type: 'test'
   ...
 # Subtest: a balanced step reports the coefficients it solved
 ok 118 - a balanced step reports the coefficients it solved
   ---
-  duration_ms: 29.304742
+  duration_ms: 24.757931
   type: 'test'
   ...
 # Subtest: a step that would assemble product molecules from more than one substrate is refused
 ok 119 - a step that would assemble product molecules from more than one substrate is refused
   ---
-  duration_ms: 35.758519
+  duration_ms: 24.87932
   type: 'test'
   ...
 # Subtest: per-molecule packing accepts a real decarboxylation, a rearrangement and a coupling
 ok 120 - per-molecule packing accepts a real decarboxylation, a rearrangement and a coupling
   ---
-  duration_ms: 62.649397
+  duration_ms: 42.333631
   type: 'test'
   ...
 # Subtest: a symmetric reaction is not refused by the per-molecule packing
 ok 121 - a symmetric reaction is not refused by the per-molecule packing
   ---
-  duration_ms: 67.858582
+  duration_ms: 62.138091
   type: 'test'
   ...
 # Subtest: a step with several balanced equations takes the smallest that uses every species
 ok 122 - a step with several balanced equations takes the smallest that uses every species
   ---
-  duration_ms: 53.990059
+  duration_ms: 75.7721
   type: 'test'
   ...
 # Subtest: only the species a step makes must specify their stereochemistry
 ok 123 - only the species a step makes must specify their stereochemistry
   ---
-  duration_ms: 32.749769
+  duration_ms: 42.700547
   type: 'test'
   ...
 # Subtest: the synthesis instructions defer to the contract the application appends
 ok 124 - the synthesis instructions defer to the contract the application appends
   ---
-  duration_ms: 0.652232
+  duration_ms: 0.772427
   type: 'test'
   ...
 # Subtest: a reaction scheme is drawn in the element palette while its exported source stays plain
 ok 125 - a reaction scheme is drawn in the element palette while its exported source stays plain
   ---
-  duration_ms: 11158.416621
+  duration_ms: 10694.146826
   type: 'test'
   ...
 # Subtest: a reaction scheme is skeletal: carbons are bare vertices, labels only where a reader needs them
 ok 126 - a reaction scheme is skeletal: carbons are bare vertices, labels only where a reader needs them
   ---
-  duration_ms: 4543.008306
+  duration_ms: 4600.440638
   type: 'test'
   ...
-# [06:53:58] SMARTS Parse Error: syntax error while parsing: not
-# [06:53:58] SMARTS Parse Error: check for mistakes around position 3:
-# [06:53:58] not
-# [06:53:58] ~~^
-# [06:53:58] SMARTS Parse Error: Failed parsing SMARTS 'not' for input: 'not'
+# [07:25:25] SMARTS Parse Error: syntax error while parsing: not
+# [07:25:25] SMARTS Parse Error: check for mistakes around position 3:
+# [07:25:25] not
+# [07:25:25] ~~^
+# [07:25:25] SMARTS Parse Error: Failed parsing SMARTS 'not' for input: 'not'
 # Subtest: a salt written as its ions is one species, so a verified step with salts on both sides still draws
 ok 127 - a salt written as its ions is one species, so a verified step with salts on both sides still draws
   ---
-  duration_ms: 7346.549244
+  duration_ms: 7515.770089
   type: 'test'
   ...
 # Subtest: an unbuilt step keeps its place, so later steps keep their numbers
 ok 128 - an unbuilt step keeps its place, so later steps keep their numbers
   ---
-  duration_ms: 23.480913
+  duration_ms: 24.447071
   type: 'test'
   ...
 # Subtest: a synthesis route draws its target even when the route names a mechanism or a dehydration
 ok 129 - a synthesis route draws its target even when the route names a mechanism or a dehydration
   ---
-  duration_ms: 11.345219
+  duration_ms: 13.366656
   type: 'test'
   ...
 # Subtest: check-stock sends the stock directory and molecules to the worker and counts the hits
 ok 130 - check-stock sends the stock directory and molecules to the worker and counts the hits
   ---
-  duration_ms: 0.955153
+  duration_ms: 1.121186
   type: 'test'
   ...
 # Subtest: propose-disconnections passes the stock directory only when given
 ok 131 - propose-disconnections passes the stock directory only when given
   ---
-  duration_ms: 0.481594
+  duration_ms: 0.578513
   type: 'test'
   ...
 # Subtest: propose-disconnections keeps the templates that proposed each disconnection
 ok 132 - propose-disconnections keeps the templates that proposed each disconnection
   ---
-  duration_ms: 1.370629
+  duration_ms: 1.38205
   type: 'test'
   ...
 # Subtest: search-routes sends every index, the target and the budget to the worker and summarises the routes
 ok 133 - search-routes sends every index, the target and the budget to the worker and summarises the routes
   ---
-  duration_ms: 1.280902
+  duration_ms: 1.291038
   type: 'test'
   ...
 # Subtest: a solid-phase-length route (80 steps) is checked whole; 97 steps are refused
 ok 134 - a solid-phase-length route (80 steps) is checked whole; 97 steps are refused
   ---
-  duration_ms: 947.961467
+  duration_ms: 1134.611816
   type: 'test'
   ...
 # Subtest: known-reactions and propose-disconnections pass the precedents' conditions through
 ok 135 - known-reactions and propose-disconnections pass the precedents' conditions through
   ---
-  duration_ms: 0.837924
+  duration_ms: 0.819187
   type: 'test'
   ...
 # Subtest: the Python worker attaches conditions from conditions.tsv.zst (needs CHEMISTRY_TEST_PYTHON)
 ok 136 - the Python worker attaches conditions from conditions.tsv.zst (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 166.291784
+  duration_ms: 200.096003
   type: 'test'
   ...
 # Subtest: the index is read only as far as a request needs it, and the template screen is cached (needs CHEMISTRY_TEST_PYTHON)
 ok 137 - the index is read only as far as a request needs it, and the template screen is cached (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 338.036504
+  duration_ms: 362.846417
   type: 'test'
   ...
 # Subtest: a stock import writes first-block lists; the stock check reports the same compound in another form (needs CHEMISTRY_TEST_PYTHON)
 ok 138 - a stock import writes first-block lists; the stock check reports the same compound in another form (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 710.029216
+  duration_ms: 614.787775
   type: 'test'
   ...
 # Subtest: check-compatibility sends the steps and textbook directory to the worker and counts the hazards
 ok 139 - check-compatibility sends the steps and textbook directory to the worker and counts the hazards
   ---
-  duration_ms: 1.116714
+  duration_ms: 1.150426
   type: 'test'
   ...
 # Subtest: the Python compatibility check flags clashes and leaves clean steps alone (needs CHEMISTRY_TEST_PYTHON)
 ok 140 - the Python compatibility check flags clashes and leaves clean steps alone (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 212.477962
+  duration_ms: 231.529203
   type: 'test'
   ...
 # Subtest: the inspection reports the configuration next to a free acid's nitrogen-bearing centre
 ok 141 - the inspection reports the configuration next to a free acid's nitrogen-bearing centre
   ---
-  duration_ms: 427.128536
+  duration_ms: 400.330072
   type: 'test'
   ...
 # Subtest: a species with no such centre carries no configuration
 ok 142 - a species with no such centre carries no configuration
   ---
-  duration_ms: 35.078285
+  duration_ms: 36.518147
   type: 'test'
   ...
 # Subtest: an open centre is reported as unassigned rather than guessed
 ok 143 - an open centre is reported as unassigned rather than guessed
   ---
-  duration_ms: 5.928127
+  duration_ms: 6.6235
   type: 'test'
   ...
 # Subtest: an Agent that would balance the step exactly is named with the count, and one that would not is only a suggestion
 ok 144 - an Agent that would balance the step exactly is named with the count, and one that would not is only a suggestion
   ---
-  duration_ms: 46.638159
+  duration_ms: 43.984209
   type: 'test'
   ...
 # Subtest: loose ions give the solver free coefficients, so a wrong equation can balance
 ok 145 - loose ions give the solver free coefficients, so a wrong equation can balance
   ---
-  duration_ms: 358.506801
+  duration_ms: 280.87369
   type: 'test'
   ...
 # Subtest: a species declared as one salt takes one coefficient, not one per ion
 ok 146 - a species declared as one salt takes one coefficient, not one per ion
   ---
-  duration_ms: 83.161272
+  duration_ms: 75.089996
   type: 'test'
   ...
 # Subtest: two salts sharing an ion balance from their declared stoichiometry, not the solver's guess
 ok 147 - two salts sharing an ion balance from their declared stoichiometry, not the solver's guess
   ---
-  duration_ms: 163.893416
+  duration_ms: 130.216825
   type: 'test'
   ...
 # Subtest: an ester reduction is not classed as a hydrolysis (needs CHEMISTRY_TEST_PYTHON)
 ok 148 - an ester reduction is not classed as a hydrolysis (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 165.067937
+  duration_ms: 169.113467
   type: 'test'
   ...
 # Subtest: a reactant nothing accounts for is named, not silently refiled
 ok 149 - a reactant nothing accounts for is named, not silently refiled
   ---
-  duration_ms: 113.793435
+  duration_ms: 117.634058
   type: 'test'
   ...
 # Subtest: the unverified fallback is scoped to the plan, not to the whole request
 ok 150 - the unverified fallback is scoped to the plan, not to the whole request
   ---
-  duration_ms: 0.873962
+  duration_ms: 0.806482
   type: 'test'
   ...
 # Subtest: a target that specifies some centres and leaves others open can be formed
 ok 151 - a target that specifies some centres and leaves others open can be formed
   ---
-  duration_ms: 367.914879
+  duration_ms: 397.107607
   type: 'test'
   ...
 # Subtest: a stereocentre destroyed before the target is excused, whatever the target specifies
 ok 152 - a stereocentre destroyed before the target is excused, whatever the target specifies
   ---
-  duration_ms: 177.066004
+  duration_ms: 157.842333
   type: 'test'
   ...
 # Subtest: an inert atmosphere written as a lone atom is named
 ok 153 - an inert atmosphere written as a lone atom is named
   ---
-  duration_ms: 159.485677
+  duration_ms: 163.278068
   type: 'test'
   ...
 # Subtest: an over-long chat question is cut rather than failing the whole compile call
 ok 154 - an over-long chat question is cut rather than failing the whole compile call
   ---
-  duration_ms: 0.900223
+  duration_ms: 0.997356
   type: 'test'
   ...
 # Subtest: every derived cap stays inside what the schema advertises, and the two agree exactly
 ok 155 - every derived cap stays inside what the schema advertises, and the two agree exactly
   ---
-  duration_ms: 1.524915
+  duration_ms: 1.030192
   type: 'test'
   ...
 # Subtest: a cap never drops below the floor it has always had, and grows with the window
 ok 156 - a cap never drops below the floor it has always had, and grows with the window
   ---
-  duration_ms: 0.34732
+  duration_ms: 0.329483
   type: 'test'
   ...
 # Subtest: a route longer than the old 96-step ceiling is actually audited now, not refused
 ok 157 - a route longer than the old 96-step ceiling is actually audited now, not refused
   ---
-  duration_ms: 2268.205677
+  duration_ms: 2591.444098
   type: 'test'
   ...
 # Subtest: a named diatomic element resolves to its molecule, and nothing else does
 ok 158 - a named diatomic element resolves to its molecule, and nothing else does
   ---
-  duration_ms: 0.604786
+  duration_ms: 0.735655
   type: 'test'
   ...
 # Subtest: every Python call asks the host for a persistent interpreter
 ok 159 - every Python call asks the host for a persistent interpreter
   ---
-  duration_ms: 9.879031
+  duration_ms: 13.554997
   type: 'test'
   ...
 # Subtest: the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)
 ok 160 - the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)
   ---
-  duration_ms: 1088.626179
+  duration_ms: 1044.788278
   type: 'test'
   ...
 # Subtest: each tool declares at least the concurrency the application runs it at
 ok 161 - each tool declares at least the concurrency the application runs it at
   ---
-  duration_ms: 0.668915
+  duration_ms: 0.74198
   type: 'test'
   ...
 # Subtest: a name that found nothing is asked again by the next call to the same worker
 ok 162 - a name that found nothing is asked again by the next call to the same worker
   ---
-  duration_ms: 102.315106
+  duration_ms: 107.258457
   type: 'test'
   ...
 # Subtest: resolve-names answers a name this worker already resolved without asking the network again
 ok 163 - resolve-names answers a name this worker already resolved without asking the network again
   ---
-  duration_ms: 409.40842
+  duration_ms: 410.213554
   type: 'test'
   ...
-1..163
-# tests 163
+# Subtest: a failed Python call says why, and a silent fallback is logged
+ok 164 - a failed Python call says why, and a silent fallback is logged
+  ---
+  duration_ms: 204.928143
+  type: 'test'
+  ...
+1..164
+# tests 164
 # suites 0
-# pass 162
+# pass 163
 # fail 0
 # cancelled 0
 # skipped 1
 # todo 0
-# duration_ms 82774.802361
+# duration_ms 83037.680634

@@ -1,0 +1,56 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-11 applied first. Apply from the repository root with: git apply 12-worker-log-sink.patch
+diff --git a/electron/capabilities/workerHost.ts b/electron/capabilities/workerHost.ts
+index 5e55fcfd..66114768 100644
+--- a/electron/capabilities/workerHost.ts
++++ b/electron/capabilities/workerHost.ts
+@@ -298,7 +298,10 @@ export class CapabilityWorkerHandle {
+           else pending.reject(message.code === 'cancelled' ? new DOMException(message.error, 'AbortError') : new Error(message.error));
+           return;
+         }
+-        if (message.type === 'log') { this.options.onLog?.(this.runtime, message); return; }
++        // Written to the main log when nobody asked for them: no caller ever passed `onLog`, and a
++        // worker has no other way out (its stdio is ignored), so every line a capability logged
++        // about a fallback it took was dropped here.
++        if (message.type === 'log') { (this.options.onLog ?? writeWorkerLog)(this.runtime, message); return; }
+         if (message.type === 'host-call') void this.serveHostCall(message.callId, message.channel, message.method, message.payload, message.parentCallId);
+       });
+       child.once('error', error => { fail(new Error(String(error))); this.teardown(new Error(String(error))); });
+@@ -356,6 +359,12 @@ export class CapabilityWorkerHandle {
+   }
+ }
+ 
++function writeWorkerLog(runtime: TrustedWorkerRuntime, entry: CapabilityWorkerLog): void {
++  if (entry.level === 'debug') return;
++  const detail = entry.detail && Object.keys(entry.detail).length ? ` ${JSON.stringify(entry.detail)}` : '';
++  console[entry.level](`${new Date().toISOString()} [capability] ${runtime.capabilityId} ${entry.message}${detail}`);
++}
++
+ const handles = new Map<string, CapabilityWorkerHandle>();
+ 
+ /** One live worker per capability and digest. A package that updates gets a new key, so
+diff --git a/scripts/test-capability-worker-lifecycle.mjs b/scripts/test-capability-worker-lifecycle.mjs
+index f950aed0..bf7bf7ed 100644
+--- a/scripts/test-capability-worker-lifecycle.mjs
++++ b/scripts/test-capability-worker-lifecycle.mjs
+@@ -64,3 +64,21 @@ test('removing or updating a plugin stops the workers it started', async () => {
+   }
+   await survivor.stop();
+ });
++
++test('what a worker logs reaches the main log', async () => {
++  const runtime = { capabilityId: 'nodus:probe', plugin: { id: 'probe', version: '1.0.0', digest: 'b'.repeat(64) }, manifest: {}, entryPath: '/isolated/worker.cjs', permissions: {} };
++  const handle = new lib.CapabilityWorkerHandle(runtime, { bootstrapPath: '/isolated/bootstrap.cjs', services: async () => null });
++  const pending = handle.call('health', {});
++  const child = globalThis.__lifecycleChildren.at(-1);
++  ready(child, 'nodus:probe'); await tick();
++  const written = [];
++  const saved = console.warn;
++  console.warn = (...args) => written.push(args.join(' '));
++  try {
++    child.emit('message', { type: 'log', level: 'warn', message: 'local reference mirror unavailable', detail: { code: 1 } });
++  } finally { console.warn = saved; }
++  child.emit('message', { type: 'result', callId: child.messages.find(message => message.type === 'call').callId, ok: true, value: 'ok' });
++  await pending;
++  await handle.stop();
++  assert.ok(written.some(line => line.includes('nodus:probe') && line.includes('local reference mirror unavailable')), `logged: ${JSON.stringify(written)}`);
++});

@@ -1,0 +1,53 @@
+TAP version 13
+# node:internal/child_process/serialization:114
+#     ser.writeValue(message);
+#         ^
+# Error: () => 'a function cannot cross a process boundary' could not be cloned.
+#     at writeChannelMessage (node:internal/child_process/serialization:114:9)
+#     at target._send (node:internal/child_process:851:17)
+#     at target.send (node:internal/child_process:751:19)
+#     at port.postMessage (/tmp/nodus-worker-calls-vKZhA7/parent-port.cjs:4:39)
+#     at post (/tmp/nodus-worker-calls-vKZhA7/capabilityWorkerBootstrap.js:113:30)
+#     at currentCall.run.finally.then.post.type (/tmp/nodus-worker-calls-vKZhA7/capabilityWorkerBootstrap.js:254:16)
+#     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+# Node.js v22.22.0
+# Subtest: a result that cannot be sent fails its own call, not the process
+not ok 1 - a result that cannot be sent fails its own call, not the process
+  ---
+  duration_ms: 223.749334
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-worker-calls.mjs:130:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /could not be sent|cloned/. Input:
+    
+    'Error: nodus:probe exited (code 1).'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'nodus:probe exited (code 1).'
+  stack: |-
+    CapabilityWorkerHandle.teardown (/tmp/nodus-worker-calls-vKZhA7/host.cjs:543:29)
+    ChildProcess.<anonymous> (/tmp/nodus-worker-calls-vKZhA7/host.cjs:491:14)
+    Object.onceWrapper (node:events:634:26)
+    ChildProcess.emit (node:events:519:28)
+    ChildProcess._handle.onexit (node:internal/child_process:293:12)
+  operator: 'rejects'
+  stack: |-
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-worker-calls.mjs:134:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Error: Test "a result that cannot be sent fails its own call, not the process" at scripts/test-capability-worker-calls.mjs:130:1 generated asynchronous activity after the test ended. This activity created the error "Error: nodus:probe exited (code 1)." and would have caused the test to fail, but instead triggered an unhandledRejection event.
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 423.338681

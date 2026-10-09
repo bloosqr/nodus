@@ -1,5 +1,0 @@
-
-> nodus-research-skill-marketplace@0.0.0 typecheck
-> tsc --noEmit -p plugins/chemistry-studio/tsconfig.json
-
-typecheck EXIT 0

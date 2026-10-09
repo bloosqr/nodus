@@ -1,0 +1,44 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01-12 applied first. Apply from the repository root with: git apply 13-uncloneable-result-fails-its-call.patch
+diff --git a/electron/capabilities/workerBootstrap.ts b/electron/capabilities/workerBootstrap.ts
+index 7d78ba8c..3478639f 100644
+--- a/electron/capabilities/workerBootstrap.ts
++++ b/electron/capabilities/workerBootstrap.ts
+@@ -176,7 +176,13 @@ port.on('message', event => {
+     if (typeof implementation !== 'function') throw new Error(`This capability does not implement ${method}.`);
+     return implementation.call(worker, payload);
+   }).finally(() => callControllers.delete(callId)).then(
+-    value => post({ type: 'result', callId, ok: true, value }),
++    // A value the port cannot clone (a function, a class with private state) throws here, and
++    // unhandled that rejection ended the process — and every other call it was carrying. It is
++    // this call's failure, and it is reported as one.
++    value => {
++      try { post({ type: 'result', callId, ok: true, value }); }
++      catch (error) { post({ type: 'result', callId, ok: false, error: `The capability's result could not be sent to the application: ${error instanceof Error ? error.message : String(error)}` }); }
++    },
+     error => post({
+       type: 'result', callId, ok: false,
+       error: error instanceof Error ? error.message : String(error),
+diff --git a/scripts/test-capability-worker-calls.mjs b/scripts/test-capability-worker-calls.mjs
+index f0bf592e..2b55f66b 100644
+--- a/scripts/test-capability-worker-calls.mjs
++++ b/scripts/test-capability-worker-calls.mjs
+@@ -58,6 +58,7 @@ module.exports = host => ({
+       return { slept: input.ms, pid: process.pid, started, ended: Date.now() };
+     }
+     if (toolId === 'ask-host') return { answer: await host.storage.state.get('who') };
++    if (toolId === 'uncloneable') return { draw: () => 'a function cannot cross a process boundary' };
+     throw new Error('unknown tool');
+   },
+ });
+@@ -125,3 +126,11 @@ test('a tool runs no more invocations at once than its manifest concurrency, and
+   const [a, b] = await Promise.all([invoke(handle, 'sleep', { ms: 500 }, { queue }), invoke(handle, 'sleep', { ms: 500 }, { queue: { key: 'invoke:other', limit: 1 } })]);
+   assert.ok(b.started < a.ended && a.started < b.ended, 'calls to different tools were serialized');
+ });
++
++test('a result that cannot be sent fails its own call, not the process', async () => {
++  const handle = handleFor();
++  const neighbour = invoke(handle, 'sleep', { ms: 1_500 });
++  await new Promise(resolve => setTimeout(resolve, 200));
++  await assert.rejects(invoke(handle, 'uncloneable', {}, { timeoutMs: 10_000 }), /could not be sent|cloned/);
++  assert.equal((await neighbour).slept, 1_500, 'the call beside it was lost with the process');
++});

@@ -1,0 +1,10 @@
+npm run typecheck (tsc -p tsconfig.json && tsc -p electron/tsconfig.json) on a clean checkout of
+audit/2026-10-09 with patches 01-14 applied in order.
+
+Result: no errors except the two that come from the environment, identical on the unpatched base:
+
+electron/researchAttachments.ts(8,23): error TS2307: Cannot find module 'xlsx' or its corresponding type declarations.
+electron/researchAttachments.ts(140,41): error TS7006: Parameter 'name' implicitly has an 'any' type.
+
+(`xlsx` is fetched from cdn.sheetjs.com, which this environment's proxy refuses with 403, so
+`npm ci` was run with that one package removed from a local copy of package.json/package-lock.json.)
