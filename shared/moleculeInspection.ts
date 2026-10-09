@@ -55,7 +55,7 @@ export const MOLECULE_DOSSIER_SYSTEM_RULE = [
  *  intermediate that leaves one step has to be the exact molecule that enters the next. */
 export const ROUTE_CONTINUITY_SYSTEM_RULE = [
   'Synthesis route continuity: when you plan more than one reaction step, the intermediate carried from one step into the next must be written with the exact same systematic IUPAC name, including its stereodescriptors, in both places, so the application can confirm it is the same molecule.',
-  'Do not rename, re-protonate or otherwise rewrite a carried intermediate. If a structure genuinely changes between steps, say so explicitly and justify it; otherwise the route is rejected as discontinuous.',
+  'Do not rename, re-protonate or otherwise rewrite a carried intermediate. If a structure genuinely changes between steps (a protonation, a salt formation, a different stereoisomer), that change is a step of its own with its four labelled lines: the application compares structures, not explanations, and rejects a carried intermediate that differs however the prose justifies it.',
   'In a route, do not write a reaction SMILES or a reaction line: the application derives every structure and every balanced equation from the species names you list.',
 ].join(' ');
 
