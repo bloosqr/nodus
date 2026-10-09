@@ -1,12 +1,12 @@
-// A streamed delta must re-render only the answer that is streaming.
+// A streaming answer is repainted a few times a second, not once per delta.
 //
-// Study and World chats render their answers through `adapter.renderMessage`, which builds
-// fresh callback props (onStudyEvidence, onWorldEntry) on every call. Those defeat the memo on
-// ChatMarkdown and Markdown, so before the fix every delta re-ran react-markdown over every
-// earlier answer in the conversation: the cost of one delta grew with the whole history.
+// Each delta arrives as its own IPC message and used to call setMessages on its own, so the
+// timeline re-rendered and the growing answer's Markdown was re-parsed once per delta: work
+// quadratic in the answer's length. Streaming the first 60,000 characters of a real answer
+// from this library at 24 characters per delta cost 12.4 s of render time in jsdom.
 //
-// This mounts the real ResearchAssistantModal with a stub adapter, opens a stored
-// conversation, streams a reply and counts how often each earlier answer is rendered.
+// This mounts the real ResearchAssistantModal, delivers deltas one macrotask apart (as IPC
+// does) and counts how often the streaming answer is rendered.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -55,69 +55,63 @@ const bundle = build({
   loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty', '.webp': 'empty', '.jpg': 'empty', '.woff2': 'empty', '.woff': 'empty', '.ttf': 'empty', '.mp3': 'empty' },
   logLevel: 'silent',
 }).then(result => {
-  const module = new Module(path.join(root, 'scripts', 'chat-adapter-stream-render.cjs'));
+  const module = new Module(path.join(root, 'scripts', 'chat-stream-paint-batching.cjs'));
   module.paths = Module._nodeModulePaths(root);
   module._compile(result.outputFiles[0].text, module.id);
   return module.exports;
 });
 
-test('a streamed delta does not re-render the earlier answers of an adapter chat', async () => {
+test('deltas arriving faster than the paint interval are painted together', async () => {
   const { ResearchAssistantModal, ChatMarkdown } = await bundle;
   const React = require('react');
   const { act } = React;
   const { createRoot } = require('react-dom/client');
-
-  const stored = Array.from({ length: 6 }, (_, index) => [
-    { id: `u${index}`, role: 'user', content: `Question ${index}`, selectionKey: 'k' },
-    { id: `a${index}`, role: 'assistant', content: `## Answer ${index}\n\nSome **markdown** with a [link](https://example.org) and a table:\n\n| a | b |\n|---|---|\n| 1 | 2 |\n`, selectionKey: 'k' },
-  ]).flat();
-  const renders = new Map();
+  let streamingRenders = 0;
   let handlers = null;
   let finish = null;
   const adapter = {
     id: 'world', contextKey: 'k', canSend: true, subtitle: '', suggestions: [],
-    listConversations: async () => [{ id: 'c1', title: 'Stored', updatedAt: new Date().toISOString(), messageCount: stored.length }],
-    getConversation: async () => ({ id: 'c1', title: 'Stored', selection: null, messages: stored }),
+    listConversations: async () => [],
+    getConversation: async () => null,
     createConversation: async () => ({ id: 'c1' }),
     saveConversationMessages: async () => undefined,
     deleteConversation: async () => undefined,
     researchChatStream: (_request, h) => { handlers = h; return new Promise(resolve => { finish = resolve; }); },
     cancelResearchChat: async () => undefined,
-    // Like World and Study chat: a fresh callback prop on every call.
     renderMessage: (message, streaming) => {
-      renders.set(message.id, (renders.get(message.id) ?? 0) + 1);
-      return React.createElement(ChatMarkdown, { content: message.content, streaming, verify: false, onWorldEntry: kind => kind });
+      if (streaming) streamingRenders++;
+      return React.createElement(ChatMarkdown, { content: message.content, streaming, verify: false });
     },
   };
-
   const container = document.getElementById('root');
   const rootNode = createRoot(container);
-  await act(async () => {
-    rootNode.render(React.createElement(ResearchAssistantModal, {
-      settings, embedded: true, adapter,
-      initialConversationTarget: { surface: 'world', conversationId: 'c1', nonce: 1 },
-    }));
-  });
+  await act(async () => { rootNode.render(React.createElement(ResearchAssistantModal, { settings, embedded: true, adapter })); });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-  assert.ok(container.textContent.includes('Answer 5'), 'the stored conversation is on screen');
-
   const textarea = container.querySelector('textarea');
   const setValue = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set;
-  await act(async () => { setValue.call(textarea, 'Next question'); textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
+  await act(async () => { setValue.call(textarea, 'A question'); textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true })); });
   await act(async () => { textarea.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
-  assert.ok(handlers, 'the turn reached the adapter stream');
+  assert.ok(handlers, 'the turn reached the stream');
 
-  const before = renders.get('a0') ?? 0;
-  const DELTAS = 40;
+  // Outside act, like the real IPC: each delta is its own macrotask and React renders between them.
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+  const before = streamingRenders;
+  const DELTAS = 60;
   for (let index = 0; index < DELTAS; index++) {
-    await act(async () => { handlers.onDelta(`word${index} `); });
+    handlers.onDelta(`word${index} `);
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
   }
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 80)); });
-  const during = (renders.get('a0') ?? 0) - before;
-  assert.ok(container.textContent.includes(`word${DELTAS - 1}`), 'the streaming answer still shows every delta');
-  await act(async () => { finish({ answer: 'done' }); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const renders = streamingRenders - before;
+  const shown = container.textContent;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  await act(async () => { finish({ answer: Array.from({ length: DELTAS }, (_, index) => `word${index}`).join(' ') }); await new Promise(resolve => setTimeout(resolve, 20)); });
+  const settled = container.textContent;
   await act(async () => { rootNode.unmount(); });
 
-  assert.ok(during <= 2, `an earlier answer re-rendered ${during} times during ${DELTAS} deltas`);
+  assert.match(shown, new RegExp(`word0 word1 [\\s\\S]*word${DELTAS - 1}`), 'every delta reaches the screen');
+  assert.ok(renders <= DELTAS / 4, `the streaming answer rendered ${renders} times for ${DELTAS} deltas`);
+  assert.equal((settled.match(/word0 /g) ?? []).length, 1, 'the settled answer is not doubled by a late paint');
 });
