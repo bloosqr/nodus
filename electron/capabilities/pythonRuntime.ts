@@ -35,15 +35,24 @@ const MAX_WHEEL_BYTES = 256 * 1024 * 1024;
 // profile), then recheck READY: another capability may have completed it while we waited.
 const runtimeBuilds = new Map<string, Promise<void>>();
 
-async function withRuntimeLock<T>(root: string, action: () => Promise<T>): Promise<T> {
+async function withRuntimeLock<T>(root: string, action: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   const previous = runtimeBuilds.get(root) ?? Promise.resolve();
-  const result = previous.then(action);
+  // A caller cancelled while another build holds the lock leaves at once instead of waiting out
+  // that build (pip has fifteen minutes); its turn in the chain still passes, without running.
+  const result = previous.then(() => { signal?.throwIfAborted(); return action(); });
   const settled = result.then(() => {}, () => {});
   runtimeBuilds.set(root, settled);
+  void settled.then(() => { if (runtimeBuilds.get(root) === settled) runtimeBuilds.delete(root); });
+  if (!signal) return result;
+  let onAbort: (() => void) | undefined;
   try {
-    return await result;
+    return await Promise.race([result, new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(new DOMException('The runtime check was cancelled.', 'AbortError'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    })]);
   } finally {
-    if (runtimeBuilds.get(root) === settled) runtimeBuilds.delete(root);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -148,7 +157,7 @@ export async function ensurePythonRuntime(runtime: TrustedWorkerRuntime, runtime
   if (!lock) return { ready: false, detail: `This package publishes no pinned dependency set for Python ${minor} on ${process.platform}-${process.arch}.` };
   const lockDigest = createHash('sha256').update(JSON.stringify(lock)).digest('hex');
   const root = sharedRuntimeDir(lockDigest);
-  return withRuntimeLock(root, () => provisionPythonRuntime(pointer, root, lockDigest, lock, python, context));
+  return withRuntimeLock(root, () => provisionPythonRuntime(pointer, root, lockDigest, lock, python, context), context.signal);
 }
 
 async function provisionPythonRuntime(

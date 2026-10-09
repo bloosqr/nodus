@@ -252,3 +252,20 @@ test('a runtime found ready is not re-examined with three interpreter starts on 
     assert.equal(rebuilt.ready, false, 'a half-rebuilt environment is not reported ready from memory');
   } finally { process.env.PATH = savedPath; }
 });
+
+test('a runtime check cancelled while another call is building the environment leaves at once', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  // A lock no environment exists for yet: the first caller starts building it, and its download
+  // takes a while; the second caller queues behind it, then is cancelled.
+  const lock = { schemaVersion: 1, python: '3.12', platform: `${process.platform}-${process.arch}`, packages: [{ name: 'slow-1.0-py3-none-any.whl', requirement: 'slow==1.0', url: 'https://files.pythonhosted.org/packages/slow.whl', bytes: 1, sha256: 'd'.repeat(64) }] };
+  const ensure = (download, signal) => lib.ensurePythonRuntime(runtime, 'probe', { download, minVersion: '3.8', selectLock: () => lib.validateRuntimeLock(lock), signal });
+  const building = ensure(() => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('offline')), 3_000)), new AbortController().signal);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const controller = new AbortController();
+  const queued = ensure(async () => { throw new Error('must not download'); }, controller.signal);
+  setTimeout(() => controller.abort(), 100);
+  const started = Date.now();
+  await assert.rejects(Promise.race([queued, new Promise((_resolve, reject) => setTimeout(() => reject(new Error('still waiting for the other build')), 1_500))]), { name: 'AbortError' });
+  assert.ok(Date.now() - started < 1_000);
+  assert.equal((await building).ready, false);
+});
