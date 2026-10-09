@@ -248,6 +248,9 @@ export function ResearchAssistantModal({
   // without the stream overwriting the conversation they switched to.
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
+  // Bumped by every conversation load and by "new chat": a load whose answer arrives after a
+  // newer one started (two chats clicked in quick succession) must not replace it.
+  const loadSequenceRef = useRef(0);
 
   const availableModels = useMemo(() => {
     const models: ModelRef[] = [];
@@ -353,6 +356,7 @@ export function ResearchAssistantModal({
 
   const startNewConversation = () => {
     if (attachmentBusyRef.current) return;
+    loadSequenceRef.current++;
     setAttachments([]);
     setAttachmentError('');
     setSelection(current => { const { sourceFilter: _sourceFilter, notebookId: _notebookId, ...rest } = current; return rest; });
@@ -372,6 +376,7 @@ export function ResearchAssistantModal({
   useEffect(() => {
     if (!initialTarget || initialTarget.nonce === lastInitialTargetRef.current) return;
     lastInitialTargetRef.current = initialTarget.nonce;
+    loadSequenceRef.current++;
     setAttachments([]);
     setAttachmentError('');
     setActiveId(null);
@@ -386,13 +391,16 @@ export function ResearchAssistantModal({
 
   const loadConversation = async (id: string, messageId?: string | null, messageIndex?: number | null): Promise<boolean> => {
     if (attachmentBusyRef.current) return false;
+    const sequence = ++loadSequenceRef.current;
     const conversation = await api.getConversation(id);
+    if (sequence !== loadSequenceRef.current) return false;
     if (!conversation) {
       await refreshConversations();
       setConversationNotice(t('La conversación original ya no está disponible.'));
       return false;
     }
     const storedAttachments = await window.nodus.listResearchAttachments({ surface: attachmentSurface, conversationId: id });
+    if (sequence !== loadSequenceRef.current) return false;
     const referenced = new Set(conversation.messages.flatMap(message => message.attachments?.map(file => file.id) ?? []));
     setAttachments((storedAttachments ?? []).filter(file => !referenced.has(file.id)));
     setAttachmentError('');
