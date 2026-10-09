@@ -18,7 +18,7 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
   require.extensions['.ts'] = (mod, file) => {
     if (file === path.join(repoRoot, 'electron/ai/researchAssistant.ts')) {
       const compile = mod._compile;
-      mod._compile = (code, name) => compile.call(mod, code + '\nexports.testBuildPrompt = buildResearchChatPrompt;\nexports.testExecution = skillExecution;\n', name);
+      mod._compile = (code, name) => compile.call(mod, code + '\nexports.testBuildPrompt = buildResearchChatPrompt;\nexports.testExecution = skillExecution;\nexports.testFinalizeWithAudit = finalizeWithAudit;\n', name);
     }
     originalTs(mod, file);
   };
@@ -164,6 +164,25 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
     const payload = await build({ ...request, messages });
     assert.equal(payload.conversacion[0].content, request.messages[0].content);
     assert.equal(payload.conversacion.at(-1).content, fix.content);
+  });
+
+  test('a stop during the route check keeps the answer the reader was shown', async () => {
+    const original = molecule.resolveNamedRoute;
+    const controller = new AbortController();
+    molecule.resolveNamedRoute = async (_a, _b, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      queueMicrotask(() => controller.abort());
+    });
+    const execution = { ...research.testExecution(request), skills: [skill], routeTurn: true };
+    const raw = 'Step 1 prose.\n\n```chemistry-plan\n{"version":2,"kind":"structure","species":[]}\n```\n';
+    const shown = [];
+    const error = console.error; console.error = () => {};
+    try {
+      const final = await research.testFinalizeWithAudit(raw, execution, controller.signal, text => shown.push(text));
+      assert.ok(shown.length, 'the answer was repainted before the stop');
+      assert.equal(final, shown.at(-1), 'the stop keeps the repainted answer, not the raw draft');
+      assert.doesNotMatch(final, /```chemistry-plan/);
+    } finally { molecule.resolveNamedRoute = original; console.error = error; }
   });
 
   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {

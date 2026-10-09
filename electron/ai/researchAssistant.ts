@@ -256,9 +256,13 @@ async function withRouteEvidence(answer: string, execution: ReturnType<typeof sk
  *  the species the model proposed and the route check plus a drawing of every verified step.
  *  The audits are skipped when Chemistry Studio is disabled. */
 async function finalizeWithAudit(answer: string, execution: ReturnType<typeof skillExecution>, signal?: AbortSignal, onDeterministic?: (text: string) => void): Promise<string> {
+  let shown: string | undefined;
+  const paint = onDeterministic ? (text: string) => { shown = text; onDeterministic(text); } : undefined;
   try {
-    return await auditAnswer(answer, execution, signal, onDeterministic);
+    return await auditAnswer(answer, execution, signal, paint);
   } catch (error) {
+    // A stop during the checks keeps what the reader was already shown, not the raw draft.
+    if (signal?.aborted) return shown ?? answer;
     // A capability or worker failure must not discard the model's answer or kill the turn. Log
     // the real error: the IPC layer only surfaces a localized generic message otherwise.
     console.error('[research] audit pipeline failed; returning the model answer unchanged:', error);
