@@ -1,4 +1,4 @@
-# Repository: github.com/bloosqr/nodus-research-skill-marketplace (apply with git apply from the repository root, against audit/2026-10-09)
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
 diff --git a/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts b/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts
 index 8dbe638..96dcb10 100644
 --- a/plugins/chemistry-studio/src/engine/chemistryRouteAudit.ts

@@ -1,0 +1,90 @@
+# Repository: github.com/bloosqr/nodus. Apply with git apply from the repository root, against audit/2026-10-09.
+diff --git a/electron/ai/moleculeInspection.ts b/electron/ai/moleculeInspection.ts
+index 105a1f3c..59a7408b 100644
+--- a/electron/ai/moleculeInspection.ts
++++ b/electron/ai/moleculeInspection.ts
+@@ -270,6 +270,8 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps:
+     // here would corrupt the label it is displayed under.
+     ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, labelLimit) }))) } : {}),
+     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
++    // The label check resolves every name again: from the local mirror, for a package that reads it.
++    ...mirrorInput(provider, ROUTE_TOOL),
+   };
+   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
+   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'route-audit');
+@@ -723,7 +725,7 @@ const DRAW_CONCURRENCY = 2;
+  *  drawing, so only the view is kept. */
+ async function drawReaction(runner: Runner, provider: CapabilityProvider, reactionSmiles: string, extra: { conditions?: string; racemic?: boolean } = {}): Promise<string | null> {
+   const plan = JSON.stringify({ version: 2, kind: 'reaction', depiction: 'skeletal', reactionSmiles, openStereo: true, ...extra });
+-  const result = await runner.invoke({ provider, toolId: COMPILE_TOOL, input: { plan, question: reactionSmiles } });
++  const result = await runner.invoke({ provider, toolId: COMPILE_TOOL, input: { plan, question: reactionSmiles, ...mirrorInput(provider, COMPILE_TOOL) } });
+   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'chemistry-document');
+   return artifact?.view ? runner.renderView({ provider, view: artifact.view as ViewDocumentV1 }) : null;
+ }
+diff --git a/scripts/test-route-local-references.mjs b/scripts/test-route-local-references.mjs
+new file mode 100644
+index 00000000..da4acf7e
+--- /dev/null
++++ b/scripts/test-route-local-references.mjs
+@@ -0,0 +1,61 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++import { build } from 'esbuild';
++
++const root = path.resolve(import.meta.dirname, '..');
++const tmp = await mkdtemp(path.join(os.tmpdir(), 'nodus-route-local-references-'));
++test.after(() => rm(tmp, { recursive: true, force: true }));
++const outfile = path.join(tmp, 'inspection.mjs');
++await build({ entryPoints: [path.join(root, 'electron/ai/moleculeInspection.ts')], outfile,
++  bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
++  plugins: [{ name: 'no-external-services', setup(api) {
++    const mocks = {
++      '../capabilities/registry': `export const capabilityRegistry=()=>({providers:new Map([['nodus:chemistry',{id:'nodus:chemistry',tools:[{id:'verify-route',inputSchema:{properties:{labels:{},...(globalThis.__routeMirrorFields?{pubchemDir:{},opsinDir:{},localOnly:{}}:{})}}}]}]])}); export const pinCapabilitiesForTurn=()=>[];`,
++      '../capabilities/runner': `export function createTrustedCapabilityRunner(){throw Error('test must supply a runner')}`,
++      './aiClient': `export function completeText(){throw Error('test must not call a model')}`,
++      // The reaction index and the route evidence are optional; with no index they add nothing.
++      '../reactionIndex': `export const reactionIndexService=()=>({localDirectory:async()=>null})`,
++      './synthesisEvidence': `export async function invokeDisconnectionsEach(){return []} export function synthesisEvidenceWorkIds(){return []} export async function textbookPassages(){return []}`,
++      // A PubChem mirror and a local OPSIN are installed.
++      './pubchemMirror': `export const pubchemMirrorDirectory=()=>'/mirror'; export const opsinDirectory=()=>'/opsin'`,
++      './chemistryStock': `export const chemistryStockDirectory=()=>null`,
++      // No textbook-scheme index built: the route report has no textbook section.
++      './textbookSchemes': `export const textbookSchemeDirectory=()=>null; export const textbookCitations=()=>[]`,
++    };
++    // Only the electron modules' imports are mocked: a shared module's own `./textbookSchemes` is the
++    // real shared file, not electron/ai/textbookSchemes.
++    api.onResolve({ filter: /^(\.\/aiClient|\.\/synthesisEvidence|\.\/pubchemMirror|\.\/chemistryStock|\.\/textbookSchemes|\.\.\/reactionIndex|\.\.\/capabilities\/(registry|runner))$/ }, args => (args.importer.includes(`${path.sep}electron${path.sep}`) ? { path: args.path, namespace: 'mock' } : undefined));
++    api.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: mocks[args.path] }));
++  } }],
++});
++const { appendRouteReportAndDrawings } = await import(pathToFileURL(outfile));
++const steps = ['CCO.CC(=O)O>>CCOC(C)=O.O'];
++const labels = [[{ role: 'reactant', byproduct: false, name: 'ethanol', smiles: 'CCO' }]];
++const audit = { steps: [{ index: 0, reaction: steps[0], ok: true, balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] }], continuous: true, blocked: [], links: [] };
++const routeInputs = async () => {
++  const sent = [];
++  const runner = { async invoke({ toolId, input }) {
++    if (toolId === 'verify-route') sent.push(input);
++    return toolId === 'verify-route' ? { artifacts: [{ artifactType: 'route-audit', data: audit }] } : { artifacts: [] };
++  }, async renderView() { return ''; } };
++  await appendRouteReportAndDrawings('Route prose', '', { runner }, { steps, labels });
++  return sent;
++};
++
++test('the route check is sent the local reference directories when the package reads them', async () => {
++  globalThis.__routeMirrorFields = true;
++  const [input] = await routeInputs();
++  assert.equal(input.pubchemDir, '/mirror', 'the label check can answer from the local mirror');
++  assert.equal(input.opsinDir, '/opsin');
++});
++
++test('an older package that does not declare them is never sent them', async () => {
++  globalThis.__routeMirrorFields = false;
++  const [input] = await routeInputs();
++  assert.equal('pubchemDir' in input, false);
++  assert.equal('opsinDir' in input, false);
++});

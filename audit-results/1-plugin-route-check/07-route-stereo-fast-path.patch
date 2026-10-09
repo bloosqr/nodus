@@ -1,4 +1,4 @@
-# Repository: github.com/bloosqr/nodus-research-skill-marketplace (apply with git apply from the repository root, against audit/2026-10-09)
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
 diff --git a/plugins/chemistry-studio/python/reactions_worker.py b/plugins/chemistry-studio/python/reactions_worker.py
 index c17c941..6ca2547 100644
 --- a/plugins/chemistry-studio/python/reactions_worker.py

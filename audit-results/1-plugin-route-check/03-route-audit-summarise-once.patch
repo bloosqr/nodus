@@ -1,4 +1,4 @@
-# Repository: github.com/bloosqr/nodus-research-skill-marketplace (apply with git apply from the repository root, against audit/2026-10-09)
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
 diff --git a/plugins/chemistry-studio/src/engine/chemistryDocument.ts b/plugins/chemistry-studio/src/engine/chemistryDocument.ts
 index c0b1f68..c60ecda 100644
 --- a/plugins/chemistry-studio/src/engine/chemistryDocument.ts
@@ -206,7 +206,7 @@ index 5d3bc5c..70d9918 100644
      // round-trip back to the same graph, so when OpenChemLib's coordinate inventor
      // rewrites geometry — it flips long conjugated polyenes inside macrolactones —
 diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
-index 530c8c8..87355a8 100644
+index 530c8c8..3f1bdd8 100644
 --- a/plugins/chemistry-studio/test/chemistry.test.mjs
 +++ b/plugins/chemistry-studio/test/chemistry.test.mjs
 @@ -3089,3 +3089,26 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
@@ -233,6 +233,6 @@ index 530c8c8..87355a8 100644
 +  const audit = await lib.auditRoute({ steps: ['Cl[C@H](C)C(=O)OC.O>>Cl[C@@H](C)C(=O)O.CO'] });
 +  const message = audit.blocked.join(' ');
 +  assert.match(message, /inverts a stereocentre/);
-+  assert.match(message, /\(S\) at atom 1\b|\(R\) at atom 1\b/, message);
++  assert.match(message, /\((?:S|R)\) at atom 1\b|\batom 1 of /, message);
 +  assert.doesNotMatch(message, /at atom 4\b/, message);
 +});
