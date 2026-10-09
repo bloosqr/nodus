@@ -1,0 +1,198 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Corpus run: the corpus inventory is built once per step (kept for one second), not at every check of a turn.
+diff --git a/electron/ai/documentaryPreparation.ts b/electron/ai/documentaryPreparation.ts
+index 8d633cba..969e07cc 100644
+--- a/electron/ai/documentaryPreparation.ts
++++ b/electron/ai/documentaryPreparation.ts
+@@ -812,8 +812,9 @@ async function initializeOwnedDocumentaryPreparation(): Promise<void> {
+   if (shared) convertLegacyVectorsInBackground();
+ }
+ 
+-export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchScope, query: string, settings: RetrievalSettings, vector: number[] | null, signal?: AbortSignal, read?: ResearchDocumentRead): Promise<{ evidence: ResearchEvidence[]; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }> {
+-  const inventory = researchCorpusInventory();
++export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchScope, query: string, settings: RetrievalSettings, vector: number[] | null, signal?: AbortSignal, read?: ResearchDocumentRead,
++  // A run passes its own, so one search does not build the whole inventory twice more.
++  currentDocuments: () => ReturnType<typeof researchCorpusInventory>['documents'] = () => researchCorpusInventory().documents): Promise<{ evidence: ResearchEvidence[]; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }> {
+   const config = currentEmbeddingConfig();
+   let parameters: ReturnType<typeof embeddingIdentityParameters> | null = null;
+   try { parameters = embeddingIdentityParameters(effectiveEmbeddingConfig()); } catch { /* Lexical retrieval remains available without an endpoint. */ }
+@@ -824,7 +825,7 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
+   // identity up to three times, serialising the same embedding parameters once per row: ~11% of the
+   // main thread's busy time in a nine-turn trace (2026-10-09). An index, one parse per row, and one
+   // serialisation of the constant compare exactly the same things.
+-  const inventoryById = documentsById(inventory.documents);
++  const inventoryById = documentsById(currentDocuments());
+   const parsedIdentities = new Map<object, DocumentaryIndexIdentity>();
+   const identityOf = (row: { identity_json: string }): DocumentaryIndexIdentity => {
+     let identity = parsedIdentities.get(row);
+@@ -889,8 +890,8 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
+     worker.once('exit', (code: number | null) => { if (!settled) { console.warn(`[documentary] retrieval worker exited with code ${code} before replying`); finish(new Error('documentary_retrieval_worker_stopped')); } });
+     worker.postMessage({ filename: documentaryStore().db.name, query, lexicalKeys: keys, vectorKeys, vector, settings, threshold, read, activity: researchActivityEnabled() });
+   });
+-  const latest = researchCorpusInventory().documents;
+-  for (const document of scope.documents) assertResearchDocumentPermission(scope, document.id, latest.find(item => item.id === document.id));
++  const latest = documentsById(currentDocuments());
++  for (const document of scope.documents) assertResearchDocumentPermission(scope, document.id, latest.get(document.id));
+   const evidence = result.passages.map(passage => {
+     const document = scope.documents.find(document => document.id === passage.document_id)!;
+     const identity = JSON.parse(documentaryStore().getJob(passage.index_key)!.identity_json) as DocumentaryIndexIdentity;
+diff --git a/electron/ai/researchCorpusRun.ts b/electron/ai/researchCorpusRun.ts
+index 3a5a4f8c..f318c905 100644
+--- a/electron/ai/researchCorpusRun.ts
++++ b/electron/ai/researchCorpusRun.ts
+@@ -89,6 +89,7 @@ export class ResearchCorpusRun {
+   private readonly ideaIds: string[];
+   private originalPins?: Promise<ZoteroOriginalPins>;
+   private graphSnapshot: Pick<WritingWorkshopSnapshot, 'gaps' | 'contradictions' | 'themes'> | null = null;
++  private inventoryMemo?: { at: number; documents: ReturnType<typeof researchCorpusInventory>['documents']; byId: Map<string, ReturnType<typeof researchCorpusInventory>['documents'][number]> };
+   private readonly sourceCoverage: NonNullable<ResearchTraversal['sourceCoverage']>;
+   constructor(readonly scope: ResolvedResearchScope, settings: RetrievalSettings, readonly signal?: AbortSignal, readonly pinRevisions = false) {
+     this.budget = new ResearchRetrievalBudget(settings);
+@@ -104,11 +105,22 @@ export class ResearchCorpusRun {
+     const manual = getSettings().academicMode === 'manual' ? activeManualIdeaIds(getDb()) : null;
+     this.ideaIds = [...resolveResearchSourceScope({ enabled: true, authorIds: [], workIds: this.workIds }, true)!.ideaIds].filter(id => !manual || manual.has(id));
+   }
++  /** The corpus inventory for this step. Building it reads every work, library item and note,
++   * synchronously (~150 ms on a 14,000-work library), and one chat turn asked for it ~96 times:
++   * seven times per search and twice per decision. Within a second it is the same inventory; the
++   * next step after a model call or a read builds it again, so a change made meanwhile is seen. */
++  inventory(): NonNullable<ResearchCorpusRun['inventoryMemo']> {
++    if (!this.inventoryMemo || performance.now() - this.inventoryMemo.at > 1000) {
++      const documents = researchCorpusInventory().documents;
++      this.inventoryMemo = { at: performance.now(), documents, byId: documentsById(documents) };
++    }
++    return this.inventoryMemo;
++  }
+   validate(): void {
+     this.signal?.throwIfAborted();
+     if (getActiveVault().id !== this.scope.vaultId) throw new Error('research_scope_changed');
+     if (this.scope.notebookId && getResearchNotebook(this.scope.notebookId)?.revision !== this.scope.notebookRevision) throw new Error('research_scope_changed');
+-    const current = documentsById(researchCorpusInventory().documents);
++    const current = this.inventory().byId;
+     for (const document of this.scope.documents) (this.pinRevisions ? assertResearchDocumentPermission : assertResearchDocument)(this.scope, document.id, current.get(document.id));
+     if (this.pinRevisions && this.scope.documents.some(document => current.get(document.id)?.revision !== document.revision)) {
+       // Shared evidence and scoped legacy receipts are immutable. Graph analyses are not;
+@@ -162,8 +174,8 @@ export class ResearchCorpusRun {
+       this.limitations.add('embedding_provider_unavailable'); return null;
+     });
+     this.validate();
+-    const current = researchCorpusInventory().documents;
+-    const stableWorks = this.pinRevisions ? this.scope.documents.filter(document => (!document.indexedSource || document.indexedSource.revision === document.revision) && current.find(item => item.id === document.id)?.revision === document.revision).flatMap(document => document.workId ? [document.workId] : []) : this.workIds;
++    const current = this.inventory().byId;
++    const stableWorks = this.pinRevisions ? this.scope.documents.filter(document => (!document.indexedSource || document.indexedSource.revision === document.revision) && current.get(document.id)?.revision === document.revision).flatMap(document => document.workId ? [document.workId] : []) : this.workIds;
+     const stableIdeas = stableWorks.length === this.workIds.length ? this.ideaIds : [];
+     const hierarchy = await retrieveHierarchical(query, { embedding: vector, nodusIds: stableWorks, ideaIds: stableIdeas,
+       documentLimit: readDocuments ? settings.candidates : 0, ideaLimit: readIdeas ? settings.passagesPerRound : 0, passageLimit: readDocuments ? settings.candidates : 0,
+@@ -173,13 +185,13 @@ export class ResearchCorpusRun {
+     const acceptRound = (id: string, text: string) => this.budget.usedEvidenceTokens - usedBeforeRound + Buffer.byteLength(text) <= remaining && this.budget.accept(id, text);
+     const expansion = settings.autoExpand ? Math.max(1, Math.min(expandRounds, settings.rounds - this.budget.rounds + 1)) : 1;
+     const shared = readDocuments && remaining >= 256 ? await retrieveSharedDocumentaryEvidence(this.scope, query,
+-      { ...settings, rounds: expansion, evidenceTokens: remaining }, vector, this.signal) : { evidence: [], traversal: { rounds: 1, candidates: 0, partial: true } };
++      { ...settings, rounds: expansion, evidenceTokens: remaining }, vector, this.signal, undefined, () => this.inventory().documents) : { evidence: [], traversal: { rounds: 1, candidates: 0, partial: true } };
+     for (let round = 1; round < shared.traversal.rounds; round++) this.budget.nextRound();
+     this.validate();
+     // Interleave independent native/shared lanes, retaining source diversity.
+     const candidates = shared.evidence.map(item => this.passage(item));
+     const separable = readDocuments ? scopedIdeaEvidencePassages(query, stableWorks, settings.candidates) : [];
+-    const inventory = researchCorpusInventory().documents;
++    const inventory = this.inventory().documents;
+     const legacy = selectPassageEvidence([...hierarchy.passages, ...separable], settings.passagesPerRound, { preferLexical: true, preferSourceDiversity: true }).flatMap(hit => {
+       const receipt = recordScopedLegacyPassage(this.scope, hit.passage_id, inventory);
+       return receipt ? [{ id: receipt.passage_id, label: hit.title, summary: receipt.text, nodus_id: hit.nodus_id, pageLabel: receipt.page_label,
+@@ -235,7 +247,7 @@ export class ResearchCorpusRun {
+       return { scopeId: this.scope.id, evidence: [], partial: true };
+     }
+     const result = await retrieveSharedDocumentaryEvidence({ ...this.scope, documents: [document] }, query,
+-      { ...this.budget.settings, rounds: 1, autoExpand: false, evidenceTokens: this.stepAllowance() }, null, this.signal, read);
++      { ...this.budget.settings, rounds: 1, autoExpand: false, evidenceTokens: this.stepAllowance() }, null, this.signal, read, () => this.inventory().documents);
+     this.validate();
+     const evidence = result.evidence.filter(item => {
+       const candidate = this.passage(item);
+@@ -256,7 +268,7 @@ export class ResearchCorpusRun {
+     this.validate(); validateResearchDocumentRead(read);
+     const document = this.scope.documents.find(item => item.id === documentId);
+     if (!document) throw new Error('research_source_not_authorized');
+-    const current = researchCorpusInventory().documents.find(item => item.id === documentId);
++    const current = this.inventory().byId.get(documentId);
+     assertResearchDocument(this.scope, documentId, current);
+     if (read.attachmentId && document.attachments && !document.attachments.some(item => item.id === read.attachmentId)) throw new Error('research_source_not_authorized');
+     this.attemptedDocuments.add(document.id);
+@@ -304,7 +316,7 @@ export class ResearchCorpusRun {
+       if (pages.length) this.zoteroMcpReads.add(document.id);
+     }
+     if (!pages) { this.limitations.add('original_unavailable'); this.budget.partial = true; return { evidence: [], scopeId: this.scope.id, partial: true }; }
+-    this.validate(); assertResearchDocument(this.scope, documentId, researchCorpusInventory().documents.find(item => item.id === documentId));
++    this.validate(); assertResearchDocument(this.scope, documentId, this.inventory().byId.get(documentId));
+     const evidence: ResearchEvidence[] = [];
+     for (const page of pages) {
+       // Ask the budget before the row is written. The receipt has to come first for its id, so a
+@@ -315,7 +327,7 @@ export class ResearchCorpusRun {
+       const receipt = recordScopedSourcePassage(this.scope, document.id, { passage_id: '', nodus_id: document.workId ?? document.id,
+         libraryItemId: library?.id ?? null, attachmentId, attachmentRevision, revision: document.revision, provenance: 'source',
+         text: page.text, page_label: page.pageLabel, page_number: page.pageNumber, source_ref: sourceRef, chunk_index: 0,
+-        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } });
++        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } }, this.inventory().documents);
+       if (!receipt || !this.budget.accept(receipt.passage_id, page.text)) continue;
+       this.evidence.set(receipt.passage_id, { id: receipt.passage_id, nodus_id: receipt.nodus_id, label: document.title, summary: page.text,
+         authors: document.authors, year: document.year, pageLabel: page.pageLabel, zotero_key: receipt.work.zotero_key,
+diff --git a/scripts/test-research-inventory-builds.mjs b/scripts/test-research-inventory-builds.mjs
+new file mode 100644
+index 00000000..94cfe3e2
+--- /dev/null
++++ b/scripts/test-research-inventory-builds.mjs
+@@ -0,0 +1,56 @@
++// One chat turn's corpus run must not rebuild the whole corpus inventory at every check. A build
++// reads every work, library item and note synchronously (~190 ms on a 14,000-work library), and
++// one turn of three opening searches and nine decisions asked for it 96 times.
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++import { createRequire } from 'node:module';
++import { fileURLToPath } from 'node:url';
++import test from 'node:test';
++import { installRuntimeHooks, repoRoot, requireElectronRuntime } from './lib/tsRuntimeHooks.mjs';
++
++if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-inventory-builds')) {
++  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-inventory-builds-'));
++  installRuntimeHooks(scratch);
++  const require = createRequire(import.meta.url);
++  const load = file => require(path.join(repoRoot, file));
++  globalThis.fetch = () => { throw Error('Network forbidden in inventory regression tests'); };
++  const dbModule = load('electron/db/database.ts');
++  const db = dbModule.getDb();
++  const insert = db.prepare("INSERT INTO works(nodus_id,zotero_key,title,authors_json,year,item_type,source_type) VALUES(?,?,?,?,?,'book','text')");
++  db.transaction(() => { for (let i = 0; i < 300; i++) insert.run(`w${i}`, `K${String(i).padStart(7, '0')}`, `Work ${i} on aromatic esters`, JSON.stringify([`Author ${i % 50}, A.`]), 1950 + i % 70); })();
++  const inventory = load('electron/ai/researchCorpusInventory.ts');
++  const build = inventory.researchCorpusInventory;
++  let builds = 0;
++  inventory.researchCorpusInventory = () => { builds++; return build(); };
++  const scope = load('electron/ai/researchNotebookService.ts').resolveAcademicResearchScope();
++  const preparation = load('electron/ai/documentaryPreparation.ts');
++  preparation.getResearchPreparationInventory = () => ({ documents: [] });
++  // The documentary search checks the inventory before and after its worker, as the real one does.
++  preparation.retrieveSharedDocumentaryEvidence = async (_scope, _query, _settings, _vector, _signal, _read, current = () => inventory.researchCorpusInventory().documents) => {
++    current(); current();
++    return { evidence: [], traversal: { rounds: 1, candidates: 0, partial: false, evidenceTokens: 0, visited: [] } };
++  };
++  const ai = load('electron/ai/aiClient.ts');
++  ai.embed = async () => null;
++  ai.embedMany = async () => null;
++  let decisions = 0;
++  ai.completeJson = async () => (++decisions > 8 ? { action: 'finish' } : { action: 'search', query: `query ${decisions}` });
++  const { ResearchCorpusRun } = load('electron/ai/researchCorpusRun.ts');
++  const { RESEARCH_CHAT_AGENT_SETTINGS, RESEARCH_CHAT_AGENT_DECISION_BYTES } = load('shared/researchCorpus.ts');
++  const { literalResearchTurnPlan } = load('electron/ai/researchTurnPlanner.ts');
++  test.after(() => { dbModule.closeDb(); fs.rmSync(scratch, { recursive: true, force: true }); });
++
++  test('one turn builds the corpus inventory at most once per round, not at every check', async () => {
++    builds = 0;
++    const run = new ResearchCorpusRun(scope, RESEARCH_CHAT_AGENT_SETTINGS);
++    run.budget.decisionTokenLimit = RESEARCH_CHAT_AGENT_DECISION_BYTES;
++    run.agent = { plan: { ...literalResearchTurnPlan('aromatic esters'), queries: ['aromatic esters', 'nitration of arenes', 'esterification'] }, question: 'aromatic esters', compact: false, minSources: 1 };
++    const warn = console.warn; console.warn = () => {};
++    try { await run.investigate('methyl 4-nitrobenzoate; Fischer esterification; aromatic nitration'); } finally { console.warn = warn; }
++    console.log(`${decisions} decisions, ${run.budget.rounds} rounds: ${builds} inventory builds`);
++    assert.ok(run.budget.rounds >= 6, 'the turn did search');
++    assert.ok(builds <= run.budget.rounds, `${builds} builds for ${run.budget.rounds} rounds`);
++  });
++}
