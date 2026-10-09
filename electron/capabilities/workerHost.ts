@@ -51,7 +51,23 @@ const READY_TIMEOUT_MS = 20_000;
  *  readiness budget: the time before `spawn` belongs to the host, not to the worker. */
 const SPAWN_CEILING_MS = 120_000;
 
-interface Pending { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+interface Pending {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+  /** The services of the turn that made this call: its host calls are answered with these. */
+  services: CapabilityHostServices;
+  /** Aborted when this call, and only this call, is cancelled or runs out of time. */
+  controller: AbortController;
+}
+
+/** What a call may bring of its own. */
+export interface CapabilityCallOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  /** The turn's services for this call's host calls; the handle's own when absent. */
+  services?: CapabilityHostServices;
+}
 
 /** A start that failed before the worker said anything at all.
  *
@@ -81,9 +97,13 @@ export class CapabilityWorkerHandle {
   private child: UtilityProcess | null = null;
   private ready: Promise<void> | null = null;
   private readonly pending = new Map<string, Pending>();
+  /** Calls the host has given up on and asked the worker to stop, until it confirms. */
+  private readonly cancelling = new Map<string, NodeJS.Timeout>();
   private abort = new AbortController();
   private killTimer: NodeJS.Timeout | null = null;
   private nextCallId = 0;
+  /** Callers waiting for this worker to finish starting. */
+  private starting = 0;
 
   constructor(private readonly runtime: TrustedWorkerRuntime, private readonly options: CapabilityWorkerHandleOptions) {}
 
@@ -100,7 +120,7 @@ export class CapabilityWorkerHandle {
    *
    *  Exactly one, and only for work that may be repeated: a retry that hides a worker
    *  which genuinely cannot come up, or that runs a tool twice, is worse than the error. */
-  async call<T>(method: WorkerMethod, payload: unknown, options: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<T> {
+  async call<T>(method: WorkerMethod, payload: unknown, options: CapabilityCallOptions = {}): Promise<T> {
     try { return await this.attempt<T>(method, payload, options); }
     catch (error) {
       const retryable = error instanceof WorkerStartFailure
@@ -110,22 +130,25 @@ export class CapabilityWorkerHandle {
     }
   }
 
-  private async attempt<T>(method: WorkerMethod, payload: unknown, options: { timeoutMs?: number; signal?: AbortSignal }): Promise<T> {
+  private async attempt<T>(method: WorkerMethod, payload: unknown, options: CapabilityCallOptions): Promise<T> {
     options.signal?.throwIfAborted();
     const ready = this.start();
     const signal = options.signal;
     let abortStart: (() => void) | undefined;
+    this.starting += 1;
     try {
       if (!signal) await ready;
       else await Promise.race([ready, new Promise<never>((_resolve, reject) => {
         abortStart = () => {
-          this.cancel();
+          // The start belongs to every caller waiting on it: only the last one stops it.
+          if (this.starting <= 1 && !this.pending.size) this.cancel();
           reject(new DOMException('The capability startup was cancelled.', 'AbortError'));
         };
         signal.addEventListener('abort', abortStart, { once: true });
         if (signal.aborted) abortStart();
       })]);
     } finally {
+      this.starting -= 1;
       if (abortStart) signal?.removeEventListener('abort', abortStart);
     }
     // Abort can arrive with the ready frame, before the call listener has been installed.
@@ -141,17 +164,37 @@ export class CapabilityWorkerHandle {
         options.signal?.removeEventListener('abort', onAbort);
         if (error) reject(error); else resolve(value as T);
       };
-      const onAbort = () => { this.cancel(); settle(new DOMException('The capability call was cancelled.', 'AbortError')); };
+      // Cancellation and the deadline are this call's. They used to cancel the whole process —
+      // every call it was carrying, then a kill two seconds later whatever happened — so one
+      // tool past its budget failed the drawings, lookups and checks running beside it.
+      const onAbort = () => { this.cancelCall(callId); settle(new DOMException('The capability call was cancelled.', 'AbortError')); };
       const timer = setTimeout(() => {
-        // A worker past its deadline is not asked politely twice: cancel, then kill.
-        this.cancel();
+        // A call past its deadline is not asked politely twice: cancel it, then kill the
+        // process if the call is still running when the grace period ends.
+        this.cancelCall(callId);
         settle(new Error(`${this.runtime.capabilityId} exceeded ${Math.round(timeoutMs / 1000)} seconds.`));
       }, timeoutMs);
-      this.pending.set(callId, { resolve: value => settle(undefined, value), reject: error => settle(error), timer });
+      this.pending.set(callId, { resolve: value => settle(undefined, value), reject: error => settle(error), timer, services: options.services ?? this.options.services, controller: new AbortController() });
       options.signal?.addEventListener('abort', onAbort, { once: true });
       try { this.post({ type: 'call', callId, method, payload }); }
       catch (error) { settle(error instanceof Error ? error : new Error(String(error))); }
     });
+  }
+
+  /** Stops one call. Its host calls in flight are aborted and any it makes later are refused; the
+   *  worker is asked to abort that call alone; and the process is killed only if the call is still
+   *  running when the grace period ends — a call stuck in synchronous work cannot be stopped any
+   *  other way, and then nothing else in that process can be saved either. */
+  private cancelCall(callId: string): void {
+    this.pending.get(callId)?.controller.abort();
+    if (!this.child || this.cancelling.has(callId)) return;
+    try { this.post({ type: 'cancel', invocationId: callId }); } catch { /* the process is already gone */ }
+    const timer = setTimeout(() => {
+      this.cancelling.delete(callId);
+      this.teardown(new Error(`${this.runtime.capabilityId} did not stop and was terminated.`));
+    }, LIMITS.cancelGraceMs);
+    timer.unref?.();
+    this.cancelling.set(callId, timer);
   }
 
   /** Asks the worker to stop, then kills it if it does not. Pending calls are rejected
@@ -225,6 +268,9 @@ export class CapabilityWorkerHandle {
         }
         if (message.type === 'result') {
           if (message.callId === 'init') { spoke = true; fail(new Error(message.ok ? 'The capability failed to load.' : message.error)); return; }
+          // A cancelled call that has stopped: nothing is waiting for it, and nothing need be killed.
+          const stopping = this.cancelling.get(message.callId);
+          if (stopping) { clearTimeout(stopping); this.cancelling.delete(message.callId); return; }
           const pending = this.pending.get(message.callId);
           if (!pending) return;
           if (message.ok) pending.resolve(message.value);
@@ -232,7 +278,7 @@ export class CapabilityWorkerHandle {
           return;
         }
         if (message.type === 'log') { this.options.onLog?.(this.runtime, message); return; }
-        if (message.type === 'host-call') void this.serveHostCall(message.callId, message.channel, message.method, message.payload);
+        if (message.type === 'host-call') void this.serveHostCall(message.callId, message.channel, message.method, message.payload, message.parentCallId);
       });
       child.once('error', error => { fail(new Error(String(error))); this.teardown(new Error(String(error))); });
       child.once('exit', code => {
@@ -250,10 +296,20 @@ export class CapabilityWorkerHandle {
     return this.ready.catch(error => { this.ready = null; throw error; });
   }
 
-  private async serveHostCall(callId: string, channel: HostChannel, method: string, payload: unknown): Promise<void> {
-    const child = this.child, signal = this.abort.signal;
+  private async serveHostCall(callId: string, channel: HostChannel, method: string, payload: unknown, parentCallId?: string): Promise<void> {
+    const child = this.child;
+    // Answered with the services, and under the cancellation, of the call that asked. A host call
+    // whose call is over is refused rather than run: its turn no longer wants it.
+    const owner = parentCallId ? this.pending.get(parentCallId) : undefined;
+    if (parentCallId && !owner) {
+      try { this.post({ type: 'host-result', callId, ok: false, error: 'The capability call this request belongs to has ended.' }); }
+      catch { /* the worker is gone */ }
+      return;
+    }
+    const signal = owner ? AbortSignal.any([owner.controller.signal, this.abort.signal]) : this.abort.signal;
+    const services = owner?.services ?? this.options.services;
     try {
-      const value = await this.options.services({ runtime: this.runtime, channel, method, payload, signal });
+      const value = await services({ runtime: this.runtime, channel, method, payload, signal });
       if (signal.aborted || child !== this.child) return;
       this.post({ type: 'host-result', callId, ok: true, value });
     } catch (error) {
@@ -268,6 +324,8 @@ export class CapabilityWorkerHandle {
   private teardown(reason: Error, lost = false): void {
     this.abort.abort();
     if (this.killTimer) { clearTimeout(this.killTimer); this.killTimer = null; }
+    for (const [, timer] of this.cancelling) clearTimeout(timer);
+    this.cancelling.clear();
     const child = this.child;
     this.child = null;
     this.ready = null;

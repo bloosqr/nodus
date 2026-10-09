@@ -187,7 +187,7 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
           invocationId: `i${Math.random().toString(36).slice(2, 10)}`,
           toolId, input, locale: context.locale,
           chat: { question: context.question, nodeId, ...(budget ? { budget } : {}) },
-        }, { timeoutMs: tool.timeoutMs, signal: context.signal });
+        }, { timeoutMs: tool.timeoutMs, signal: context.signal, services });
         report('ok');
         return result;
       } catch (error) {
@@ -201,7 +201,7 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
       const { handle } = workerFor(provider);
       return handle.call(hook === 'prepare' ? 'prepareChat' : 'finalizeChat',
         { nodes, ...(hook === 'prepare' ? { question: context.question, ...(budget ? { budget } : {}) } : {}), locale: context.locale },
-        { timeoutMs: 60_000, signal: context.signal });
+        { timeoutMs: 60_000, signal: context.signal, services });
     },
 
     async persistArtifact({ provider, artifact }: { provider: CapabilityProvider; artifact: WorkerArtifactV1 }) {
@@ -233,7 +233,7 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
         const view = await handle.call('renderArtifact', {
           artifactType: artifact.artifactType, artifactVersion: artifact.artifactVersion,
           data: artifact.data, locale: context.locale,
-        }, { timeoutMs: 60_000, signal: context.signal });
+        }, { timeoutMs: 60_000, signal: context.signal, services });
         pieces.push(renderView({ provider, view: validateViewDocument(view) }));
       }
       return pieces.join('');
