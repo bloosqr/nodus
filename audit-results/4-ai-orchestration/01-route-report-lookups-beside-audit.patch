@@ -1,0 +1,134 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Route report: start the audit-independent lookups beside verify-route.
+diff --git a/electron/ai/moleculeInspection.ts b/electron/ai/moleculeInspection.ts
+index 105a1f3c..6e09a29f 100644
+--- a/electron/ai/moleculeInspection.ts
++++ b/electron/ai/moleculeInspection.ts
+@@ -991,13 +991,23 @@ export async function appendRouteReportAndDrawings(
+     return promise.finally(() => timings.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}s`));
+   };
+   try {
++    // The index lookups, the compatibility check and the stock lines read the resolved labels and
++    // nothing of the audit, so they start beside it rather than after it: the audit is the longest
++    // single call in the report, and each of these used to wait for it before it began. Each is
++    // caught here so a failed audit, which returns at once, leaves nothing unhandled behind it.
++    // The index lookup is skipped entirely when the package has no such tool or the index has not
++    // been downloaded.
++    const queries = buildPrecedentQueries(labels);
++    const precedentPromise = timed('ORD precedent', lookupReactionPrecedent(runner, queries.map((query) => query.query), options));
++    precedentPromise.catch(() => undefined);
++    const textbookPromise = timed('textbook precedent', lookupTextbookPrecedent(runner, queries.map((query) => query.query), options).catch(() => null));
++    // Groups a step's reagents would attack (an ester through LiAlH4, a free OH beside a Grignard).
++    const compatibilityPromise = timed('compatibility', checkStepCompatibility(runner, labels, conditions, options).catch(() => [] as StepCompatibility[]));
++    // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
++    const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
+     const checked = await timed('audit', invokeRoute(runner, provider, steps, racemic, options.target, labels, declared));
+     const audit = checked ? implyRacemicTarget(checked, options.target) : checked;
+     if (!audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit')}\n`;
+-    // The index lookup runs alongside the review and the drawings; it is skipped entirely
+-    // when the package has no such tool or the index has not been downloaded.
+-    const queries = buildPrecedentQueries(labels);
+-    const precedentPromise = timed('ORD precedent', lookupReactionPrecedent(runner, queries.map((query) => query.query), options));
+     // One model review looks for plan problems the checker cannot see (prose vs names, a
+     // product that is a different compound, a step that cannot work, a redundant step). It is
+     // blocking: a finding marks the route not verified. An unreadable reply never blocks. It
+@@ -1045,15 +1055,11 @@ export async function appendRouteReportAndDrawings(
+       return formatReactionPrecedents(result.precedent, { queries, labels, target, drawings, support });
+     }).catch(() => '');
+     // The same steps in the reaction schemes of the user's own textbooks, cited by book and page.
+-    const textbookSection = timed('textbook precedent', lookupTextbookPrecedent(runner, queries.map((query) => query.query), options).then((precedent) => {
++    const textbookSection = textbookPromise.then((precedent) => {
+       if (!precedent) return '';
+       const target = options.target ? { smiles: options.target, name: targetName(labels, audit, options.target) } : null;
+       return formatTextbookPrecedents(precedent, (ids) => textbookCitations(ids, undefined, options.evidenceScope), { queries, target });
+-    }).catch(() => ''));
+-    // Groups a step's reagents would attack (an ester through LiAlH4, a free OH beside a Grignard).
+-    const compatibilityPromise = timed('compatibility', checkStepCompatibility(runner, labels, conditions, options).catch(() => [] as StepCompatibility[]));
+-    // Which starting materials the user's vendor stock lists hold (no lists: nothing is said).
+-    const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
++    }).catch(() => '');
+     const review = await reviewPromise;
+     const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
+     const precedentText = await precedentSection;
+diff --git a/scripts/test-route-report-overlap.mjs b/scripts/test-route-report-overlap.mjs
+new file mode 100644
+index 00000000..c236816a
+--- /dev/null
++++ b/scripts/test-route-report-overlap.mjs
+@@ -0,0 +1,77 @@
++// The route report's index lookups, compatibility check and stock lines read the resolved labels
++// and nothing of the audit, so they must not queue behind it: verify-route is the longest single
++// call in the report (about 37 s on one core), and everything started after it adds to the turn.
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++import { build } from 'esbuild';
++
++const root = path.resolve(import.meta.dirname, '..');
++const tmp = await mkdtemp(path.join(os.tmpdir(), 'nodus-route-overlap-'));
++test.after(() => rm(tmp, { recursive: true, force: true }));
++const outfile = path.join(tmp, 'inspection.mjs');
++const TOOLS = ['verify-route', 'known-reactions', 'check-compatibility', 'check-stock', 'propose-disconnections'];
++await build({ entryPoints: [path.join(root, 'electron/ai/moleculeInspection.ts')], outfile,
++  bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
++  plugins: [{ name: 'no-external-services', setup(api) {
++    const mocks = {
++      '../capabilities/registry': `export const capabilityRegistry=()=>({providers:new Map([['nodus:chemistry',{id:'nodus:chemistry',tools:${JSON.stringify(TOOLS)}.map(id=>({id,inputSchema:{properties:{labels:{}}}}))}]])}); export const pinCapabilitiesForTurn=()=>[];`,
++      '../capabilities/runner': `export function createTrustedCapabilityRunner(){throw Error('test must supply a runner')}`,
++      './aiClient': `export async function completeText(){return ''}`,
++      '../reactionIndex': `export const reactionIndexService=()=>({localDirectory:async()=>'/ord'})`,
++      './synthesisEvidence': `export async function invokeDisconnectionsEach(){return []} export function synthesisEvidenceWorkIds(){return []} export async function textbookPassages(){return []}`,
++      './pubchemMirror': `export const pubchemMirrorDirectory=()=>null; export const opsinDirectory=()=>null`,
++      './chemistryStock': `export const chemistryStockDirectory=()=>'/stock'`,
++      './textbookSchemes': `export const textbookSchemeDirectory=()=>'/schemes'; export const textbookCitations=()=>[]`,
++    };
++    api.onResolve({ filter: /^(\.\/aiClient|\.\/synthesisEvidence|\.\/pubchemMirror|\.\/chemistryStock|\.\/textbookSchemes|\.\.\/reactionIndex|\.\.\/capabilities\/(registry|runner))$/ }, args => (args.importer.includes(`${path.sep}electron${path.sep}`) ? { path: args.path, namespace: 'mock' } : undefined));
++    api.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: mocks[args.path] }));
++  } }],
++});
++const { appendRouteReportAndDrawings } = await import(pathToFileURL(outfile));
++
++const steps = ['CCO>>CC=O', 'CC=O>>CC(=O)O'];
++const labels = [
++  [{ role: 'reactant', byproduct: false, name: 'ethanol', smiles: 'CCO' }, { role: 'product', byproduct: false, name: 'acetaldehyde', smiles: 'CC=O' }, { role: 'agent', byproduct: false, name: 'pyridinium chlorochromate', smiles: 'Cl[Cr](=O)(=O)[O-].c1cc[nH+]cc1' }],
++  [{ role: 'reactant', byproduct: false, name: 'acetaldehyde', smiles: 'CC=O' }, { role: 'product', byproduct: false, name: 'acetic acid', smiles: 'CC(=O)O' }],
++];
++const failing = (index, reaction) => ({ index, reaction, ok: false, error: 'not balanced', balanced: false, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] });
++const AUDIT_MS = 300;
++const LOOKUP_MS = 150;
++const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
++
++function recordingRunner() {
++  const started = Date.now();
++  const calls = [];
++  return { calls, runner: { async invoke({ toolId, input }) {
++    const call = { toolId, indexDir: input.indexDir, start: Date.now() - started };
++    calls.push(call);
++    if (toolId === 'verify-route') {
++      await sleep(AUDIT_MS);
++      call.end = Date.now() - started;
++      return { artifacts: [{ artifactType: 'route-audit', data: { steps: steps.map((s, i) => failing(i, s)), continuous: false, blocked: [], links: [] } }] };
++    }
++    await sleep(LOOKUP_MS);
++    call.end = Date.now() - started;
++    if (toolId === 'known-reactions') return { artifacts: [{ artifactType: 'reaction-precedent', data: { reactions: steps.map(() => ({ count: 0, classes: [] })), products: [], similar: [] } }] };
++    return { artifacts: [] };
++  } } };
++}
++
++test('the lookups that do not read the audit start beside it, not after it', async () => {
++  const { calls, runner } = recordingRunner();
++  const t0 = Date.now();
++  const info = console.info; console.info = () => {};
++  try {
++    await appendRouteReportAndDrawings('Route prose', 'Route prose', { runner, target: 'CC(=O)O' }, { steps, labels });
++  } finally { console.info = info; }
++  const elapsed = Date.now() - t0;
++  const audit = calls.find(call => call.toolId === 'verify-route');
++  const independent = calls.filter(call => ['known-reactions', 'check-compatibility', 'check-stock'].includes(call.toolId));
++  console.log(`report ${elapsed} ms; audit ${audit.start}-${audit.end} ms; ${independent.map(call => `${call.toolId}${call.indexDir ? `(${call.indexDir})` : ''} ${call.start}-${call.end}`).join('; ')}`);
++  assert.equal(independent.length, 4, 'ORD precedent, textbook precedent, compatibility and stock all ran');
++  for (const call of independent) assert.ok(call.start < audit.end, `${call.toolId} ${call.indexDir ?? ''} waited for the audit (started ${call.start} ms, audit ended ${audit.end} ms)`);
++});

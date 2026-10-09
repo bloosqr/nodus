@@ -1,0 +1,5 @@
+# report 463 ms; audit 5-306 ms; known-reactions(/schemes) 308-459; check-compatibility 308-460; check-stock 309-460; known-reactions(/ord) 309-460
+not ok 1 - the lookups that do not read the audit start beside it, not after it
+  error: 'known-reactions /schemes waited for the audit (started 308 ms, audit ended 306 ms)'
+# pass 0
+# fail 1
