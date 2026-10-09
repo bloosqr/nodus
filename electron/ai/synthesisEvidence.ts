@@ -81,6 +81,10 @@ interface EvidenceOptions {
   locale?: string;
   signal?: AbortSignal;
   owner?: string;
+  /** Called once ORD's disconnections are known, with the evidence so far (target, starting
+   *  materials and disconnections): the retrieval query reads nothing else, and the gather's slower
+   *  phases — the route search's budget, the textbook schemes' second level — are still running. */
+  onDisconnections?: (evidence: SynthesisEvidence) => void;
 }
 
 function disconnectProvider() {
@@ -446,6 +450,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
   const key = evidenceCacheKey(question, target, startingMaterials, options);
   const remembered = cachedEvidence(key);
   if (remembered) {
+    options.onDisconnections?.(remembered);
     console.info(`${new Date().toISOString()} [synthesisEvidence] reused the evidence gathered for this target · target ${target} · ORD disconnections ${remembered.disconnections.reduce((n, d) => n + d.proposals.length, 0)} · passages ${remembered.passages.length}`);
     return remembered;
   }
@@ -469,6 +474,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
     const prepared = phases.track('textbook preparations', textbookSchemePreparations(target, disconnectionsReady, startingMaterials, scoped));
     const disconnections = await disconnectionsReady;
     prepared.catch(() => undefined); // awaited below; a cancelled request must not leave it unhandled
+    options.onDisconnections?.({ target, startingMaterials, disconnections, passages: [] });
     let passages: EvidencePassage[] = [];
     try {
       // The methods the request's own starting materials imply come first: ORD need not propose them.
