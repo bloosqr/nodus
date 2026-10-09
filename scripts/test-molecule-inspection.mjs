@@ -2265,8 +2265,8 @@ test('a step that balanced only by refiling a declared reactant is a failing ste
     index: 0, reaction: 'a>>b', ok: true, reactants: [], agents: [], products: [],
     balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
   };
-  // The step balances — that is not in dispute and is not what is reported.
-  assert.equal(routeStepFailure({ ...base, refiledReactant: refiled }), refiled);
+  // The step balances only after the checker's own edit, and the failure says so before the reason.
+  assert.equal(routeStepFailure({ ...base, refiledReactant: refiled }), `balanced only after the checker refiled a declared reactant: ${refiled}`);
   // Which path it takes turns on how far the rescue search reaches, not on the chemistry, so a
   // step with nothing refiled is still clean.
   assert.equal(routeStepFailure(base), null);
@@ -2355,5 +2355,10 @@ test('the step line and the route verdict cannot disagree about which step faile
     // while naming no fault, which is the half of the bug the model could not work around.
     assert.ok(line.includes(cause === 'monatomicSpecies' ? 'diatomic' : 'listed under Reactants'),
       `${cause}: the step line names the fault it failed on — got: ${line}`);
+    // Nor may a failing line call the step plainly "balanced": a refiled step balanced only after
+    // the checker changed the author's declaration.
+    if (cause === 'refiledReactant') {
+      assert.match(line, /^- Step 1 FAIL — balanced only after the checker refiled a declared reactant\./);
+    }
   }
 });
