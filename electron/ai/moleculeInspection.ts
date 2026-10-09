@@ -522,6 +522,8 @@ async function requestCorrectedNames(prose: string, unresolved: UnresolvedName[]
       temperature: 0,
       maxTokens: budget,
       reasoning: 'off',
+      // The turn's own signal, as the review has: a stop must not wait out this reply.
+      ...(options.signal ? { signal: options.signal } : {}),
     }, options.model ?? null);
     const parsed = parseNameFeedback(raw);
     if (!parsed.length) {
@@ -530,6 +532,9 @@ async function requestCorrectedNames(prose: string, unresolved: UnresolvedName[]
     }
     return parsed;
   } catch (error) {
+    // A stopped turn ends the route check (resolveNamedRoute returns nothing on an abort); it is
+    // not a failed call with no corrections.
+    if (options.signal?.aborted) throw error;
     console.warn(`[routeNames] call failed (budget ${budget} tokens, ${unresolved.length} unresolved): ${error instanceof Error ? error.message : String(error)}`);
     return [];
   }
