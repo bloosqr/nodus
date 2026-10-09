@@ -1,0 +1,30 @@
+stepDeclaresRacemic on 100 KB of " ": 8845 ms
+stepDeclaresRearrangement on 100 KB of " ": 9290 ms
+stepDeclaresRadical on 100 KB of " ": 9511 ms
+stepDeclaresRacemic on 100 KB of "\t": 10335 ms
+stepDeclaresRearrangement on 100 KB of "\t": 10812 ms
+stepDeclaresRadical on 100 KB of "\t": 10720 ms
+collectStepEvidence on 100 KB of "[": 34621 ms
+collectStepEvidence on 100 KB of "[": 31248 ms
+collectStepEvidence on 100 KB of "[": 33512 ms
+findSmilesCandidates on 100 KB of ";": 172145 ms
+findSmilesCandidates on 100 KB of ":": 175134 ms
+findStepNamedSpecies on 100 KB of ":": 12146 ms
+routeReportsForHistory on 100 KB of "<svg ": 879 ms
+routeReportsForHistory on 100 KB of "<svg ": 476 ms
+routeReportsForHistory on 100 KB of "<svg ": 835 ms
+countRouteSteps on 100 KB of "<svg ": 347 ms
+countRouteSteps on 100 KB of "<svg ": 2684 ms
+countRouteSteps on 100 KB of "<svg ": 399 ms
+findStepNamedSpecies on 100 KB of "<svg ": 397 ms
+findStepNamedSpecies on 100 KB of "<svg ": 2497 ms
+findStepNamedSpecies on 100 KB of "<svg ": 329 ms
+parseRouteReview on 100 KB of "{": 6763 ms
+parseRouteReview on 100 KB of "{": 7032 ms
+parseRouteReview on 100 KB of "{": 6922 ms
+parseNameFeedback on 100 KB of "{": 7028 ms
+parseNameFeedback on 100 KB of "{": 6891 ms
+parseNameFeedback on 100 KB of "{": 6530 ms
+collectStepEvidence on 100 KB of "[a](nodus://passage/": 658 ms
+collectStepEvidence on 100 KB of "[a](nodus://passage/": 623 ms
+collectStepEvidence on 100 KB of "[a](nodus://passage/": 654 ms

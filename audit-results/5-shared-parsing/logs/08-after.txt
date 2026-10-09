@@ -1,0 +1,24 @@
+TAP version 13
+# 2026-10-09T06:35:30.628Z [routeReport] 0.0s · audit 0.0s · ORD precedent 0.0s · review 0.0s · final report 0.0s · step support 0.0s · compatibility 0.0s · stock 0.0s · textbook precedent 0.0s
+# 2026-10-09T06:35:30.630Z [routeReport] 0.0s · audit 0.0s · ORD precedent 0.0s · review 0.0s · final report 0.0s · step support 0.0s · compatibility 0.0s · stock 0.0s · textbook precedent 0.0s
+# Subtest: a route the review holds back is not reported as passed under its drawings
+ok 1 - a route the review holds back is not reported as passed under its drawings
+  ---
+  duration_ms: 15.685489
+  type: 'test'
+  ...
+# Subtest: a route the review accepts keeps its final report as it was
+ok 2 - a route the review accepts keeps its final report as it was
+  ---
+  duration_ms: 1.418135
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 303.391039

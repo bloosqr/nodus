@@ -1,14 +1,14 @@
-test-molecule-inspection                      # pass 129 # fail 0 # skipped 0 
-test-molecule-inspection-compatibility        # pass 4 # fail 0 # skipped 0 
-test-research-synthesis-context               # pass 0 # fail 1 # skipped 0 
-test-route-evidence                           # pass 4 # fail 0 # skipped 0 
-test-synthesis-evidence                       # pass 15 # fail 0 # skipped 0 
-test-synthesis-evidence-without-ord           # pass 16 # fail 0 # skipped 0 
-test-route-label-scaling                      # pass 3 # fail 0 # skipped 0 
-test-route-link-verdict                       # pass 3 # fail 0 # skipped 0 
-test-route-label-none                         # pass 3 # fail 0 # skipped 0 
-test-route-label-fullwidth                    # pass 2 # fail 0 # skipped 0 
-test-route-evidence-blocks                    # pass 1 # fail 0 # skipped 0 
-test-route-label-unicode                      # pass 2 # fail 0 # skipped 0 
-test-route-condition-agents                   # pass 3 # fail 0 # skipped 0 
-test-research-synthesis-context fails identically on the base: better-sqlite3 native binding not built (npm install ran with --ignore-scripts because cdn.sheetjs.com is blocked by the sandbox proxy).
+test-molecule-inspection                      # pass 129 # fail 0 
+test-molecule-inspection-compatibility        # pass 4 # fail 0 
+test-route-evidence                           # pass 4 # fail 0 
+test-synthesis-evidence                       # pass 15 # fail 0 
+test-synthesis-evidence-without-ord           # pass 16 # fail 0 
+test-route-label-scaling                      # pass 3 # fail 0 
+test-route-link-verdict                       # pass 3 # fail 0 
+test-route-label-none                         # pass 3 # fail 0 
+test-route-label-fullwidth                    # pass 2 # fail 0 
+test-route-evidence-blocks                    # pass 1 # fail 0 
+test-route-label-unicode                      # pass 2 # fail 0 
+test-route-condition-agents                   # pass 3 # fail 0 
+test-route-final-report-review                # pass 2 # fail 0 
+test-research-synthesis-context (not listed): fails identically on the base — better-sqlite3 native binding not built (npm install ran with --ignore-scripts because cdn.sheetjs.com is blocked by the sandbox proxy).
