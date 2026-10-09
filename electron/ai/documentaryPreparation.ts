@@ -848,8 +848,9 @@ async function initializeOwnedDocumentaryPreparation(): Promise<void> {
   if (shared) convertLegacyVectorsInBackground();
 }
 
-export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchScope, query: string, settings: RetrievalSettings, vector: number[] | null, signal?: AbortSignal, read?: ResearchDocumentRead): Promise<{ evidence: ResearchEvidence[]; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }> {
-  const inventory = researchCorpusInventory();
+export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchScope, query: string, settings: RetrievalSettings, vector: number[] | null, signal?: AbortSignal, read?: ResearchDocumentRead,
+  // A run passes its own, so one search does not build the whole inventory twice more.
+  currentDocuments: () => ReturnType<typeof researchCorpusInventory>['documents'] = () => researchCorpusInventory().documents): Promise<{ evidence: ResearchEvidence[]; traversal: { partial: boolean; rounds: number; candidates: number; evidenceTokens: number; visited: string[] } }> {
   const config = currentEmbeddingConfig();
   let parameters: ReturnType<typeof embeddingIdentityParameters> | null = null;
   try { parameters = embeddingIdentityParameters(effectiveEmbeddingConfig()); } catch { /* Lexical retrieval remains available without an endpoint. */ }
@@ -860,7 +861,7 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
   // identity up to three times, serialising the same embedding parameters once per row: ~11% of the
   // main thread's busy time in a nine-turn trace (2026-10-09). An index, one parse per row, and one
   // serialisation of the constant compare exactly the same things.
-  const inventoryById = documentsById(inventory.documents);
+  const inventoryById = documentsById(currentDocuments());
   const parsedIdentities = new Map<object, DocumentaryIndexIdentity>();
   const identityOf = (row: { identity_json: string }): DocumentaryIndexIdentity => {
     let identity = parsedIdentities.get(row);
@@ -926,7 +927,7 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
     worker.once('exit', (code: number | null) => { if (!settled) { console.warn(`[documentary] retrieval worker exited with code ${code} before replying`); finish(new Error('documentary_retrieval_worker_stopped')); } });
     worker.postMessage({ filename: documentaryStore().db.name, query, lexicalKeys: keys, vectorKeys, vector, settings, threshold, read, activity: researchActivityEnabled() });
   });
-  const latest = documentsById(researchCorpusInventory().documents);
+  const latest = documentsById(currentDocuments());
   for (const document of scope.documents) assertResearchDocumentPermission(scope, document.id, latest.get(document.id));
   // Indexed once: a linear search per scope document (and per passage) is quadratic in the library.
   // The job's identity alone, read once per key: `getJob` also reads its payload, which can hold
