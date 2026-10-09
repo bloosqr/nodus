@@ -1,14 +1,3 @@
-not ok 17 - a gather in which a phase FAILED is not remembered for the corrections
-  error: |-
-# pass 16
+not ok 1 - a correction chip is never taken as the conversation route request
+# pass 0
 # fail 1
-  error: |-
-    the correction is gathered again, not served the failed gather
-    + actual - expected
-    
-    + undefined
-    - 'Fischer esterification'
-    
-  code: 'ERR_ASSERTION'
-  name: 'AssertionError'
-  expected: 'Fischer esterification'

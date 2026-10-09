@@ -1,10 +1,6 @@
-3 HTTP attempt(s) in 4196 ms
-✔ one query embedding against a 503 endpoint is retried by the app, not also by the SDK (4205.21429ms)
-✔ the turn plan carries a short timeout on a cloud model (17.238882ms)
-ℹ pass 2
+✔ a failure on the first opening search costs its evidence, not the turn (168.347533ms)
+ℹ pass 1
 ℹ fail 0
-test-ai-provider-retries: # pass 6 # fail 0 
-test-ai-transient-network: # pass 7 # fail 0 
-test-embedding-contract: # pass 5 # fail 0 
+test-research-corpus-run (--research-corpus-run): Corpus run: pre-ranking scope, mixed Ideas, lexical-only retrieval, shared section budget, no profile barrier and selection revocation passed. 
 test-research-chat-agent (--research-chat-agent): Research chat agent: follow-up planning, catalogue by author, groundwork reads, refused premature finishes and carried citations passed. 
-test-ai-json-retry (--electron-ai-json-retry-test): AI JSON retry budget verified. (exit 0)
+test-research-actions (--research-actions): Structured actions, invalid decisions, independent source search, separate evidence and decision allowances, explicit reads and scope rejection passed. 

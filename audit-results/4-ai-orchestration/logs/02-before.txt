@@ -1,5 +1,6 @@
-# returned 5009 ms after the start, 4909 ms after the stop
-not ok 1 - stopping the turn cancels the name-correction request
-  error: 'the correction request carries the turn signal'
-# pass 0
-# fail 1
+9 decisions, 11 rounds: 95 inventory builds
+✖ one turn builds the corpus inventory at most once per round, not at every check (655.989267ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:
+test at scripts/test-research-inventory-builds.mjs:45:3

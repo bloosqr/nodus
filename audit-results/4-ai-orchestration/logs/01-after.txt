@@ -1,3 +1,15 @@
-# report 321 ms; audit 8-309 ms; known-reactions(/schemes) 7-157; check-compatibility 7-158; check-stock 8-159; known-reactions(/ord) 8-159
-# pass 1
-# fail 0
+✔ selected works constrain pre-answer chemistry evidence and post-answer options (48.230121ms)
+✔ documents switched off contribute no chemistry passages, even with selected books (15.802918ms)
+✔ an empty source selection remains empty instead of searching the full library (17.438906ms)
+✔ an authorized notebook limits chemistry to its own works (29.405551ms)
+✔ automatic academic authorization preserves external chemistry evidence; explicit restrictions do not (9.710226ms)
+✔ repeated correction retains the original target beyond the 4096 history window (20.871175ms)
+✔ repeated correction retains the original target beyond the cloud history window (17.443353ms)
+✔ retrieval starts once ORD has answered, beside the rest of the gather (163.358311ms)
+✔ cancelling a prompt interrupts the evidence embedding instead of finishing retrieval (10.058281ms)
+✔ cancellation reaches concurrent route tools, and one gather opens one runner (14.859549ms)
+✔ post-answer checks preserve structural verification while respecting the source grant (16.037043ms)
+✔ the opt-in revision pass honours web-off and propagates web cancellation (1.282015ms)
+✔ scheme indexes are searched only when every record and template is in scope (5.856027ms)
+ℹ pass 13
+ℹ fail 0

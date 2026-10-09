@@ -1,12 +1,3 @@
-✖ a route request that asks for the web is an explicit web request (232.301491ms)
+✖ a correction round inspects no molecules (31.352762ms)
 ℹ pass 0
 ℹ fail 1
-✖ failing tests:
-✖ a route request that asks for the web is an explicit web request (232.301491ms)
-✖ failing tests:
-
-test at scripts/test-research-synthesis-context.mjs:128:3
-✖ a route request that asks for the web is an explicit web request (173.977405ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-  + actual - expected
-  

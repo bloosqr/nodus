@@ -1,3 +1,14 @@
-not ok 1 - the application note that nothing was checked is not a delivered route
-# pass 0
+not ok 17 - a gather in which a phase FAILED is not remembered for the corrections
+  error: |-
+# pass 16
 # fail 1
+  error: |-
+    the correction is gathered again, not served the failed gather
+    + actual - expected
+    
+    + undefined
+    - 'Fischer esterification'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'Fischer esterification'

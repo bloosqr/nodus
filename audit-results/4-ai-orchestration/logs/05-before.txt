@@ -1,6 +1,5 @@
-✖ retrieval starts once ORD has answered, beside the rest of the gather (2006.246041ms)
-ℹ pass 12
-ℹ fail 1
-✖ failing tests:
-✖ retrieval starts once ORD has answered, beside the rest of the gather (2006.246041ms)
-  Error: retrieval waited for the whole gather
+# report 463 ms; audit 5-306 ms; known-reactions(/schemes) 308-459; check-compatibility 308-460; check-stock 309-460; known-reactions(/ord) 309-460
+not ok 1 - the lookups that do not read the audit start beside it, not after it
+  error: 'known-reactions /schemes waited for the audit (started 308 ms, audit ended 306 ms)'
+# pass 0
+# fail 1

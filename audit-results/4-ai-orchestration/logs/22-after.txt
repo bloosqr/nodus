@@ -1,9 +1,2 @@
-7 searches; the vault changed before 0 of the 6 later ones; evidence 48
-✔ the turn writes its citation receipts once, after its searches, not between them (256.265527ms)
-ℹ pass 1
-ℹ fail 0
-test-research-corpus-run (--research-corpus-run): Corpus run: pre-ranking scope, mixed Ideas, lexical-only retrieval, shared section budget, no profile barrier and selection revocation passed. 
-test-research-chat-agent (--research-chat-agent): Research chat agent: follow-up planning, catalogue by author, groundwork reads, refused premature finishes and carried citations passed. 
-test-research-actions (--research-actions): Structured actions, invalid decisions, independent source search, separate evidence and decision allowances, explicit reads and scope rejection passed. 
-test-research-evidence-request (--evidence-request): Evidence request: real retrieval, JSON expansion, complete citations, large-window recovery and dispatch passed. 
-test-research-zotero-agents (--research-zotero-agents): Research Chat, Deep Research and Immersion: managed Zotero original access, observable calls, resolvable citations, retrieval-only preview and truthful failure logs passed (simulated transport). 
+# pass 130
+# fail 0

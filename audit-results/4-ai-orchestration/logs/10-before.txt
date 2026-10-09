@@ -1,3 +1,3 @@
-not ok 1 - superseded answers do not replay their textbook-scheme or compatibility sections
+not ok 1 - the application note that nothing was checked is not a delivered route
 # pass 0
 # fail 1

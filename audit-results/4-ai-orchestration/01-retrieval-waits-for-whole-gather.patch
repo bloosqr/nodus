@@ -122,10 +122,10 @@ index ce9affb8..a1d41eaf 100644
      try {
        // The methods the request's own starting materials imply come first: ORD need not propose them.
 diff --git a/scripts/test-research-synthesis-context.mjs b/scripts/test-research-synthesis-context.mjs
-index 016814cd..81431c60 100644
+index 016814cd..7e3bdb9d 100644
 --- a/scripts/test-research-synthesis-context.mjs
 +++ b/scripts/test-research-synthesis-context.mjs
-@@ -125,6 +125,34 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
+@@ -125,6 +125,36 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
      } finally { ai.localModelContextWindow = async () => null; }
    });
  
@@ -133,7 +133,9 @@ index 016814cd..81431c60 100644
 +    // Retrieval reads only ORD's disconnections. The gather's slower phases (the route search's
 +    // budget, the textbook schemes' second level) used to hold it back for their whole length.
 +    let retrievalStarted;
++    const embedMany = ai.embedMany;
 +    ai.embed = async () => { retrievalStarted?.(); return null; };
++    ai.embedMany = async (texts) => { retrievalStarted?.(); return texts.map(() => null); };
 +    const recorded = evidence.gatherSynthesisEvidence;
 +    evidence.gatherSynthesisEvidence = async (question, options) => {
 +      const retrieving = new Promise(resolve => { retrievalStarted = resolve; });
@@ -154,7 +156,7 @@ index 016814cd..81431c60 100644
 +      ai.researchModelContextWindow = async () => ({ tokens: 400_000, known: true });
 +      const scoped = await build(service.authorizeNotebookRequest({ ...request, selection: { ...selection, sourceFilter: { enabled: false } } }));
 +      assert.ok(scoped.evidencia_para_la_ruta.textbook_passages.length, 'the whole evidence reaches the scoped prompt too');
-+    } finally { evidence.gatherSynthesisEvidence = recorded; ai.embed = async () => null; ai.researchModelContextWindow = researchWindow; }
++    } finally { evidence.gatherSynthesisEvidence = recorded; ai.embed = async () => null; ai.embedMany = embedMany; ai.researchModelContextWindow = researchWindow; }
 +  });
 +
    test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {

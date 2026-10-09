@@ -1,0 +1,6 @@
+# three turns: 1 catalogue read(s), 51 ms
+# pass 2
+# fail 0
+test-job-thinking-effort (patched, run under node with --job-thinking-effort): Job thinking level: text, JSON and streamed calls carry it on the wire with room to think; other models, concurrent jobs, models without thinking, older requests and unknown levels are untouched; the 
+test-research-native-effort (patched, run under node with --native-effort): 30 real native-engine requests passed with intercepted transports: old models, Sol, Luna, Astra; Standard/High and unchanged global reasoning. No network or paid calls.
+test-research-evidence-request (patched, run under node with --evidence-request): Evidence request: real retrieval, JSON expansion, complete citations, large-window recovery and dispatch passed.

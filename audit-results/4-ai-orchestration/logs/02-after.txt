@@ -1,3 +1,17 @@
-# returned 102 ms after the start, 2 ms after the stop
-# pass 1
-# fail 0
+9 decisions, 11 rounds: 1 inventory builds
+✔ one turn builds the corpus inventory at most once per round, not at every check (45.147142ms)
+ℹ pass 1
+ℹ fail 0
+test-research-corpus-run : (()=>{"use strict";var t={"./lib/node/asar-fs-wrapper.ts"(t,e,r){Object.defineProperty(e,"__esModule",{value:!0}),e.wrapFsWithAsar=void 0;const s=r("buffer"),n=r("fs"),i=r("path"),a=r("util"),o=proces
+
+test-research-chat-agent : (()=>{"use strict";var t={"./lib/node/asar-fs-wrapper.ts"(t,e,r){Object.defineProperty(e,"__esModule",{value:!0}),e.wrapFsWithAsar=void 0;const s=r("buffer"),n=r("fs"),i=r("path"),a=r("util"),o=proces
+
+test-research-actions : (()=>{"use strict";var t={"./lib/node/asar-fs-wrapper.ts"(t,e,r){Object.defineProperty(e,"__esModule",{value:!0}),e.wrapFsWithAsar=void 0;const s=r("buffer"),n=r("fs"),i=r("path"),a=r("util"),o=proces
+
+test-research-corpus-run (--research-corpus-run): Corpus run: pre-ranking scope, mixed Ideas, lexical-only retrieval, shared section budget, no profile barrier and selection revocation passed. 
+test-research-chat-agent (--research-chat-agent): Research chat agent: follow-up planning, catalogue by author, groundwork reads, refused premature finishes and carried citations passed. 
+test-research-actions (--research-actions): Structured actions, invalid decisions, independent source search, separate evidence and decision allowances, explicit reads and scope rejection passed. 
+test-research-evidence-request (--evidence-request): Evidence request: real retrieval, JSON expansion, complete citations, large-window recovery and dispatch passed. 
+test-research-zotero-agents (--research-zotero-agents): Research Chat, Deep Research and Immersion: managed Zotero original access, observable calls, resolvable citations, retrieval-only preview and truthful failure logs passed (simulated transport). 
+test-research-null-idea-statement (--research-null-idea-statement): 
+test-research-null-idea-statement: exit 0 — Ideas without a statement no longer break Research Chat retrieval.
