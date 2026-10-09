@@ -81,6 +81,9 @@ interface EvidenceOptions {
   locale?: string;
   signal?: AbortSignal;
   owner?: string;
+  /** The phases of this gather that failed rather than found nothing. Set by the gather, so a
+   *  degraded result is used for this turn but not remembered as the whole evidence. */
+  failures?: string[];
   /** Called once ORD's disconnections are known, with the evidence so far (target, starting
    *  materials and disconnections): the retrieval query reads nothing else, and the gather's slower
    *  phases — the route search's budget, the textbook schemes' second level — are still running. */
@@ -154,6 +157,7 @@ async function ordDisconnections(target: string, starting: string[], options: Ev
     }
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('ORD disconnections');
     console.warn('[synthesisEvidence] ORD disconnections unavailable:', error instanceof Error ? error.message : String(error));
   } finally {
     await dispose();
@@ -189,6 +193,7 @@ async function textbookSchemePreparations(target: string, disconnectionsReady: P
     return textbookPreparations({ disconnections: entries }, (ids) => textbookCitations(ids, indexDir, options.evidenceScope), (templates) => textbookTemplateCitations(templates, indexDir, 2, options.evidenceScope));
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('textbook preparations');
     console.warn('[synthesisEvidence] textbook schemes unavailable:', error instanceof Error ? error.message : String(error));
     return [];
   } finally {
@@ -236,6 +241,7 @@ async function searchedRoutes(target: string, starting: string[], options: Evide
     );
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('route search');
     console.warn('[synthesisEvidence] route search unavailable:', error instanceof Error ? error.message : String(error));
     return [];
   } finally {
@@ -258,6 +264,7 @@ async function targetAvailability(target: string, name: string, options: Evidenc
     return (data && formatTargetAvailability(name, compoundAvailability(target, data))) || undefined;
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('availability');
     return undefined;
   } finally {
     await dispose();
@@ -466,7 +473,8 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
   // of vendor data. The reuse path already existed (`chemistryRunner` returns a supplied runner
   // with a no-op dispose) but EvidenceOptions never declared the field, so it was unreachable.
   const { runner, dispose } = chemistryRunner(options);
-  const scoped: EvidenceOptions = { ...options, runner };
+  const failures: string[] = [];
+  const scoped: EvidenceOptions = { ...options, runner, failures };
   try {
     // The route search runs beside the rest of the evidence (it has its own time budget).
     const routes = phases.track('route search', searchedRoutes(target, startingMaterials, scoped));
@@ -489,6 +497,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
       passages = await phases.track('passages', textbookPassages(queries, synthesisEvidenceWorkIds(options.evidenceScope), options.signal));
     } catch (error) {
       if (options.signal?.aborted) throw error;
+      failures.push('passages');
       console.warn('[synthesisEvidence] textbook passages unavailable:', error instanceof Error ? error.message : String(error));
     }
     const preparations = await prepared;
@@ -504,8 +513,11 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
       ...(candidates.length ? { candidateRoutes: candidates } : {}),
     };
     // Only a completed gather is kept. The throwIfAborted above means a cancelled one never
-    // reaches here, so a half-gathered result cannot be served to the next turn as a whole one.
-    rememberEvidence(key, gathered);
+    // reaches here, and a phase that failed (a runtime deadline, a worker that died) is not a
+    // completed gather either: kept, it was served to every correction for the cache's lifetime
+    // as if the search had found nothing. Used for this turn, gathered again for the next.
+    if (failures.length) console.info(`${new Date().toISOString()} [synthesisEvidence] not remembered: ${failures.join(', ')} failed`);
+    else rememberEvidence(key, gathered);
     return gathered;
   } finally {
     // Ours to close, and only ours: when the caller supplied the runner, dispose is a no-op.

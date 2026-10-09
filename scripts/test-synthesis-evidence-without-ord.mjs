@@ -355,3 +355,25 @@ test('a correction answered by another model reuses the evidence gathered for th
     assert.equal(second, first);
   } finally { console.info = info; }
 });
+
+test('a gather in which a phase FAILED is not remembered for the corrections', async () => {
+  // The cache is for a completed gather. A disconnection search that threw (a runtime deadline, a
+  // worker that died) is not a completed gather: remembering it served the corrections an empty ORD
+  // brief for thirty minutes, while the same search, asked again, would have answered.
+  const found = { artifacts: [{ artifactType: 'reaction-disconnections', data: { disconnections: [{ input: 'CCOC(=O)c1ccc(N)cc1', target: 'CCOC(=O)c1ccc(N)cc1', madeBy: null, proposals: [{ precursors: 'CCO.Nc1ccc(C(=O)O)cc1', classes: ['Fischer esterification'], recorded: 3, available: true }] }] } }] };
+  let failing = true;
+  const invoke = async () => { if (failing) throw new Error('The disconnection search failed.'); return found; };
+  Object.assign(globalThis.__ord, { provider: TOOL, indexDir: '/idx', invoke, calls: 0 });
+  const first = await quiet(() => gatherSynthesisEvidence(REQUEST));
+  assert.deepEqual(first.disconnections, [], 'the failed search contributes nothing to this turn');
+  failing = false;
+  const info = console.info; console.info = () => {};
+  let second;
+  try { second = await quiet(() => gatherSynthesisEvidence(REQUEST)); } finally { console.info = info; }
+  assert.equal(second.disconnections[0]?.proposals[0]?.classes[0], 'Fischer esterification', 'the correction is gathered again, not served the failed gather');
+  // A gather that completed is still remembered.
+  const calls = globalThis.__ord.calls;
+  const third = await quiet(() => gatherSynthesisEvidence(REQUEST));
+  assert.equal(globalThis.__ord.calls, calls, 'a completed gather is served from memory');
+  assert.equal(third, second);
+});
