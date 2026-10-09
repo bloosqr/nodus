@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pluginsRuntimesRoot } from './pluginStoreV2';
 import type { TrustedWorkerRuntime } from './workerHost';
@@ -211,6 +211,27 @@ const STDERR_TAIL = 64_000;
 const signalExitCode = (name: NodeJS.Signals | null): number =>
   128 + ((name && os.constants.signals[name]) || 9);
 
+/** Interpreters whose process group may still hold something, so a quit does not leave a
+ *  capability's helpers running after the application is gone. */
+const liveInterpreters = new Set<ChildProcess>();
+process.once('exit', () => { for (const child of liveInterpreters) killInterpreter(child); });
+
+/** Kills the interpreter AND whatever it started. A capability's Python may run its own helpers —
+ *  a local OPSIN under Java, a multiprocessing pool — and killing only the interpreter left them
+ *  running, unbudgeted, after the call that wanted them had been cancelled. On POSIX the
+ *  interpreter leads its own process group, so the group goes with it; Windows has no groups, and
+ *  `taskkill /T` walks the tree instead. */
+function killInterpreter(child: ChildProcess): void {
+  liveInterpreters.delete(child);
+  if (!child.pid) return;
+  if (process.platform === 'win32') {
+    try { spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => {}); } catch { /* already gone */ }
+    return;
+  }
+  try { process.kill(-child.pid, 'SIGKILL'); }
+  catch { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
+}
+
 export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request: PythonRunRequest, signal: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
   signal.throwIfAborted();
   const lockDigest = readPointer(pointerFile(runtime, request.runtimeId));
@@ -224,14 +245,19 @@ export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request:
       // A clean environment: the interpreter gets what it needs and nothing the user's
       // shell happens to be carrying.
       env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' },
+      // Its own process group (POSIX), so a kill reaches everything it started.
+      detached: process.platform !== 'win32',
+      windowsHide: true,
     });
+    liveInterpreters.add(child);
     let stdout = '', stderr = '', settled = false;
     const finish = (error?: Error, code = 0) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal.removeEventListener('abort', abort);
-      try { child.kill('SIGKILL'); } catch { /* already gone */ }
+      // Also after a clean exit: a helper the interpreter left behind is still the call's.
+      killInterpreter(child);
       if (error) reject(error); else resolve({ code, stdout, stderr });
     };
     const abort = () => finish(new DOMException('The capability runtime call was cancelled.', 'AbortError'));
