@@ -274,6 +274,8 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
     // here would corrupt the label it is displayed under.
     ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, labelLimit) }))) } : {}),
     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
+    // The label check resolves every name again: from the local mirror, for a package that reads it.
+    ...mirrorInput(provider, ROUTE_TOOL),
   };
   dumpToolInput(ROUTE_TOOL, input);
   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
@@ -740,7 +742,7 @@ const FINAL_REPORT_REVIEW_HELD = 'Every step passed the RDKit check, so the rout
  *  drawing, so only the view is kept. */
 async function drawReaction(runner: Runner, provider: CapabilityProvider, reactionSmiles: string, extra: { conditions?: string; racemic?: boolean } = {}): Promise<string | null> {
   const plan = JSON.stringify({ version: 2, kind: 'reaction', depiction: 'skeletal', reactionSmiles, openStereo: true, ...extra });
-  const result = await runner.invoke({ provider, toolId: COMPILE_TOOL, input: { plan, question: reactionSmiles } });
+  const result = await runner.invoke({ provider, toolId: COMPILE_TOOL, input: { plan, question: reactionSmiles, ...mirrorInput(provider, COMPILE_TOOL) } });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'chemistry-document');
   return artifact?.view ? runner.renderView({ provider, view: artifact.view as ViewDocumentV1 }) : null;
 }
