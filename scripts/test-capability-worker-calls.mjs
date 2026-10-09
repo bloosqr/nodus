@@ -58,6 +58,7 @@ module.exports = host => ({
       return { slept: input.ms, pid: process.pid, started, ended: Date.now() };
     }
     if (toolId === 'ask-host') return { answer: await host.storage.state.get('who') };
+    if (toolId === 'uncloneable') return { draw: () => 'a function cannot cross a process boundary' };
     throw new Error('unknown tool');
   },
 });
@@ -124,4 +125,12 @@ test('a tool runs no more invocations at once than its manifest concurrency, and
   // Different tools do not wait for each other.
   const [a, b] = await Promise.all([invoke(handle, 'sleep', { ms: 500 }, { queue }), invoke(handle, 'sleep', { ms: 500 }, { queue: { key: 'invoke:other', limit: 1 } })]);
   assert.ok(b.started < a.ended && a.started < b.ended, 'calls to different tools were serialized');
+});
+
+test('a result that cannot be sent fails its own call, not the process', async () => {
+  const handle = handleFor();
+  const neighbour = invoke(handle, 'sleep', { ms: 1_500 });
+  await new Promise(resolve => setTimeout(resolve, 200));
+  await assert.rejects(invoke(handle, 'uncloneable', {}, { timeoutMs: 10_000 }), /could not be sent|cloned/);
+  assert.equal((await neighbour).slept, 1_500, 'the call beside it was lost with the process');
 });

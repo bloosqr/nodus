@@ -176,7 +176,13 @@ port.on('message', event => {
     if (typeof implementation !== 'function') throw new Error(`This capability does not implement ${method}.`);
     return implementation.call(worker, payload);
   }).finally(() => callControllers.delete(callId)).then(
-    value => post({ type: 'result', callId, ok: true, value }),
+    // A value the port cannot clone (a function, a class with private state) throws here, and
+    // unhandled that rejection ended the process — and every other call it was carrying. It is
+    // this call's failure, and it is reported as one.
+    value => {
+      try { post({ type: 'result', callId, ok: true, value }); }
+      catch (error) { post({ type: 'result', callId, ok: false, error: `The capability's result could not be sent to the application: ${error instanceof Error ? error.message : String(error)}` }); }
+    },
     error => post({
       type: 'result', callId, ok: false,
       error: error instanceof Error ? error.message : String(error),
