@@ -290,6 +290,7 @@ import { exportImmersionSessionPdf } from '../export/immersionExport';
 import { generateProjectSuggestions } from '../ai/projectInsertion';
 import { exportProject, exportProjectChapter } from '../export/projectExport';
 import path from 'node:path';
+import { openDocumentPath } from '../util/openDocument';
 import fs from 'node:fs';
 import os from 'node:os';
 import AdmZip from 'adm-zip';
@@ -827,7 +828,7 @@ export function registerAcademicIpc(context: IpcContext): void {
   h('libraryReader:openOriginal', async (_e, nodusId: string) => {
     const originalPath = libraryReader.libraryReaderOriginalPath(nodusId);
     if (!originalPath) return false;
-    return (await shell.openPath(originalPath)) === '';
+    return (await openDocumentPath(originalPath)) === '';
   });
   h('libraryReader:annotations:list', async (_e, nodusId: string) =>
     libraryReader.listLibraryReaderAnnotations(nodusId)
