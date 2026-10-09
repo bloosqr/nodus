@@ -217,6 +217,9 @@ export function ResearchAssistantModal({
   // Id of the assistant message currently streaming — drives the live caret and
   // the "stop" affordance. Null when nothing is in flight.
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  // Set once the main process repaints the turn with its own finished text (skills run, route
+  // checks pending): its drawings are complete blocks and render instead of "Loading…".
+  const [repaintedId, setRepaintedId] = useState<string | null>(null);
   // Id of the last assistant message the user stopped. Its partial text stays and
   // the red notice renders under it instead of replacing the whole answer.
   const [stoppedMessageId, setStoppedMessageId] = useState<string | null>(null);
@@ -603,6 +606,7 @@ export function ResearchAssistantModal({
           },
           onReplace: (text) => {
             streamed = text;
+            setRepaintedId(text ? assistantId : null);
             if (activeIdRef.current !== conversationId) return;
             setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: text } : message));
             window.setTimeout(updateJumpIndicator, 0);
@@ -682,6 +686,7 @@ export function ResearchAssistantModal({
     } finally {
       setSending(false);
       setStreamingId(null);
+      setRepaintedId(null);
     }
   };
 
@@ -1102,7 +1107,7 @@ export function ResearchAssistantModal({
                       {message.role === 'assistant' && !message.error ? (
                         message.content ? (
                           <div className={message.id === streamingId ? 'stream-body' : undefined}>
-                            {adapter ? adapter.renderMessage(message, message.id === streamingId) : <ChatMarkdown content={message.content} onCitation={handleCitation} streaming={message.id === streamingId} />}
+                            {adapter ? adapter.renderMessage(message, message.id === streamingId) : <ChatMarkdown content={message.content} onCitation={handleCitation} streaming={message.id === streamingId && message.id !== repaintedId} />}
                             {message.id === streamingId && <span aria-hidden className="stream-caret" />}
                           </div>
                         ) : message.id === streamingId ? (
