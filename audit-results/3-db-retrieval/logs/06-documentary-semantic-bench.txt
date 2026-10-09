@@ -1,0 +1,8 @@
+== after patch (DocumentaryStore opened read-only as the retrieval worker opens it; 100,000 passages in scope)
+BENCH open: 4.1 ms
+BENCH lexicalSearch: median 247.5 ms (min 241.7) · 20
+BENCH semanticSearch: median 780.3 ms (min 696.4) · 20
+== before patch
+BENCH open: 2.4 ms
+BENCH lexicalSearch: median 332.8 ms (min 323.4) · 20
+BENCH semanticSearch: median 824.9 ms (min 815.0) · 20

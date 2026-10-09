@@ -1,0 +1,4 @@
+== after patch
+Documentary semantic search: mapped read-only store, identical ranking, non-finite vectors rejected.
+== before patch (documentaryStore.ts as on audit/2026-10-09)
+AssertionError [ERR_ASSERTION]: the read-only store is memory-mapped
