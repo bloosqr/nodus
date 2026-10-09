@@ -1,0 +1,87 @@
+# Repository: github.com/bloosqr/nodus — apply to audit/2026-10-09 with: git apply audit-results/5-shared-parsing/07-condition-agents-spend-pubchem-turns.patch
+diff --git a/electron/ai/moleculeInspection.ts b/electron/ai/moleculeInspection.ts
+index 105a1f3c..330874e3 100644
+--- a/electron/ai/moleculeInspection.ts
++++ b/electron/ai/moleculeInspection.ts
+@@ -33,6 +33,7 @@ import {
+   formatStructureAudit,
+   formatUnresolvedNameClarification,
+   implyRacemicTarget,
++  isConditionPhrase,
+   normalizeMoleculeDossier,
+   normalizeReactionPrecedent,
+   normalizeRouteAudit,
+@@ -612,7 +613,9 @@ export async function resolveNamedRoute(
+       }
+       for (const name of missing) if (!resolutions.has(name)) resolutions.set(name, { name, status: 'unresolved', feedback: 'No resolution was returned.' });
+     };
+-    await resolveAll(speciesByStep.flatMap((step) => step.map((entry) => entry.name)));
++    // A condition under Agents ("110 °C", "reflux") is no substance: it stays unresolved, as it
++    // would after the lookup, without spending a turn of the PubChem pacer on it.
++    await resolveAll(speciesByStep.flatMap((step) => step.filter((entry) => !(entry.role === 'agent' && isConditionPhrase(entry.name))).map((entry) => entry.name)));
+ 
+     for (let attempt = 0; attempt < NAME_FEEDBACK_ATTEMPTS; attempt += 1) {
+       const unresolved = unresolvedNames(speciesByStep, resolutions);
+diff --git a/scripts/test-route-condition-agents.mjs b/scripts/test-route-condition-agents.mjs
+new file mode 100644
+index 00000000..78c917e8
+--- /dev/null
++++ b/scripts/test-route-condition-agents.mjs
+@@ -0,0 +1,33 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { build } from 'esbuild';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++
++const dir = await mkdtemp(path.join(os.tmpdir(), 'route-condition-agents-'));
++await build({ entryPoints: ['shared/moleculeInspection.ts'], outfile: path.join(dir, 'inspection.mjs'), bundle: true, platform: 'node', format: 'esm' });
++const { isConditionPhrase, findStepNamedSpecies } = await import(pathToFileURL(path.join(dir, 'inspection.mjs')));
++test.after(() => rm(dir, { recursive: true, force: true }));
++
++test('conditions under Agents are recognised as conditions', () => {
++  assert.equal(typeof isConditionPhrase, 'function');
++  for (const phrase of ['110 °C', '−78 °C', '0–25 °C', '12 h', '30 min', '1 h, 25 °C', '5 atm', '273 K', '254 nm', 'reflux', 'room temperature', 'rt', 'heat', 'Δ', 'hν', 'UV light', 'microwave irradiation', 'overnight']) {
++    assert.equal(isConditionPhrase(phrase), true, phrase);
++  }
++});
++
++test('substances are still resolved', () => {
++  for (const name of ['toluene', 'sulfuric acid', 'palladium on carbon', '10% palladium on carbon', '2 M hydrochloric acid', 'potassium carbonate', '2 hydroxybenzoic acid', 'nitrogen', 'hexane', '1,4-dioxane', 'iron(III) bromide', 'light petroleum']) {
++    assert.equal(isConditionPhrase(name), false, name);
++  }
++});
++
++test('a typical route sends only its substances to the resolvers', () => {
++  const answer = [1, 2, 3].map((n) => `## Step ${n} — Esterification\n\nHeat under reflux.\n\nReactants: acetic acid; ethanol\nProducts: ethyl acetate\nByproducts: water\nAgents: sulfuric acid; toluene; reflux; 110 °C; 12 h\n`).join('\n');
++  const species = findStepNamedSpecies(answer, 3);
++  const all = [...new Set(species.flat().map((entry) => entry.name))];
++  const sent = [...new Set(species.flat().filter((entry) => !(entry.role === 'agent' && isConditionPhrase(entry.name))).map((entry) => entry.name))];
++  assert.deepEqual(all.filter((name) => !sent.includes(name)), ['reflux', '110 °C', '12 h']);
++});
+diff --git a/shared/moleculeInspection.ts b/shared/moleculeInspection.ts
+index 8f40ff04..d736c098 100644
+--- a/shared/moleculeInspection.ts
++++ b/shared/moleculeInspection.ts
+@@ -1217,6 +1217,19 @@ export function isPlaceholderSpecies(name: string): boolean {
+     || /^(?:unchanged|same as|ditto|various|etc\.?|multiple|several)\b/i.test(name.trim());
+ }
+ 
++/** A condition the Agents line names in place of a substance: a temperature, a time, a pressure,
++ *  light or heat ("110 °C", "12 h", "reflux", "hν"). The contract invites them there ("or other
++ *  condition the step does not consume"), and no reference holds one, so looking one up only spends
++ *  a turn of the PubChem pacer (0.2 s, 1 s or 5 s each, one at a time) to learn that. Whole entries
++ *  only: "10% palladium on carbon" or "2 M hydrochloric acid" is a substance and is still resolved. */
++const CONDITION_QUANTITY = /^(?:[-−~≈<>≤≥]?\s*\d[\d.,]*\s*(?:[-–−]\s*\d[\d.,]*\s*)?(?:°\s*[CF]|K|h|hrs?|hours?|min|minutes?|days?|atm|bar|mbar|psi|torr|kPa|MPa|nm)(?![\p{L}\d])[\s,;]*)+$/iu;
++const CONDITION_WORD = /^(?:rt|r\.t\.|room temperature|ambient temperature|reflux(?:ing)?|at reflux|heat(?:ing)?|Δ|hν|h\s*ν|light|uv light|visible light|uv irradiation|irradiation|microwave(?: irradiation| heating)?|overnight|sonication|ultrasound|inert atmosphere)$/i;
++
++export function isConditionPhrase(name: string): boolean {
++  const value = name.trim();
++  return CONDITION_QUANTITY.test(value) || CONDITION_WORD.test(value);
++}
++
+ /** A species name as the resolver feedback may return it: a short label with letters, and no
+  *  markup or escaped syntax. A reply that smuggled an SVG, a JSON fragment or a newline into a
+  *  name is not shown to the user as a "correction". */

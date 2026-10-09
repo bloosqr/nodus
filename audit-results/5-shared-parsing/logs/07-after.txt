@@ -1,0 +1,28 @@
+TAP version 13
+# Subtest: conditions under Agents are recognised as conditions
+ok 1 - conditions under Agents are recognised as conditions
+  ---
+  duration_ms: 4.792733
+  type: 'test'
+  ...
+# Subtest: substances are still resolved
+ok 2 - substances are still resolved
+  ---
+  duration_ms: 0.271396
+  type: 'test'
+  ...
+# Subtest: a typical route sends only its substances to the resolvers
+ok 3 - a typical route sends only its substances to the resolvers
+  ---
+  duration_ms: 6.010833
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 171.333584
