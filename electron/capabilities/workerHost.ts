@@ -391,6 +391,63 @@ export async function stopPluginWorkers(pluginId: string): Promise<void> {
   await stopCapabilityWorkers(owned);
 }
 
+/** A scope's workers are shared by every runner that names it — an answer's evidence gather, its
+ *  route checks and its correction rounds — and live while one of them is open, then this long,
+ *  so the next phase finds the process, its module caches and its request pacing still there. */
+const SCOPE_IDLE_MS = 10 * 60_000;
+/** A scope older than this starts afresh at its next lease rather than carrying a worker's
+ *  caches indefinitely. */
+const SCOPE_MAX_AGE_MS = 60 * 60_000;
+/** Idle scopes kept at once; the oldest is stopped first. */
+const SCOPE_IDLE_MAX = 4;
+
+interface ScopeLease { key: string; count: number; created: number; idle?: NodeJS.Timeout; idleSince?: number }
+const scopes = new Map<string, ScopeLease>();
+let scopeGeneration = 0;
+
+const stopScope = (lease: ScopeLease) => {
+  if (lease.idle) clearTimeout(lease.idle);
+  for (const [name, candidate] of scopes) if (candidate === lease) scopes.delete(name);
+  return stopCapabilityWorkers(key => key.endsWith(`#${lease.key}`));
+};
+
+/** Opens a lease on a scope's workers and returns the scope key to acquire them with, and the
+ *  release. Without a scope name the lease is the runner's own and its workers stop on release,
+ *  as every runner's did before scopes existed. */
+export function leaseCapabilityScope(scope?: string, options: { idleMs?: number } = {}): { scopeKey: string; release: () => Promise<void> } {
+  if (!scope) {
+    const lease: ScopeLease = { key: `runner-${++scopeGeneration}-${Date.now().toString(36)}`, count: 1, created: Date.now() };
+    let released = false;
+    return { scopeKey: lease.key, release: async () => { if (released) return; released = true; await stopScope(lease); } };
+  }
+  let lease = scopes.get(scope);
+  if (lease && !lease.count && Date.now() - lease.created > SCOPE_MAX_AGE_MS) { void stopScope(lease); lease = undefined; }
+  if (!lease) {
+    lease = { key: `scope-${++scopeGeneration}`, count: 0, created: Date.now() };
+    scopes.set(scope, lease);
+  }
+  if (lease.idle) { clearTimeout(lease.idle); lease.idle = lease.idleSince = undefined; }
+  lease.count += 1;
+  const held = lease;
+  let released = false;
+  return {
+    scopeKey: held.key,
+    release: async () => {
+      if (released) return;
+      released = true;
+      held.count -= 1;
+      if (held.count > 0) return;
+      const idleMs = options.idleMs ?? SCOPE_IDLE_MS;
+      if (idleMs <= 0) { await stopScope(held); return; }
+      held.idleSince = Date.now();
+      held.idle = setTimeout(() => { void stopScope(held); }, idleMs);
+      held.idle.unref?.();
+      const waiting = [...new Set(scopes.values())].filter(candidate => !candidate.count && candidate.idleSince !== undefined).sort((a, b) => a.idleSince! - b.idleSince!);
+      for (const oldest of waiting.slice(0, Math.max(0, waiting.length - SCOPE_IDLE_MAX))) await stopScope(oldest);
+    },
+  };
+}
+
 export async function stopCapabilityWorkers(predicate?: (key: string) => boolean): Promise<void> {
   for (const [key, handle] of [...handles]) {
     if (predicate && !predicate(key)) continue;
