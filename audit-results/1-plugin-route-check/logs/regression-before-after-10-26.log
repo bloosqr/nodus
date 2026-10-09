@@ -1,0 +1,204 @@
+### 10 (from 32-label-check-fixups)
+before:
+not ok 1 - the route label check applies the fix-ups resolve-names applies to the same name
+# pass 0
+# fail 1
+after:
+ok 1 - the route label check applies the fix-ups resolve-names applies to the same name
+# pass 1
+# fail 0
+full suite after:
+# pass 159 # fail 0 # skipped 1 
+
+### 11 (from 27-stereo-deadline)
+not ok 1 - the stereo enumeration answers within its budget, and nulls only what it could not reach (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - the stereo enumeration answers within its budget, and nulls only what it could not reach (needs CHEMISTRY_TEST_PYTHON)
+full suite after (re-run by the lead, patches 07+11): # pass 160 # fail 0 # skipped 1 
+
+### 12 (from 01-scene-molfile-isotope-radical)
+before:
+not ok 1 - an isotope label survives the scene molfile that every round-trip re-reads
+not ok 2 - a radical is not re-read as a closed-shell species
+# pass 0
+# fail 2
+after:
+ok 1 - an isotope label survives the scene molfile that every round-trip re-reads
+ok 2 - a radical is not re-read as a closed-shell species
+# pass 2
+# fail 0
+full suite after:
+# pass 159 # fail 0 # skipped 1 
+
+### 13 (from 04-chemfig-branch-depth)
+before:
+not ok 1 - a chain too deep for ChemFig branches is refused quickly, and later exports still compile
+# pass 0
+# fail 1
+after:
+ok 1 - a chain too deep for ChemFig branches is refused quickly, and later exports still compile
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 14 (from 05-tex-line-buffer)
+before:
+not ok 1 - a ChemFig line longer than the TeX input buffer is refused, not fatal
+# pass 0
+# fail 1
+after:
+ok 1 - a ChemFig line longer than the TeX input buffer is refused, not fatal
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 15 (from 31-balancer-search-ceiling)
+before:
+not ok 1 - a two-way family is searched to the coefficient ceiling, in any species order
+not ok 2 - a balance past the coefficient ceiling is named, not blamed on a missing reagent
+# pass 0
+# fail 2
+after:
+ok 1 - a two-way family is searched to the coefficient ceiling, in any species order
+ok 2 - a balance past the coefficient ceiling is named, not blamed on a missing reagent
+# pass 2
+# fail 0
+full suite after:
+# pass 160 # fail 0 # skipped 1 
+
+### 16 (from 33-routed-fetch-abort)
+before:
+not ok 1 - an abort ends a reference request the host is still answering
+# pass 0
+# fail 0
+after:
+ok 1 - an abort ends a reference request the host is still answering
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 17 (from 21-local-references-512)
+before:
+not ok 1 - the local references answer every name and structure the application may send (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - the local references answer every name and structure the application may send (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 18 (from 22-pubchem-mirror-optional-tables)
+before:
+not ok 1 - a mirror without an optional table, or one that is not a database, does not sink the call (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - a mirror without an optional table, or one that is not a database, does not sink the call (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 19 (from 23-opsin-reply-line-count)
+before:
+not ok 1 - a local OPSIN reply one line short is no reply, and a message keeps its tabs (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - a local OPSIN reply one line short is no reply, and a message keeps its tabs (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 20 (from 24-route-search-budget)
+before:
+not ok 1 - a route search stops at its budget inside an expansion, and reports the time it took (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - a route search stops at its budget inside an expansion, and reports the time it took (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 21 (from 26-stereo-sampled-none)
+before:
+not ok 1 - the stereo enumeration does not build a sample it cannot count from (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - the stereo enumeration does not build a sample it cannot count from (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 0
+full suite after:
+# pass 160 # fail 0 # skipped 1 
+
+### 22 (from 03-ring-closure-arrow-anchor)
+before:
+not ok 1 - an arrow on the bond that closes a ring is drawn
+# pass 0
+# fail 1
+after:
+ok 1 - an arrow on the bond that closes a ring is drawn
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 23 (from 02-lone-pairs-main-group)
+before:
+not ok 1 - lone pairs are counted for every main-group element, and a radical keeps its electron
+# pass 0
+# fail 1
+after:
+ok 1 - lone pairs are counted for every main-group element, and a radical keeps its electron
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 24 (from 06-legacy-document-status)
+before:
+not ok 1 - a legacy document that is malformed or not verified is refused, never badged as verified
+# pass 0
+# fail 1
+after:
+ok 1 - a legacy document that is malformed or not verified is refused, never badged as verified
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 25 (from 25-compat-acid-deprotections)
+before:
+not ok 1 - the Python compatibility check accepts the usual acid deprotections (needs CHEMISTRY_TEST_PYTHON)
+# pass 0
+# fail 1
+after:
+ok 1 - the Python compatibility check accepts the usual acid deprotections (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+
+### 26 (from 34-intent-coefficient-ceiling)
+before:
+not ok 1 - a reaction intent may declare any coefficient the balancer can solve to
+# pass 0
+# fail 1
+after:
+ok 1 - a reaction intent may declare any coefficient the balancer can solve to
+# pass 1
+# fail 0
+full suite after:
+# pass 158 # fail 0 # skipped 1 
+

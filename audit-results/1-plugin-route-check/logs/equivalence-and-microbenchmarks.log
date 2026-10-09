@@ -1,0 +1,38 @@
+## summary-only vs full inspection, every SMILES literal in test/chemistry.test.mjs
+{"literals":493,"same":402,"differ":0,"bothFail":91,"failMismatch":0}
+
+## whole audit JSON, base vs patch 03 (16 synthetic routes; cipCentres indices excluded)
+DIFF large true 2
+DIFF large true 6
+DIFF large true 14
+DIFF large true 20
+{"same":12,"diff":4}
+
+## balanceReaction, base vs patch 08, 3000 random species sets
+{"same":3000,"diff":0,"solved":704,"baseMs":2521,"patchedMs":448}
+
+## _stereo_choices, base vs patch 07
+{"species": 103, "same": 103, "diff": 0, "baseSeconds": 16.68, "patchedSeconds": 3.6}
+
+## inversion check over random SMILES writings (same molecule must pass, inverted must be caught)
+base:
+{"pairs":129,"right":123,"wrong":6}
+patch 05:
+{"pairs":129,"right":123,"wrong":6}
+
+## audit-only CPU time, 53-heavy-atom 20-step route
+base
+{"length":20,"ms":6409,"continuous":true,"blocked":[]}
+p01
+{"length":20,"ms":764,"continuous":true,"blocked":[]}
+## balancer on high-dimension steps (base, then patch 08)
+{"name":"hc4","directMs":166,"auditMs":136,"outcome":"1,1,2,1,1,2","blocked":"Step 1: a new C–C bond forms at a carbon nothing activates — no leaving group, metal, heteroatom or multiple bond on it,"}
+{"name":"hc6","directMs":34,"auditMs":504,"outcome":"This step leaves 6 species free to vary independently, more than the checker determines co"}
+{"name":"ox6","directMs":68,"auditMs":605,"outcome":"This step leaves 6 species free to vary independently, more than the checker determines co","blocked":"Step 1 is not balanced: This step leaves 6 species free to vary independently, more than the checker determines coeffici"}
+{"name":"dim5","directMs":1,"auditMs":85,"outcome":"1,1,1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1"}
+{"name":"dim4","directMs":1,"auditMs":88,"outcome":"The declared species cannot be balanced: \"H2O2\" take(s) no part (coefficient 0), so the eq","blocked":"Step 1 is not balanced: The declared species cannot be balanced: \"H2O2\" take(s) no part (coefficient 0), so the equation"}
+{"name":"hc4","directMs":30,"auditMs":58,"outcome":"1,1,2,1,1,2","blocked":"Step 1: a new C–C bond forms at a carbon nothing activates — no leaving group, metal, heteroatom or multiple bond on it,"}
+{"name":"hc6","directMs":3,"auditMs":263,"outcome":"This step leaves 6 species free to vary independently, more than the checker determines co"}
+{"name":"ox6","directMs":0,"auditMs":88,"outcome":"This step leaves 6 species free to vary independently, more than the checker determines co","blocked":"Step 1 is not balanced: This step leaves 6 species free to vary independently, more than the checker determines coeffici"}
+{"name":"dim5","directMs":1,"auditMs":94,"outcome":"1,1,1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1"}
+{"name":"dim4","directMs":1,"auditMs":60,"outcome":"The declared species cannot be balanced: \"H2O2\" take(s) no part (coefficient 0), so the eq","blocked":"Step 1 is not balanced: The declared species cannot be balanced: \"H2O2\" take(s) no part (coefficient 0), so the equation"}

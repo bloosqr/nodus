@@ -1,0 +1,12 @@
+== base latency=300 ms, none
+[{"length":2,"run":0,"wallMs":8355,"auditMs":870,"pythonMs":1105,"networkRequests":21,"continuous":true,"blocked":0,"firstBlocked":""},{"length":6,"run":0,"wallMs":19467,"auditMs":1922,"pythonMs":2196,"networkRequests":51,"continuous":true,"blocked":0,"firstBlocked":""},{"length":14,"run":0,"wallMs":31379,"auditMs":4288,"pythonMs":4517,"networkRequests":75,"continuous":true,"blocked":0,"firstBlocked":""},{"length":20,"run":0,"wallMs":40563,"auditMs":6203,"pythonMs":6367,"networkRequests":93,"continuous":true,"blocked":0,"firstBlocked":""}]
+== base latency=300 ms, mirror
+[{"length":2,"run":0,"wallMs":8430,"auditMs":940,"pythonMs":1104,"networkRequests":21,"continuous":true,"blocked":0,"firstBlocked":""},{"length":6,"run":0,"wallMs":19534,"auditMs":1945,"pythonMs":2221,"networkRequests":51,"continuous":true,"blocked":0,"firstBlocked":""},{"length":14,"run":0,"wallMs":31125,"auditMs":4250,"pythonMs":4304,"networkRequests":75,"continuous":true,"blocked":0,"firstBlocked":""},{"length":20,"run":0,"wallMs":40338,"auditMs":6019,"pythonMs":6334,"networkRequests":93,"continuous":true,"blocked":0,"firstBlocked":""}]
+== base fix round (one step changed), 300 ms, no mirror
+{"first":41150,"fixRoundSameWorker":12538,"fixRoundFreshWorker":40271}
+== all latency=300 ms, none
+[{"length":2,"run":0,"wallMs":3415,"auditMs":140,"pythonMs":249,"networkRequests":21,"continuous":true,"blocked":0,"firstBlocked":""},{"length":6,"run":0,"wallMs":7505,"auditMs":185,"pythonMs":248,"networkRequests":51,"continuous":true,"blocked":0,"firstBlocked":""},{"length":14,"run":0,"wallMs":10849,"auditMs":323,"pythonMs":245,"networkRequests":75,"continuous":true,"blocked":0,"firstBlocked":""},{"length":20,"run":0,"wallMs":13250,"auditMs":415,"pythonMs":255,"networkRequests":93,"continuous":true,"blocked":0,"firstBlocked":""}]
+== all latency=300 ms, mirror
+[{"length":2,"run":0,"wallMs":928,"auditMs":144,"pythonMs":405,"networkRequests":7,"continuous":true,"blocked":0,"firstBlocked":""},{"length":6,"run":0,"wallMs":1812,"auditMs":175,"pythonMs":376,"networkRequests":17,"continuous":true,"blocked":0,"firstBlocked":""},{"length":14,"run":0,"wallMs":2555,"auditMs":320,"pythonMs":364,"networkRequests":25,"continuous":true,"blocked":0,"firstBlocked":""},{"length":20,"run":0,"wallMs":2966,"auditMs":424,"pythonMs":384,"networkRequests":31,"continuous":true,"blocked":0,"firstBlocked":""}]
+== all fix round (one step changed), 300 ms, no mirror
+{"first":13493,"fixRoundSameWorker":663,"fixRoundFreshWorker":631}

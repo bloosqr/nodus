@@ -1,0 +1,84 @@
+### 01 label references local and paced
+before (fe3b2d6 + the patch's tests):
+not ok 1 - the route label check and compile ask the local references first, once per batch
+# pass 0
+# fail 1
+after (audit-p04):
+ok 1 - the route label check and compile ask the local references first, once per batch
+# pass 1
+# fail 0
+
+### 03 route audit summarises once
+before (fe3b2d6 + the patch's tests):
+ok 1 - the route check reads each species once, and its summary matches the drawing path
+not ok 2 - a stereocentre the route check names is numbered in the string the author wrote
+# pass 1
+# fail 1
+after (audit-p01):
+ok 1 - the route check reads each species once, and its summary matches the drawing path
+ok 2 - a stereocentre the route check names is numbered in the string the author wrote
+# pass 2
+# fail 0
+
+### 04 messages name by structure
+before (fe3b2d6 + the patch's tests):
+not ok 1 - a route message names the species the author meant, whatever order the labels came in
+# pass 0
+# fail 1
+after (audit-p06):
+ok 1 - a route message names the species the author meant, whatever order the labels came in
+# pass 1
+# fail 0
+
+### 05 inversion by correspondence
+before (audit-p06 + the patch's tests):
+not ok 1 - a stereocentre is compared through its branches, not by its CIP letter
+# pass 0
+# fail 1
+after (audit-p05):
+ok 1 - a stereocentre is compared through its branches, not by its CIP letter
+# pass 1
+# fail 0
+
+### 06 references kept across workers
+before (audit-p04 + the patch's tests):
+not ok 1 - a fix round in a new worker reuses the label answers the last check found
+# pass 0
+# fail 1
+after (audit-p08):
+ok 1 - a fix round in a new worker reuses the label answers the last check found
+# pass 1
+# fail 0
+
+### 07 stereo fast path
+before (fe3b2d6 + the patch's tests):
+not ok 1 - the stereo enumeration runs while the route labels are looked up
+ok 2 - the stereo enumeration answers a fully assigned structure without building it (needs CHEMISTRY_TEST_PYTHON)
+# pass 1
+# fail 1
+after (audit-p03):
+ok 1 - the stereo enumeration runs while the route labels are looked up
+ok 2 - the stereo enumeration answers a fully assigned structure without building it (needs CHEMISTRY_TEST_PYTHON)
+# pass 2
+# fail 0
+
+### 08 balancer integer search (behaviour guard; speed is in verify-route-timings.log)
+before (fe3b2d6 + the patch's tests):
+ok 1 - the bounded coefficient search keeps its answers, and refuses a free step without searching
+# pass 1
+# fail 0
+after (audit-p02):
+ok 1 - the bounded coefficient search keeps its answers, and refuses a free step without searching
+# pass 1
+# fail 0
+
+### 09 resolve-names canonicalises without drawing
+before (audit + 03 + the patch's tests):
+not ok 1 - resolve-names canonicalises without drawing, and the inspector still returns a full graph
+# pass 0
+# fail 1
+after:
+ok 1 - resolve-names canonicalises without drawing, and the inspector still returns a full graph
+# pass 1
+# fail 0
+
