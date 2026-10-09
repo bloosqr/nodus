@@ -119,6 +119,16 @@ function splitIdentifiers(value: string | null): string[] {
   return [...new Set(String(value ?? '').split(/[;,\n]+/).map((entry) => entry.trim()).filter(Boolean))];
 }
 
+/** Zotero separates the ISBNs of one book with spaces. Split there only when every
+ * part is a whole ISBN, so a single number written in spaced groups stays one value. */
+function splitIsbns(value: string | null): string[] {
+  return [...new Set(splitIdentifiers(value).flatMap((entry) => {
+    const parts = entry.split(/\s+/);
+    return parts.length > 1 && parts.every((part) => /^(?:\d{9}[\dX]|\d{13})$/i.test(part.replace(/-/g, '')))
+      ? parts : [entry];
+  }))];
+}
+
 function parseExtra(value: string | null, item: ZoteroItem): Record<string, string> | undefined {
   const result: Record<string, string> = {};
   for (const line of String(value ?? '').split(/\r?\n/)) {
@@ -162,7 +172,7 @@ function metadata(item: ZoteroItem): LibraryItemMetadata {
     ...(item.rights?.trim() ? { rights: item.rights.trim() } : {}),
     ...(item.url?.trim() ? { url: item.url.trim() } : {}),
     ...(item.doi?.trim() ? { doi: item.doi.trim() } : {}),
-    isbn: splitIdentifiers(item.isbn),
+    isbn: splitIsbns(item.isbn),
     issn: splitIdentifiers(item.issn),
     tags: [...new Set(item.tags.map((tag) => tag.trim()).filter(Boolean))],
     ...(extra ? { extra } : {}),
