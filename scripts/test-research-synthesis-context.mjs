@@ -220,6 +220,21 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
     } finally { ai.researchModelContextWindow = researchWindow; ai.completeJson = json; console.warn = warn; }
   });
 
+  test('a correction round inspects no molecules', async () => {
+    // The chip's only SMILES-like tokens come from the shared rules text, so inspecting it opens a
+    // chemistry worker for nothing on every correction round.
+    const shared = load('shared/moleculeInspection.ts');
+    const chip = JSON.parse(shared.formatMissingSpeciesPrompt('CCOC(=O)c1ccc(N)cc1').replace(/^```nodus-route-fix\n/, '').replace(/\n```$/, '')).prompt;
+    assert.ok(shared.findSmilesCandidates(chip).length, 'the chip does carry SMILES-like tokens');
+    let inspected = 0;
+    const original = molecule.inspectResearchMolecules;
+    molecule.inspectResearchMolecules = async () => { inspected++; return []; };
+    try {
+      await build({ ...request, messages: [request.messages[0], { role: 'assistant', content: 'Step 1 draft' }, { role: 'user', content: chip }] });
+      assert.equal(inspected, 0);
+    } finally { molecule.inspectResearchMolecules = original; }
+  });
+
   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
     const controller = new AbortController();
     let started;
