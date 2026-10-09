@@ -1,0 +1,44 @@
+api-key-recovery: exit 0 · # pass 1 # fail 0 
+auto-backup: exit 1 · AssertionError [ERR_ASSERTION]: backup runs: El proceso auxiliar de copia no está disponible. 
+backup-utility-process: exit 0 · # pass 2 # fail 0 
+backup-vaults: exit 1 · Error: El proceso auxiliar de copia no está disponible. 
+model-independence: exit 0 · # pass 1 # fail 0 
+pipeline-logs: exit 0 · # pass 11 # fail 0 
+primary-sources-governance-export: exit 0 · Primary Sources governance, export and recovery phase test passed! 
+primary-sources-migration-repositories: exit 1 · Error: El proceso auxiliar de copia no está disponible. 
+sync-package: exit 0 · sync package (two-machine merge, real schema) test passed 
+vector-scan: exit 0 · # pass 6 # fail 0 
+vector-scan-worker: exit 0 · # pass 6 # fail 0 
+backup-vault-revision: exit 0 · # pass 1 # fail 0 
+research-corpus-run: exit 0 · Corpus run: pre-ranking scope, mixed Ideas, lexical-only retrieval, shared section budget, no profile barrier and selection revocation passed. 
+hierarchical-retrieval: exit 0 · # pass 4 # fail 0 
+documentary-campaigns: exit 0 · Frozen This-vault consent, missing configuration, independent future policy, shared job interests, per-document controls and revoked previews passed. 
+documentary-inventory-indexes: exit 0 · Documentary inventory lookups stay on indexes and never load revision text. 
+documentary-store: exit 0 · Shared documentary store: idempotency, transactional leases, restart recovery, fencing, lexical-first publication, vector compatibility, cancellation, bounded retries and pause passed. 
+documentary-vault-ownership: exit 0 · Actual documentary queue: two owning vaults, UI switch across extraction await, text-only preparation and scoped DB isolation passed. 
+documentary-automatic-lifecycle: exit 0 · Automatic academic-only discovery, opt-out, shared deletion and citation revocation passed. 
+documentary-requests: exit 0 · Source jobs: exclusivity, restart fencing, idempotency, pause, changed revisions, vault boundaries, retry bound, cancellation and Unicode chunk bounds passed. 
+documentary-binary-vectors: exit 0 · Vectors are Float32 blobs stored once; legacy stores convert in the background with identical search results. 
+documentary-compaction: exit 0 · Skipped: build the app first (dist-electron/documentaryMaintenanceWorker.js). 
+documentary-writers: exit 1 · Error: documentary_retrieval_worker_stopped 
+synthesis-evidence: exit 0 · # pass 15 # fail 0 
+synthesis-evidence-without-ord: exit 1 · # pass 0 # fail 1 
+database-indexing: exit 0 · database FTS/materialization/streaming test passed 
+archive-migration-52: exit 0 · Archive migration 52 test passed! 
+synthesis-evidence-passages: exit 0 · Synthesis textbook passages: dense lane off the main process, embeddings requested together, same passages. 
+passages-fts-triggers: exit 0 · Passage index triggers find rows by lookup and keep the index in step. 
+lexical-passage-search: exit 0 · Lexical passage lane: same candidate pool, ranking read by page and inside the scope. 
+documentary-inventory-batched: exit 0 · Preparation inventory: 9 statements for 24 or 96 sources, each source's state unchanged. 
+documentary-semantic-scan: exit 0 · Documentary semantic search: mapped read-only store, identical ranking, non-finite vectors rejected. 
+vector-scan-restore: exit 0 · Restore: the vault opens as the backup, and vector scans resume on it. 
+== the same five suites on audit/2026-10-09 without any patch
+auto-backup (base): exit 1 · AssertionError [ERR_ASSERTION]: backup runs: El proceso auxiliar de copia no está disponible. 
+backup-vaults (base): exit 1 · Error: El proceso auxiliar de copia no está disponible. 
+primary-sources-migration-repositories (base): exit 1 · Error: El proceso auxiliar de copia no está disponible. 
+documentary-writers (base): exit 1 · Error: documentary_retrieval_worker_stopped 
+synthesis-evidence-without-ord (base): exit 0 · # pass 16 # fail 0 
+
+== synthesis-evidence-without-ord after its passagesRepo stub gained findSimilarPassagesPaged (now part of patch 01)
+synthesis-evidence-without-ord: exit 0 · # pass 16 # fail 0
+
+Typecheck of the combined tree (all seven patches applied to audit/2026-10-09): npm run typecheck -> exit 0

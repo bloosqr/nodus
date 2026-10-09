@@ -1,0 +1,7 @@
+01 01-synthesis-dense-lane-off-main-thread.patch: electron typecheck errors=0 · test-synthesis-evidence-passages: Synthesis textbook passages: dense lane off the main process, embeddings requested together, same passages. 
+02 02-vector-scan-cache-per-table-generations.patch: electron typecheck errors=0 · test-vector-scan-worker: # pass 6 # fail 0 
+03 03-passages-fts-trigger-index.patch: electron typecheck errors=0 · test-passages-fts-triggers: Passage index triggers find rows by lookup and keep the index in step. 
+04 04-lexical-lane-paged-and-scoped.patch: electron typecheck errors=0 · test-lexical-passage-search: Lexical passage lane: same candidate pool, ranking read by page and inside the scope. 
+05 05-documentary-lookups-batched.patch: electron typecheck errors=0 · test-documentary-inventory-batched: Preparation inventory: 9 statements for 24 or 96 sources, each source's state unchanged. 
+06 06-documentary-semantic-scan-mapped.patch: electron typecheck errors=0 · test-documentary-semantic-scan: Documentary semantic search: mapped read-only store, identical ranking, non-finite vectors rejected. 
+07 07-restore-reads-through-stale-wal.patch: electron typecheck errors=0 · test-vector-scan-restore: Restore: the vault opens as the backup, and vector scans resume on it. 

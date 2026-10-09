@@ -1,0 +1,16 @@
+BENCH inventory: median 12.4 ms (min 11.9, max 12.9, n=3) · 1000
+BENCH preparation-inventory: median 87.9 ms (min 83.2, max 89.3, n=3) · 1000
+BENCH shared-retrieval: median 35.6 ms (min 35.3, max 48.4, n=3) · 0
+BENCH findSimilarPassages-main: median 1182.5 ms (min 1144.7, max 1267.9, n=3) · 0
+2026-10-09T05:54:44.866Z [vectorScanWorker] passages cache built in 0.99s · 100000 vectors · data_version 2
+2026-10-09T05:54:45.742Z [vectorScanWorker] passages scan 1.88s · 0 kept of 100000 visited (0 unembedded) · 67 window(s) · 18.8µs/row · query d7d16dc6 · 1003 params
+2026-10-09T05:54:46.114Z [vectorScanWorker] passages scan 0.37s · 0 kept of 100000 visited (0 unembedded) · 67 window(s) · 3.7µs/row · query 638586ed · 1003 params
+BENCH findSimilarPassagesPaged-worker: median 375.7 ms (min 371.7, max 1978.5, n=3) · 0
+BENCH lexical-global: median 276.8 ms (min 267.4, max 297.7, n=3) · 24
+BENCH lexical-scoped-12: median 346.1 ms (min 328.6, max 368.6, n=3) · 24
+BENCH textbookPassages-7q: median 7997.7 ms (min 7997.7, max 7997.7, n=1) · 8
+2026-10-09T05:54:46.490Z [vectorScanWorker] passages scan 0.37s · 0 kept of 100000 visited (0 unembedded) · 67 window(s) · 3.7µs/row · query 4586b635 · 1003 params
+2026-10-09T05:54:57.684Z [vectorScanWorker] document_vectors scan 0.00s · 0 kept of 0 visited (0 unembedded) · 0 window(s) · –µs/row · query - · 4 params
+2026-10-09T05:54:58.027Z [vectorScanWorker] passages scan 0.34s · 60 kept of 100000 visited (0 unembedded) · 67 window(s) · 3.4µs/row · query defaccc5 · 1003 params
+2026-10-09T05:54:58.504Z [vectorScanWorker] document_vectors scan 0.01s · 0 kept of 0 visited (0 unembedded) · 0 window(s) · –µs/row · query - · 4 params
+BENCH corpus-run-retrieve: median 2422.7 ms (min 863.1, max 2422.7, n=2) · 8
