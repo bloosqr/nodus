@@ -172,22 +172,33 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
       // unverified fallback — so the budget is almost never spent on chemistry, and a timeout
       // without a timing line is undiagnosable. Logged on failure always, and on success only when
       // the call used more than half its budget, so an ordinary route stays quiet.
-      const started = performance.now();
-      const startedWall = Date.now();
+      // Restarted when the call is admitted: time queued behind the same tool is reported beside
+      // the budget, not as part of it.
+      let started = performance.now();
+      let startedWall = Date.now();
+      let queued = '';
       // Always, so a run's log carries the per-tool cost a later analysis can total. Suppressing
       // the quick successes left the dominant cost of a turn unmeasurable from its own log.
       const report = (outcome: string, detail = '') => {
         const spent = performance.now() - started;
         const wallSpent = Date.now() - startedWall;
         const drift = Math.abs(wallSpent - spent) > Math.max(250, spent * 0.1) ? ` · CLOCK STEPPED: wall says ${(wallSpent / 1000).toFixed(1)}s` : '';
-        console.info(`${new Date().toISOString()} [capability] ${provider.id} ${toolId} ${outcome} in ${(spent / 1000).toFixed(1)}s of a ${(tool.timeoutMs / 1000).toFixed(0)}s budget${detail}${drift}`);
+        console.info(`${new Date().toISOString()} [capability] ${provider.id} ${toolId} ${outcome} in ${(spent / 1000).toFixed(1)}s of a ${(tool.timeoutMs / 1000).toFixed(0)}s budget${queued}${detail}${drift}`);
       };
       try {
         const result = await handle.call<Awaited<ReturnType<TrustedCapabilityRunner['invoke']>>>('invoke', {
           invocationId: `i${Math.random().toString(36).slice(2, 10)}`,
           toolId, input, locale: context.locale,
           chat: { question: context.question, nodeId, ...(budget ? { budget } : {}) },
-        }, { timeoutMs: tool.timeoutMs, signal: context.signal, services });
+        }, {
+          timeoutMs: tool.timeoutMs, signal: context.signal, services,
+          queue: { key: `invoke:${toolId}`, limit: tool.concurrency },
+          onAdmitted: waited => {
+            started = performance.now();
+            startedWall = Date.now();
+            if (waited >= 50) queued = ` · queued ${(waited / 1000).toFixed(1)}s`;
+          },
+        });
         report('ok');
         return result;
       } catch (error) {

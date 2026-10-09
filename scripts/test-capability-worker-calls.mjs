@@ -50,11 +50,12 @@ module.exports = host => ({
     // Read once, at the start, the way a capability reads it.
     const signal = host.signal;
     if (toolId === 'sleep') {
+      const started = Date.now();
       await new Promise((resolve, reject) => {
         const timer = setTimeout(resolve, input.ms);
         signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
       });
-      return { slept: input.ms, pid: process.pid };
+      return { slept: input.ms, pid: process.pid, started, ended: Date.now() };
     }
     if (toolId === 'ask-host') return { answer: await host.storage.state.get('who') };
     throw new Error('unknown tool');
@@ -98,4 +99,29 @@ test('a host call is answered with the services of the call that made it', async
   assert.equal(first.answer, 'turn one');
   assert.equal(second.answer, 'turn two');
   assert.equal((await invoke(handle, 'ask-host', {})).answer, 'the handle');
+});
+
+test('a tool runs no more invocations at once than its manifest concurrency, and a queued one keeps its whole budget', async () => {
+  const handle = handleFor();
+  const queue = { key: 'invoke:sleep', limit: 1 };
+  const answers = await Promise.all([
+    invoke(handle, 'sleep', { ms: 700 }, { queue }),
+    invoke(handle, 'sleep', { ms: 700 }, { queue }),
+    // Queued for at least 1.4 s, with a one-second budget for 0.1 s of work.
+    invoke(handle, 'sleep', { ms: 100 }, { queue, timeoutMs: 1_000 }),
+  ]);
+  const sorted = answers.sort((a, b) => a.started - b.started);
+  for (let i = 1; i < sorted.length; i++) assert.ok(sorted[i].started >= sorted[i - 1].ended, 'two invocations of a concurrency-1 tool overlapped');
+  // A caller that gives up while queued never reaches the worker.
+  const controller = new AbortController();
+  const busy = invoke(handle, 'sleep', { ms: 600 }, { queue });
+  const queued = invoke(handle, 'sleep', { ms: 5_000 }, { queue, signal: controller.signal });
+  setTimeout(() => controller.abort(), 100);
+  const cancelledAt = Date.now();
+  await assert.rejects(queued, { name: 'AbortError' });
+  assert.ok(Date.now() - cancelledAt < 400, 'the cancellation waited for the slot');
+  await busy;
+  // Different tools do not wait for each other.
+  const [a, b] = await Promise.all([invoke(handle, 'sleep', { ms: 500 }, { queue }), invoke(handle, 'sleep', { ms: 500 }, { queue: { key: 'invoke:other', limit: 1 } })]);
+  assert.ok(b.started < a.ended && a.started < b.ended, 'calls to different tools were serialized');
 });
