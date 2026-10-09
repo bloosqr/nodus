@@ -185,6 +185,20 @@ if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-synthesis-c
     } finally { molecule.resolveNamedRoute = original; console.error = error; }
   });
 
+  test('a route request that asks for the web is an explicit web request', async () => {
+    // The grant's search question on a route turn is the target and its reaction classes; whether
+    // the user asked for the web is read from their own words, or a request with the web switched
+    // off is never told so.
+    const service = load('electron/ai/researchNotebookService.ts');
+    const researchWindow = ai.researchModelContextWindow;
+    ai.researchModelContextWindow = async () => ({ tokens: 400_000, known: true });
+    try {
+      const asked = { ...request, webSearch: 'off', messages: [{ role: 'user', content: `${request.messages[0].content} Search the web for recent industrial routes.` }] };
+      const payload = await build(service.authorizeNotebookRequest({ ...asked, selection: { ...selection, sourceFilter: { enabled: false } } }));
+      assert.equal(payload.contexto_modular_seleccionado.web_search, 'disabled_by_user');
+    } finally { ai.researchModelContextWindow = researchWindow; }
+  });
+
   test('cancelling a prompt interrupts the evidence embedding instead of finishing retrieval', async () => {
     const controller = new AbortController();
     let started;
