@@ -1,4 +1,5 @@
 import { eachBounded } from '../util/async';
+import { dumpToolInput } from './routeInputDump';
 import type { ModelRef } from '@shared/types';
 import { findRequestedTarget } from '@shared/moleculeInspection';
 import {
@@ -107,11 +108,9 @@ export async function invokeDisconnections(runner: Runner, targets: string[], st
   const indexDir = await reactionIndexService().localDirectory();
   options.signal?.throwIfAborted();
   if (!indexDir) return null;
-  const result = await runner.invoke({
-    provider,
-    toolId: DISCONNECT_TOOL,
-    input: { indexDir, targets: targets.slice(0, 16), limit, ...(starting.length ? { startingMaterials: starting.slice(0, 16) } : {}), ...stockInput() },
-  });
+  const input = { indexDir, targets: targets.slice(0, 16), limit, ...(starting.length ? { startingMaterials: starting.slice(0, 16) } : {}), ...stockInput() };
+  dumpToolInput(DISCONNECT_TOOL, input);
+  const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections');
   return artifact ? normalizeDisconnections(artifact.data, limit) : [];
 }
@@ -171,6 +170,7 @@ async function textbookSchemePreparations(target: string, disconnectionsReady: P
   // second-level molecules (chosen from ORD's proposals) wait for it. Each molecule is its own
   // process: one call used to work through all six one after another — 205 s on a long target.
   const one = async (molecule: string): Promise<unknown[]> => {
+    dumpToolInput(DISCONNECT_TOOL, { indexDir, targets: [molecule], limit: 6, source: 'textbook' });
     const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input: { indexDir, targets: [molecule], limit: 6 } });
     const data = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections')?.data as { disconnections?: unknown[] } | undefined;
     return Array.isArray(data?.disconnections) ? data.disconnections : [];

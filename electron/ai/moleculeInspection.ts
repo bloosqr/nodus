@@ -57,6 +57,7 @@ import { formatTextbookPrecedents, TEXTBOOK_ID } from '@shared/textbookSchemes';
 import { compatibilityFixLines, formatCompatibility, normalizeCompatibility, type StepCompatibility } from '@shared/stepCompatibility';
 import { invokeDisconnectionsEach, synthesisEvidenceWorkIds, textbookPassages } from './synthesisEvidence';
 import { opsinDirectory, pubchemMirrorDirectory } from './pubchemMirror';
+import { dumpToolInput } from './routeInputDump';
 import type { ChemistryEvidenceScope } from './chemistryEvidenceScope';
 import { capabilityRegistry, pinCapabilitiesForTurn, type CapabilityProvider } from '../capabilities/registry';
 import { createTrustedCapabilityRunner } from '../capabilities/runner';
@@ -271,6 +272,7 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
     ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, labelLimit) }))) } : {}),
     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
   };
+  dumpToolInput(ROUTE_TOOL, input);
   const result = await runner.invoke({ provider, toolId: ROUTE_TOOL, input });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'route-audit');
   const audit = artifact ? normalizeRouteAudit(artifact.data) : null;
@@ -435,7 +437,9 @@ function mirrorInput(provider: CapabilityProvider, toolId: string): { pubchemDir
 }
 
 async function invokeResolveNames(runner: Runner, provider: CapabilityProvider, names: string[]): Promise<SpeciesResolution[]> {
-  const result = await runner.invoke({ provider, toolId: RESOLVE_TOOL, input: { names, ...mirrorInput(provider, RESOLVE_TOOL) } });
+  const input = { names, ...mirrorInput(provider, RESOLVE_TOOL) };
+  dumpToolInput(RESOLVE_TOOL, input);
+  const result = await runner.invoke({ provider, toolId: RESOLVE_TOOL, input });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'species-resolution');
   const data = artifact?.data as { results?: unknown } | undefined;
   const list = Array.isArray(data?.results) ? data.results as unknown[] : [];
@@ -477,7 +481,9 @@ function normalizeStructureName(entry: unknown): SpeciesStructureName | null {
 }
 
 async function invokeNameStructures(runner: Runner, provider: CapabilityProvider, smiles: string[]): Promise<SpeciesStructureName[]> {
-  const result = await runner.invoke({ provider, toolId: STRUCTURE_TOOL, input: { smiles, ...mirrorInput(provider, STRUCTURE_TOOL) } });
+  const input = { smiles, ...mirrorInput(provider, STRUCTURE_TOOL) };
+  dumpToolInput(STRUCTURE_TOOL, input);
+  const result = await runner.invoke({ provider, toolId: STRUCTURE_TOOL, input });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'structure-naming');
   const data = artifact?.data as { results?: unknown } | undefined;
   const list = Array.isArray(data?.results) ? data.results as unknown[] : [];
