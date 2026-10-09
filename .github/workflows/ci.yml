@@ -279,7 +279,9 @@ jobs:
       - name: Checkout the marketplace
         uses: actions/checkout@v7
         with:
-          repository: NodusResearch/nodus-research-skill-marketplace
+          # CI-ONLY (fork test branch, never in a PR): check against the paired fork branch.
+          repository: bloosqr/nodus-research-skill-marketplace
+          ref: pr/audit-chemistry-studio
           path: .marketplace
 
       # A change can span both repositories, and then this branch has to be checked against
