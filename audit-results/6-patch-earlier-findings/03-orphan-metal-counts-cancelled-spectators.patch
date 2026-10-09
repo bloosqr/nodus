@@ -1,0 +1,42 @@
+# Repository: bloosqr/nodus-research-skill-marketplace — unified diff against branch audit/2026-10-09. Apply with: git apply 03-orphan-metal-counts-cancelled-spectators.patch
+diff --git a/plugins/chemistry-studio/src/engine/chemistryReaction.ts b/plugins/chemistry-studio/src/engine/chemistryReaction.ts
+index 1fcbb2d..65d04fe 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryReaction.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryReaction.ts
+@@ -588,7 +588,10 @@ export function balanceReaction(compositions: Composition[], roles: ReactionSpec
+     // The product-side counterpart: a zeroed species carrying a metal that NO reactant supplies.
+     // "Delete it" is only half the answer there — just as often the step is missing the reagent that
+     // brings the metal (a sodium bromide byproduct with no sodium base listed). Say both.
+-    const reactantMetals = new Set(reduced.flatMap((_, position) => (roles[reduced[position].index] === 'reactant' ? metalsOf(position) : [])));
++    // Every declared reactant counts, a spectator cancelled before solving included: a sodium ion
++    // carried through still means something under Reactants supplies sodium.
++    const reactantMetals = new Set(active.flatMap(({ composition, index }) => (roles[index] === 'reactant'
++      ? Object.keys(composition.atoms).filter(key => isMetalKey(key) && composition.atoms[key] > 0) : [])));
+     const orphans = incidental.filter(position => metalsOf(position).some(key => !reactantMetals.has(key)));
+     if (orphans.length && !balancedSomethingElse) {
+       const many = orphans.length > 1;
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 2d08366..2f27813 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -1321,6 +1321,20 @@ test('a metal reagent that comes out at zero is never advised deleted', () => {
+   assert.match(water, /Delete the molecule the step neither consumes nor produces/, 'spurious water keeps its advice');
+ });
+ 
++test('a metal reactant cancelled as a spectator still counts as supplying its metal', () => {
++  // Sodium ion on both sides is cancelled before solving. The orphan-metal check then looked only at
++  // what was left, and told the author that nothing under Reactants supplies the sodium of a spare
++  // sodium bromide — while a sodium ion was declared right there under Reactants.
++  const r = (n) => Array(n).fill('reactant'), p = (n) => Array(n).fill('product');
++  const thrown = (fn) => { try { fn(); } catch (error) { return error.message; } return null; };
++  const bromoethane = comp({ '6:0': 2, '1:0': 5, '35:0': 1 }), hydroxide = comp({ '1:0': 1, '8:0': 1 }, -1), sodiumIon = comp({ '11:0': 1 }, 1);
++  const ethanol = comp({ '6:0': 2, '1:0': 6, '8:0': 1 }), bromide = comp({ '35:0': 1 }, -1), sodiumBromide = comp({ '11:0': 1, '35:0': 1 });
++  const message = thrown(() => lib.balanceReaction([bromoethane, hydroxide, sodiumIon, ethanol, bromide, sodiumIon, sodiumBromide], [...r(3), ...p(4)], [1, 1, 1, 1, 1, 1, 1]));
++  assert.ok(message, 'the spare sodium bromide does not balance');
++  assert.doesNotMatch(message, /nothing under Reactants supplies/, 'a sodium ion is declared under Reactants');
++  assert.match(message, /"NaBr" take\(s\) no part/);
++});
++
+ test('a species on both sides that takes part is balanced by its net amount', () => {
+   // Both came from a real route that looped through four corrections. A species on both sides
+   // was cancelled as a spectator, and without it the step could not balance:

@@ -1,0 +1,98 @@
+# Repository: bloosqr/nodus-research-skill-marketplace — unified diff against branch audit/2026-10-09. Apply with: git apply 04-local-references-isolate-mirror-and-opsin.patch
+diff --git a/plugins/chemistry-studio/python/reactions_worker.py b/plugins/chemistry-studio/python/reactions_worker.py
+index c17c941..7ce02ba 100644
+--- a/plugins/chemistry-studio/python/reactions_worker.py
++++ b/plugins/chemistry-studio/python/reactions_worker.py
+@@ -1584,10 +1584,21 @@ def handle(request):
+         names = [n for n in request.get("pubchemNames", []) if isinstance(n, str) and n.strip()]
+         smiles = [m for m in request.get("pubchemSmiles", []) if isinstance(m, str) and m.strip()]
+         out = {}
++        # Each source fails on its own: a half-built or corrupt mirror reads as no mirror, so the
++        # caller asks the network for those names, and the local OPSIN answers are still returned.
+         if isinstance(request.get("pubchemDir"), str):
+-            out["pubchem"] = _pubchem_mirror(request["pubchemDir"], names, smiles)
++            try:
++                out["pubchem"] = _pubchem_mirror(request["pubchemDir"], names, smiles)
++            except Exception as error:
++                reason = f"{type(error).__name__}: {error}"[:300]
++                print(f"PubChem mirror unusable: {reason}", file=sys.stderr)
++                out["pubchem"] = {"names": {}, "smiles": {}, "available": False, "error": reason}
+         if isinstance(request.get("opsinDir"), str):
+-            out["opsin"] = _opsin_local(request["opsinDir"], names)
++            try:
++                out["opsin"] = _opsin_local(request["opsinDir"], names)
++            except Exception as error:
++                print(f"Local OPSIN unusable: {type(error).__name__}: {error}"[:300], file=sys.stderr)
++                out["opsin"] = {}
+         return out
+     index_dir = request.get("indexDir")
+     index_dirs = [d for d in request.get("indexDirs", []) if isinstance(d, str) and d][:4] if isinstance(request.get("indexDirs"), list) else []
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index 6c5e6f0..af8df78 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -564,11 +564,16 @@ async function localReferencesFor(input: { pubchemDir?: unknown; opsinDir?: unkn
+   try {
+     const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT],
+       stdin: JSON.stringify({ ...(pubchemDir ? { pubchemDir } : {}), ...(opsinDir ? { opsinDir } : {}), pubchemNames: names, pubchemSmiles: smiles }), timeoutMs: 120_000 });
+-    if (run.code !== 0) return {};
++    // Logged, not only dropped: every name then goes to the network, and nothing else says why.
++    if (run.code !== 0) {
++      host().log('warn', 'The local reference lookup failed; the network answers instead.', { code: run.code, stderr: run.stderr.slice(-2000) });
++      return {};
++    }
+     const data = JSON.parse(run.stdout) as {
+-      pubchem?: { available?: boolean; names?: Record<string, { cid: number; smiles: string; formula?: string }>; smiles?: Record<string, { cid: number; name?: string; formula?: string }> };
++      pubchem?: { available?: boolean; error?: string; names?: Record<string, { cid: number; smiles: string; formula?: string }>; smiles?: Record<string, { cid: number; name?: string; formula?: string }> };
+       opsin?: Record<string, { status: string; smiles?: string; warnings?: string[]; message?: string }>;
+     };
++    if (data.pubchem?.error) host().log('warn', 'The local PubChem mirror could not be read; the network answers instead.', { error: data.pubchem.error });
+     return {
+       ...(data.pubchem?.available ? { pubchemMirror: { names: new Map(Object.entries(data.pubchem.names ?? {})), smiles: new Map(Object.entries(data.pubchem.smiles ?? {})) } } : {}),
+       ...(data.opsin && Object.keys(data.opsin).length ? { opsinLocal: new Map(Object.entries(data.opsin)) } : {}),
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 2f27813..af3a3cc 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -1850,6 +1850,41 @@ test('a local OPSIN answers names by the web service rules: a warning still mean
+   assert.equal(ebi, 0, 'EBI was never asked about a name the local OPSIN answered');
+ });
+ 
++test('a half-built or corrupt PubChem mirror costs only the mirror, not the local OPSIN answers (needs CHEMISTRY_TEST_PYTHON)', { skip: !process.env.CHEMISTRY_TEST_PYTHON }, async () => {
++  // One exception in the mirror lookup failed the whole local call, so the host fell back to the
++  // network for every name — the ones a local OPSIN had just parsed included.
++  const { execFileSync } = await import('node:child_process');
++  const script = `
++import json, os, sys, sqlite3, tempfile
++sys.path.insert(0, ${JSON.stringify(new URL('../python', import.meta.url).pathname)})
++import reactions_worker as w
++w._opsin_local = lambda opsin_dir, names: {name: {'status': 'SUCCESS', 'smiles': 'CCO'} for name in names}
++half = tempfile.mkdtemp(); db = sqlite3.connect(os.path.join(half, 'pubchem.sqlite'))
++db.execute('CREATE TABLE synonym (name TEXT, cid INTEGER, rank INTEGER)'); db.commit(); db.close()
++corrupt = tempfile.mkdtemp(); open(os.path.join(corrupt, 'pubchem.sqlite'), 'wb').write(b'not a database' * 512)
++print(json.dumps([w.handle({'pubchemDir': d, 'opsinDir': '/opsin', 'pubchemNames': ['ethanol'], 'pubchemSmiles': ['CCO']}) for d in (half, corrupt)]))
++`;
++  for (const out of JSON.parse(execFileSync(process.env.CHEMISTRY_TEST_PYTHON, ['-c', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))) {
++    assert.equal(out.opsin.ethanol.smiles, 'CCO', 'the local OPSIN answer survives');
++    assert.equal(out.pubchem.available, false, 'the broken mirror reads as no mirror, so the network answers instead');
++    assert.match(out.pubchem.error, /Error/, 'and says why');
++  }
++});
++
++test('a failed local reference run is logged with its stderr, not dropped silently', async () => {
++  const logged = [];
++  const host = resolveHost(() => undefined);
++  host.log = (level, message, detail) => { logged.push({ level, message, detail }); };
++  host.python = { ensureRuntime: async () => ({ ready: true }), run: async () => ({ code: 1, stdout: '', stderr: 'Traceback (most recent call last):\nsqlite3.DatabaseError: file is not a database' }) };
++  await lib.createWorker(host).invoke({ invocationId: 'lr1', toolId: 'resolve-names', locale: 'en', input: { names: ['ethanol'], pubchemDir: '/m', localOnly: true } });
++  assert.ok(logged.some((entry) => /file is not a database/.test(String(entry.detail?.stderr))), JSON.stringify(logged));
++
++  logged.length = 0;
++  host.python.run = async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ pubchem: { available: false, names: {}, smiles: {}, error: 'DatabaseError: file is not a database' } }) });
++  await lib.createWorker(host).invoke({ invocationId: 'lr2', toolId: 'resolve-names', locale: 'en', input: { names: ['ethanol'], pubchemDir: '/m', localOnly: true } });
++  assert.ok(logged.some((entry) => /file is not a database/.test(String(entry.detail?.error))), 'a mirror the run could not read is logged too');
++});
++
+ test('the local OPSIN wrapper runs and reports warnings per name (needs CHEMISTRY_TEST_PYTHON and a local OPSIN)', { skip: !process.env.CHEMISTRY_TEST_PYTHON || !process.env.CHEMISTRY_TEST_OPSIN }, async () => {
+   const { execFileSync } = await import('node:child_process');
+   const script = `
