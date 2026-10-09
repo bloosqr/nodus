@@ -23,7 +23,7 @@ import { createArchiveRepository, createCaptureSession } from '../db/archiveHier
 import path from 'node:path';
 import { openDocumentPath } from '../util/openDocument';
 import fs from 'node:fs';
-import { shell, BrowserWindow, dialog, app } from 'electron';
+import { BrowserWindow, dialog, app } from 'electron';
 import { showImportOpenDialog } from '../privacy';
 import { getSettings } from '../db/settingsRepo';
 import { getActiveVault } from '../vaults/vaultRegistry';
