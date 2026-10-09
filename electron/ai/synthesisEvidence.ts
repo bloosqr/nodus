@@ -378,8 +378,8 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
  *
  *  KEYED ON THE GATHER'S REAL INPUTS, not on the question string. The question is not the input:
  *  the gather reads the target, the starting materials, the target's name, the reaction classes the
- *  request implies, the work ids in scope, the stock directory and the model out of it, and nothing
- *  else. Keying on those means two requests that imply the same evidence share an entry while two
+ *  request implies, the work ids in scope and the stock directory out of it, and nothing else — not
+ *  the chat model, which no gather tool reads, so a correction answered by another model reuses it. Keying on those means two requests that imply the same evidence share an entry while two
  *  that imply different evidence cannot collide — and it does not depend on the question being
  *  byte-identical across turns, which is a property of the caller that has already changed once.
  *
@@ -404,7 +404,6 @@ function evidenceCacheKey(question: string, target: string, startingMaterials: s
     [...requestMethodClasses(question)].sort(),
     scope ? [scope.workIds ? [...scope.workIds].sort() : null, scope.external, scope.web] : null,
     chemistryStockDirectory() ?? '',
-    options.model ? `${options.model.provider}/${options.model.model}` : '',
     // The vault, because every passage and work id below is read from ITS database, and two
     // vaults can hold the same target with no work in scope in either — the one case the scope
     // above cannot tell apart. Passed in rather than read here: reaching for the vault registry

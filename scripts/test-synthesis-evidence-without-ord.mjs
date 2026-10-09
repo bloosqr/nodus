@@ -339,3 +339,19 @@ test('the route search is not asked about a target it has never answered for', a
   assert.equal(evidence.candidateRoutes, undefined, 'with no candidate routes');
   assert.equal(evidence.target, 'OC([C@H](CC1=CC=C(OCCSC[C@@H](C(O)=O)N)C=C1)NC(OCC2C3=CC=CC=C3C4=C2C=CC=C4)=O)=O');
 });
+
+test('a correction answered by another model reuses the evidence gathered for the target', async () => {
+  // Nothing in the gather reads the chat model: the ORD, textbook, route-search and stock tools take
+  // the target, the starting materials and the scope. A model switch between a request and its
+  // correction used to gather the whole evidence again.
+  const found = { artifacts: [{ artifactType: 'reaction-disconnections', data: { disconnections: [{ input: 'CCOC(=O)c1ccc(N)cc1', target: 'CCOC(=O)c1ccc(N)cc1', madeBy: null, proposals: [{ precursors: 'CCO.Nc1ccc(C(=O)O)cc1', classes: ['Fischer esterification'], recorded: 3, available: true }] }] } }] };
+  Object.assign(globalThis.__ord, { provider: TOOL, indexDir: '/idx', invoke: async () => found, calls: 0 });
+  const info = console.info; console.info = () => {};
+  try {
+    const first = await quiet(() => gatherSynthesisEvidence(REQUEST, { model: { provider: 'openai', model: 'one' } }));
+    const calls = globalThis.__ord.calls;
+    const second = await quiet(() => gatherSynthesisEvidence(REQUEST, { model: { provider: 'anthropic', model: 'two' } }));
+    assert.equal(globalThis.__ord.calls, calls, 'the second model is served the gathered evidence');
+    assert.equal(second, first);
+  } finally { console.info = info; }
+});
