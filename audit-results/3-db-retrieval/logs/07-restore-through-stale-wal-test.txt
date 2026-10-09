@@ -1,0 +1,16 @@
+== after patch
+Restore: the vault opens as the backup, and vector scans resume on it.
+== before patch (vectorScanHost.ts and exportImport.ts as on audit/2026-10-09)
+AssertionError [ERR_ASSERTION]: the restored vault is the backup
++ actual - expected
+
+  [
++   'old-0',
++   'old-1',
++   'old-2',
++   'old-3',
++   'old-4',
++   'old-5',
++   'old-6',
++   'old-7',
++   'old-8',
