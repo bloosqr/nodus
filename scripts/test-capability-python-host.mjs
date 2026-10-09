@@ -220,3 +220,35 @@ test('a call that carries a secret is never given a persistent interpreter', asy
   const result = await lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', file], secret: 'not-a-real-key', timeoutMs: 30_000, persistent: true }, new AbortController().signal);
   assert.deepEqual(JSON.parse(result.stdout), { serve: null, first: 'not-a-real-key' });
 });
+
+test('a runtime found ready is not re-examined with three interpreter starts on every call', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  if (process.platform === 'win32') { t.skip('the counting shim is a shell script'); return; }
+  const { createHash } = await import('node:crypto');
+  const lock = { schemaVersion: 1, python: '3.12', platform: `${process.platform}-${process.arch}`, packages: [{ name: 'x-1.0-py3-none-any.whl', requirement: 'x==1.0', url: 'https://files.pythonhosted.org/packages/x.whl', bytes: 1, sha256: 'c'.repeat(64) }] };
+  const digest = createHash('sha256').update(JSON.stringify(lock)).digest('hex');
+  const dir = path.join(profile, 'plugins', 'runtimes', 'shared', digest);
+  fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(path.join(dir, 'venv'))) execFileSync(interpreter, ['-m', 'venv', '--without-pip', path.join(dir, 'venv')], { stdio: 'pipe' });
+  fs.writeFileSync(path.join(dir, 'READY'), digest);
+  // Every start of the system interpreter, counted.
+  const shims = path.join(scratch, 'shims');
+  const log = path.join(scratch, 'starts.log');
+  fs.mkdirSync(shims, { recursive: true });
+  const real = execFileSync(interpreter, ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(shims, 'python3'), `#!/bin/sh\necho start >> ${JSON.stringify(log)}\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${shims}${path.delimiter}${savedPath}`;
+  try {
+    const ensure = () => lib.ensurePythonRuntime(runtime, 'probe', { download: async () => { throw new Error('nothing may be downloaded'); }, minVersion: '3.8', selectLock: () => lib.validateRuntimeLock(lock), signal: new AbortController().signal });
+    assert.deepEqual(await ensure(), { ready: true });
+    const firstStarts = fs.readFileSync(log, 'utf8').trim().split('\n').length;
+    assert.ok(firstStarts >= 1, 'the first check looks for the interpreter');
+    for (let i = 0; i < 5; i++) assert.deepEqual(await ensure(), { ready: true });
+    assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').length, firstStarts, 'later checks started the interpreter again');
+    // A rebuilt environment (its marker changed) is examined in full again.
+    fs.writeFileSync(path.join(dir, 'READY'), 'rebuilding');
+    const rebuilt = await ensure();
+    assert.equal(rebuilt.ready, false, 'a half-rebuilt environment is not reported ready from memory');
+  } finally { process.env.PATH = savedPath; }
+});
