@@ -1,0 +1,4 @@
+# three turns: 3 catalogue read(s), 154 ms
+not ok 1 - the catalogue entry is read from the provider once across turns, not once per turn
+# pass 1
+# fail 1

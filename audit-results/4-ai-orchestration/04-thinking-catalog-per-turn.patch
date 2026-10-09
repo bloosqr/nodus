@@ -1,0 +1,98 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Thinking catalogue: read the provider's model catalogue once per ten minutes, not on every chat turn.
+diff --git a/electron/ai/thinkingEffort.ts b/electron/ai/thinkingEffort.ts
+index 69fcbf15..160685e6 100644
+--- a/electron/ai/thinkingEffort.ts
++++ b/electron/ai/thinkingEffort.ts
+@@ -10,7 +10,7 @@ import {
+   type NativeResearchEffort,
+   type ResearchEffort,
+ } from '@shared/researchReasoning';
+-import { listModels } from './providers';
++import { listModels, openAiCompatBase } from './providers';
+ import { getApiKey } from '../secrets/secretStore';
+ 
+ /**
+@@ -56,14 +56,26 @@ export function thinkingOutputAllowance(model: ModelRef, effort: ResearchEffort,
+  *  families still work when the catalogue cannot be read, so a failure is not an error. */
+ export async function thinkingCatalogInfo(model: ModelRef, signal?: AbortSignal): Promise<ModelInfo | undefined> {
+   if (!['anthropic', 'deepseek', 'openai', 'custom', 'groq', 'cerebras', 'xiaomi', 'openrouter', 'lmstudio'].includes(model.provider)) return undefined;
++  const key = `${model.provider}:${openAiCompatBase(model.provider) ?? ''}:${model.model}`;
++  const remembered = catalogEntries.get(key);
++  if (remembered && Date.now() - remembered.at < CATALOG_ENTRY_TTL_MS) return remembered.info;
+   try {
+     const deadline = AbortSignal.timeout(5000);
+-    return (await listModels(model.provider, getApiKey(model.provider), signal ? AbortSignal.any([signal, deadline]) : deadline)).find(entry => entry.id === model.model);
++    const info = (await listModels(model.provider, getApiKey(model.provider), signal ? AbortSignal.any([signal, deadline]) : deadline)).find(entry => entry.id === model.model);
++    catalogEntries.set(key, { at: Date.now(), info });
++    return info;
+   } catch {
+     return undefined;
+   }
+ }
+ 
++/** Each turn read the provider's whole catalogue to find this one entry: a request on the path of
++ *  every answer, before retrieval and before the model is asked, bounded only by the deadline
++ *  above. The entry does not change between the turns of a conversation, so a completed read is
++ *  kept for a while; a failed one is not, and the next turn asks again. */
++const CATALOG_ENTRY_TTL_MS = 10 * 60 * 1000;
++const catalogEntries = new Map<string, { at: number; info: ModelInfo | undefined }>();
++
+ /**
+  * A long job's thinking level: the level chosen in the Deep Research or Immersion form, for
+  * generation calls to the model it was chosen for. Academic validators use a nested
+diff --git a/scripts/test-thinking-catalog-cache.mjs b/scripts/test-thinking-catalog-cache.mjs
+new file mode 100644
+index 00000000..e27e9f51
+--- /dev/null
++++ b/scripts/test-thinking-catalog-cache.mjs
+@@ -0,0 +1,50 @@
++// Every Research Chat turn reads the model's catalogue entry to size its thinking allowance. The
++// entry does not change between turns, so it is read from the provider once, not on every turn.
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { pathToFileURL } from 'node:url';
++import { build } from 'esbuild';
++
++const root = path.resolve(import.meta.dirname, '..');
++const tmp = await mkdtemp(path.join(os.tmpdir(), 'nodus-thinking-catalog-'));
++test.after(() => rm(tmp, { recursive: true, force: true }));
++const outfile = path.join(tmp, 'thinkingEffort.mjs');
++globalThis.__catalog = { reads: 0, fail: false };
++await build({ entryPoints: [path.join(root, 'electron/ai/thinkingEffort.ts')], outfile,
++  bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', alias: { '@shared': path.join(root, 'shared') },
++  plugins: [{ name: 'stubs', setup(api) {
++    const mocks = {
++      './providers': `export async function listModels(provider) { globalThis.__catalog.reads += 1; if (globalThis.__catalog.fail) throw new Error('offline'); await new Promise(r => setTimeout(r, 50)); return [{ id: 'claude-x', name: 'X', reasoningEfforts: ['low', 'high'] }]; }
++export const openAiCompatBase = () => null;`,
++      '../secrets/secretStore': `export const getApiKey = () => 'key';`,
++    };
++    api.onResolve({ filter: /^(\.\/providers|\.\.\/secrets\/secretStore)$/ }, args => ({ path: args.path, namespace: 'mock' }));
++    api.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: mocks[args.path] }));
++  } }],
++});
++const { thinkingCatalogInfo } = await import(pathToFileURL(outfile));
++
++test('the catalogue entry is read from the provider once across turns, not once per turn', async () => {
++  const model = { provider: 'anthropic', model: 'claude-x' };
++  const t0 = Date.now();
++  const first = await thinkingCatalogInfo(model);
++  const second = await thinkingCatalogInfo(model);
++  const third = await thinkingCatalogInfo(model);
++  console.log(`three turns: ${globalThis.__catalog.reads} catalogue read(s), ${Date.now() - t0} ms`);
++  assert.equal(first?.id, 'claude-x');
++  assert.deepEqual(second, first);
++  assert.deepEqual(third, first);
++  assert.equal(globalThis.__catalog.reads, 1);
++});
++
++test('a failed read is not remembered: the next turn asks again', async () => {
++  const model = { provider: 'openai', model: 'claude-x' };
++  globalThis.__catalog = { reads: 0, fail: true };
++  assert.equal(await thinkingCatalogInfo(model), undefined);
++  globalThis.__catalog.fail = false;
++  assert.equal((await thinkingCatalogInfo(model))?.id, 'claude-x');
++  assert.equal(globalThis.__catalog.reads, 2);
++});
