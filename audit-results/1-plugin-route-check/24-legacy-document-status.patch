@@ -1,0 +1,39 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
+diff --git a/plugins/chemistry-studio/src/view.ts b/plugins/chemistry-studio/src/view.ts
+index 875633b..027b485 100644
+--- a/plugins/chemistry-studio/src/view.ts
++++ b/plugins/chemistry-studio/src/view.ts
+@@ -17,6 +17,11 @@ export interface ChemistryAttachments {
+ type Node = Record<string, unknown>;
+ 
+ export function documentView(document: ChemistryDocument, locale: string, attachments: ChemistryAttachments = {}): Record<string, unknown> {
++  // A legacy block is parsed from an old message, not produced here: only a document that says
++  // it was verified or partly verified earns a badge, and a malformed one is refused as
++  // unreadable rather than failing on whichever field happens to be missing.
++  if (!document || !Array.isArray(document.species) || document.species.some(species => typeof species?.input?.value !== 'string')
++    || (document.status !== 'verified' && document.status !== 'partial')) throw new Error('CHEMISTRY_LEGACY_UNREADABLE');
+   const nodes: Node[] = [];
+   const partial = document.status === 'partial';
+ 
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..7e1c6b2 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,17 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++// ---------------------------------------------------------------- legacy documents
++
++test('a legacy document that is malformed or not verified is refused, never badged as verified', async () => {
++  // Any status but "partial" was drawn under a green "Verified structure" badge, and a payload
++  // missing a field failed with a TypeError instead of the unreadable-legacy error.
++  const worker = lib.createWorker(stubHost());
++  const svg = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
++  for (const payload of [{}, null, { species: [{ input: {} }] }, { status: 'needs-clarification', species: [{ input: { kind: 'name', value: 'ethanol' }, svg }] }]) {
++    await assert.rejects(worker.renderLegacyResult({ fence: 'chemistry-document', payload: JSON.stringify(payload), locale: 'en' }), /UNREADABLE/, JSON.stringify(payload));
++  }
++  const partial = lib.documentView({ status: 'partial', species: [{ input: { kind: 'name', value: 'ethanol' }, svg }] }, 'en');
++  assert.equal(partial.nodes[0].items[0].label, 'Partly verified');
++});

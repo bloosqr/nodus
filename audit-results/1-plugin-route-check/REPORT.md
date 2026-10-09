@@ -15,7 +15,7 @@ Area: the whole `plugins/chemistry-studio` plugin, route audit first. Code: bran
 
 The balancer and its coefficient search cost little on ordinary steps. On an unbalanced step with many species, they cost 0.5 s, because the 12⁴ search runs even when it cannot succeed. The single `inspectBatch`/route round trip per call costs about 0.55 s to load RDKit's WebAssembly; that is not where the time goes.
 
-With patches 01–07 applied together (combined suite: 166 pass, 0 fail, 1 skip):
+With patches 01–08 applied together (combined plugin suite: 166 pass, 0 fail, 1 skip; `logs/plugin-tests-all-patches-combined.log`):
 
 | 20-step route, 300 ms per round trip | base | patched |
 |---|---|---|
@@ -27,9 +27,16 @@ All lengths are in `logs/verify-route-timings.log`. Each row is a call with colu
 
 **Effect on an answer.** Route check is 32% of an answer's wall time, and verify-route at ~37 s per call is its bulk, so cutting it by 67–93% (and a re-check by 98%) should save roughly 21–30% of the whole answer. That moves the LLM's share from about 15% to about 19–21%. This is an estimate: it assumes verify-route dominates the route-check phase, as the owner's 37 s figure implies. Getting past 50% also needs the evidence and retrieval phases, which are outside this area.
 
-**Correctness.** The stereo-inversion check refused a valid SN2 next to an untouched stereocentre, and it passed a step whose centre really is inverted. Route messages named the wrong species whenever the labels were not in reaction order. Atom indices in those messages pointed into RDKit's canonical string, not into the string the author wrote. A failing OPSIN or PubChem request threw away the other source's answer. The agents' reviews of the rest of the plugin add verified bugs in name resolution, the balancer, the scene and ChemFig code, the view, and the Python worker (findings 09 onwards).
+**Correctness.** The stereo-inversion check refused a valid SN2 next to an untouched stereocentre, and it passed a step whose centre really is inverted. Route messages named the wrong species whenever the labels were not in reaction order. Atom indices in those messages pointed into RDKit's canonical string, not into the string the author wrote. A failing OPSIN or PubChem request threw away the other source's answer. Reviewing the rest of the plugin found 17 more verified bugs (10–26): in name resolution, the balancer, the scene and ChemFig export (silently dropped isotopes and radicals under a "validated" label, a TeX hang, a process crash), the legacy view, and the Python worker (no stereo deadline, a route search that ignores its budget, the local references cut at 256).
 
-Patches are unified diffs against `audit/2026-10-09` unless the first line says otherwise; 05 applies after 04, 06 after 01. Patch 02 is for the nodus repository; all others are for the marketplace repository. No shared/ file listed in `GENERATED` was edited, so `npm run build:server-shared` does not need to be rerun.
+Patches are unified diffs against `audit/2026-10-09` unless their first line says otherwise. Stacked patches, each because it edits the same function as the one before it:
+- 05 applies after 04
+- 06 and 10 apply after 01
+- 09 applies after 03
+- 11 and 21 apply after 07
+- 15 applies after 08
+
+Patch 02 is for the nodus repository; all others are for the marketplace repository. No shared/ file listed in `GENERATED` was edited, so `npm run build:server-shared` does not need to be rerun.
 
 ## How it was measured
 
@@ -215,7 +222,226 @@ Patches are unified diffs against `audit/2026-10-09` unless the first line says 
 
 **Saving:** the 9-species step 540 → 88 ms; the 8-species hydrocarbon step 504 → 263 ms. That is about 0.1–0.5 s per unbalanced many-species step, in every fix round.
 
-AGENT_FINDINGS_PLACEHOLDER
+### 09 · speed · resolve-names draws every name it only needs to canonicalise
+**Where:**
+- `src/worker.ts:505-526` (`canonicalizeResolutions`) and `:654-665` (`attachCanonical`)
+- `src/validator.ts:18-35`
+
+**What goes wrong:** both read only `graph.canonicalSmiles`, but the batch inspector runs the full drawing validation for each SMILES.
+
+**Verified by:**
+- `bench-batch.mjs`: a route's 32 names at about 50 heavy atoms take 2134 ms → 386 ms.
+- Test `resolve-names canonicalises without drawing, and the inspector still returns a full graph`: fails before, passes after. Suite after 03+09: 160 pass.
+
+**Patch:** `09-canonicalise-without-drawing.patch` (apply after 03).
+- `inspectBatch(smiles, signal, { canonicalOnly })`. The validator's batch then uses the `summaryOnly` read from 03.
+- The `inspect` tool still gets the full graph, because its dossier needs the atom table.
+
+**Saving:** about 1.7 s per resolve-names call on a 20-step route with large intermediates. That call is part of the route check phase.
+
+---
+
+Findings 10–26 come from three review agents I ran in parallel on the rest of the plugin: identity and balancer, scene/ChemFig/view, and the Python worker. Each found its bugs with a probe against synthetic data and no network. I re-ran the key probes on unmodified `audit/2026-10-09` myself, and every one reproduced:
+- identity: `probe-smallest2`, `probe-nullreason`, `probe-labels`, `probe-timeout`
+- Python: `opsin_probe`, `pubchem_probe`, `compat_probe`
+- scene: `p4`, `p5`, `p27`, `p9`, `p19`
+
+Every patch below has a regression test appended to `test/chemistry.test.mjs`. That test fails on its base and passes with the patch, and the full suite passes with each patch applied (`logs/regression-before-after-10-26.log`). Patches 12–14 and 22–24 append tests at the same end of the file, so applying several of them means joining those test blocks by hand. The code changes do not overlap, except 21 with 22/23 in `_pubchem_mirror`/`_opsin_local`, which `git apply -3` merges.
+
+### 10 · bug · the label check compares a name against a structure resolve-names had already corrected
+**Where:** `src/worker.ts:701` (`resolveRouteLabels`)
+
+**What goes wrong:** the label pass uses raw `resolveNameReferences` candidates, without resolve-names' fix-ups (`refuseUnbalancedSalts`, `dihydrogenForHydrogen`, `covalentForIonicOxide`). Refused names are not cached either.
+- resolve-names refuses "sodium diethyl propanedioate" (record `CCOC(=O)CC(=O)OCC.[Na+]`) and asks for the SMILES. When the author supplies `CCOC(=O)[CH-]C(=O)OCC.[Na+]`, verify-route reports "the name … denotes a different structure".
+- In a new worker, "chromium trioxide" written `O=[Cr](=O)=O` is flagged too, because the raw candidate is `[Cr+6].[O-2]…`.
+- Each such false refusal costs a fix round.
+
+**Verified by:** `probe-labels.mjs`, and test `the route label check applies the fix-ups resolve-names applies to the same name` (fail → pass).
+
+**Patch:** `10-label-check-fixups.patch` (apply after 01). `fixedCandidates()` runs the three fix-ups on the label candidates and drops refused ones, so the name is left unchecked rather than called wrong.
+
+### 11 · speed + bug · the stereo enumeration has no deadline, so one cage molecule loses every species' answer
+**Where:**
+- `python/reactions_worker.py:1063-1108`, `:1575-1582`
+- caller `src/worker.ts:726` (60 s)
+
+**What goes wrong:**
+- With no descriptors, one enumeration takes 54.5 s for strychnine, 47.5 s for docetaxel and 29.8 s for artemisinin.
+- `["CCO", strychnine, quinine]` (both without descriptors) runs past the TS 60 s timeout. The TS side then returns `{}`, so all 48 species lose their answers and the audit falls back to RDKit's counts. Meanwhile the route check has waited 60 s.
+
+**Verified by:** `stereo_timeout_probe.sh` (exit 124 at 60 s), and test `the stereo enumeration answers within its budget, and nulls only what it could not reach` (fail → pass). Suite after 07+11: 160 pass.
+
+**Patch:** `11-stereo-enumeration-deadline.patch` (apply after 07). A 40 s request budget is checked before each embedding. Species not reached come back `null`, which the TS type already allows; assigned species are still answered.
+
+**Saving:** caps the stereo pass at 40 s where it used to time out at 60 s, and keeps the answers that were computed.
+
+### 12 · bug · a scene molfile drops isotopes and radicals, and a "validated" mechanism or ChemFig loses them
+**Where:** `src/engine/chemistryScene.ts:8-20, 44-47` (`sceneFromMolfile`, `sceneMolfile`)
+
+**What goes wrong:**
+- **Isotopes:** the `M  ISO`/`M  CHG` lines lack the V2000 field spaces. RDKit accepts the CHG line and silently ignores the ISO line, so `[13CH3]O` round-trips to `CO`.
+  - An electron-flow resonance of `CC(=O)[18O-]` returns `chemfig.status: 'validated'`, and its checks claim "isotope conservation", but its products are unlabelled `CC(=O)[O-]`.
+  - Every isotopically labelled species gets `unsupported` ChemFig.
+- **Radicals:** a radical is never written (no `M  RAD`), so `[CH2]C(=O)[O-]` becomes a closed shell and the mechanism module's radical refusal never fires.
+
+**Verified by:** `p4`, `p5`, `p27`, `p1`. The two tests fail before (`unsupported`; "Missing expected rejection") and pass after.
+
+**Patch:** `12-scene-molfile-isotope-radical.patch`. It corrects the field spacing, carries `radical` on a scene atom, and writes `M  RAD`.
+
+### 13 · robustness · a branch nested 32 deep hangs TeX; the drawing is lost and later exports in the process fail
+**Where:**
+- `src/engine/chemistryScene.ts:165-178` (`exportSceneChemfig`)
+- `src/engine/chemistry.ts:234, 252`
+
+**What goes wrong:**
+- Every tree edge becomes a nested `( … )` branch. node-tikzjax never returns at depth ≥ 32: a 31-atom chain compiles in 3.3 s and a 32-atom chain times out at 15 s. A 35-heavy-atom ether chain reaches depth 34.
+- The request takes 16.8 s, more than the 15 s validate budget, so the host kills the subworker and the drawing is lost.
+- In-process, `compilerTimedOut` then refuses even `CCO`.
+
+**Verified by:** `p23`, `p24`, `p25`. The test fails before ("Chemfig compilation timed out") and passes after.
+
+**Patch:** `13-chemfig-branch-depth.patch`. Past depth 30 the export is refused as `unsupported` (0.65 s), and later exports still work.
+
+### 14 · robustness · a ChemFig line over ~5000 characters crashes the validator process
+**Where:** `src/engine/chemistry.ts:247`
+
+**What goes wrong:** lines are split only at `\chemfig`, and one molecule can reach 7500 characters. node-tikzjax throws an uncaught `RangeError: offset is out of bounds` from a timer, and the process exits 1 without posting a result. Seen with 128 atoms (5016 characters) and a branched 163-atom molecule.
+
+**Verified by:** `p11`, `p26`. The test runs the validator in a child process: on base the child exits 1; after the patch it returns `unsupported`.
+
+**Patch:** `14-tex-line-buffer.patch`. A line over 4900 characters is refused before compiling.
+
+### 15 · bug · a two-direction balance needing a coefficient above 12 is called ambiguous, depending on species order; a balance past the ceiling is blamed on a missing reagent
+**Where:** `src/engine/chemistryReaction.ts:250, 269, 535, 537-603`
+
+**What goes wrong:**
+- The multipliers are the free columns' own coefficients, capped at 12, while `MAX_COEFFICIENT` is 30. A search that finds nothing returns `null`, the same value as a tie.
+- C12H26 + O2 → CO2 + CO + H2O in the order `[C12H26, O2, CO2, CO, H2O]` throws "admit more than one balanced equation". The order `[…, H2O, CO2, CO]` solves `1,13,13,1,11`.
+- C16H34 + O2 → CO2 + H2O balances at 2:49:32:34, but the message is "cannot be balanced … add the missing reagent".
+
+**Verified by:** `probe-smallest2`, `probe-nullreason`. Two tests: fail → pass. Suite after 08+15: 160 pass.
+
+**Patch:** `15-balancer-search-ceiling.patch` (apply after 08; it keeps 08's integer search and its early return).
+- The search goes up to 30 for one or two free directions (900 combinations) and keeps 12 for three or four.
+- `'tie'` is separated from "none found", which gets its own message.
+- An over-ceiling unique balance is reported with its coefficients.
+
+### 16 · bug · reference requests ignore their abort signal, so the 10 s timeout and the user's cancel do nothing
+**Where:**
+- `src/deps.ts:23` (`void init;`)
+- `src/worker.ts:583, 635`
+
+**What goes wrong:**
+- `readJSON` arms a 10 s timeout and forwards the turn's signal, but `routedFetch` awaits the host fetch without either. With 14 s replies a name resolves after 28.9 s with no timeout.
+- After an abort at 1 s (6 s replies), the call returns after 6.06 s with a normal artifact marking the name `unresolved`, instead of throwing.
+- This is distinct from known item (b), which concerns the pacer's own waits.
+
+**Verified by:** `probe-timeout.mjs`. The test fails before (it times out with the fetch still hanging) and passes after.
+
+**Patch:** `16-routed-fetch-abort.patch`. It races the host fetch against `init.signal`, and `resolveNames`/`nameStructures` re-check the signal after their pools. Note: a single PubChem reply slower than 10 s now opens the per-call breaker, as the breaker's comment intends.
+
+### 17 · bug · the local mirror and local OPSIN answer only 256 of the 512 names the tools may send
+**Where:** `python/reactions_worker.py:1499, 1513, 1539, 1549`
+
+**What goes wrong:** `maxNames` reaches 512 at a context window of about 320 k tokens or more. Names 257–512 then go to the network, or come back unresolved on a `localOnly` run.
+
+**Verified by:** `pubchem_probe.py` (512 sent, 256 answered). Test: fail (expected 512, got 256) → pass.
+
+**Patch:** `17-local-references-512.patch`. A single `LOCAL_REFERENCE_LIMIT = 512`.
+
+### 18 · robustness · a mirror missing an optional table, or a corrupt mirror, fails the whole local call
+**Where:** `python/reactions_worker.py:1507, 1522-1523`
+
+**What goes wrong:** a mirror with no `formula` table raises `sqlite3.OperationalError`, and a corrupt file raises `DatabaseError`. The process exits 1, so the TypeScript side discards the local OPSIN answers from the same call as well.
+
+**Verified by:** `pubchem_probe.py`. Test: worker exited 1 → pass.
+
+**Patch:** `18-pubchem-mirror-optional-tables.patch`. Optional tables are read through a helper that tolerates their absence; a corrupt file reports `available: false`.
+
+### 19 · bug · a local OPSIN reply one line short is accepted, and the last name is called "not a systematic name"
+**Where:** `python/reactions_worker.py:1545-1546`
+
+**What goes wrong:**
+- The trailing `""` from `split("\n")` hides a missing last line, so the last name gets `{'status': ''}`. TypeScript reads that as a local answer and never asks EBI.
+- A name containing a tab has its message cut at the tab.
+
+**Verified by:** `opsin_probe.py`. Test: fail → pass.
+
+**Patch:** `19-opsin-reply-line-count.patch`. It drops the trailing empty element, requires an exact line count, and uses `split("\t", 3)`.
+
+### 20 · speed + bug · the route search ignores its budget inside each expansion, and reports the budget as its time
+**Where:** `python/reactions_worker.py:944, 1060`
+
+**What goes wrong:**
+- `lookup()` calls `_disconnect(...)` without `budget_seconds`. On a synthetic 40 000-row index, a 2 s budget took 256 s of wall time and still reported `seconds=2.0`.
+- That is past the TS timeout of budget + 60 s, so every route found is lost. This is in the evidence-gathering phase.
+
+**Verified by:** `route_budget_probe.py`. The test (1 s budget) fails before (6.6 s) and passes after.
+
+**Patch:** `20-route-search-budget.patch`. It passes the remaining budget to each expansion and measures `seconds` from the start.
+
+**Saving:** up to the whole timeout (budget + 60 s) on an index whose expansions are slow.
+
+### 21 · speed · the stereo enumeration builds a 64-isomer sample only to answer null
+**Where:** `python/reactions_worker.py:1092-1108`
+
+**What goes wrong:** when the count of unassigned combinations is over 64, `EnumerateStereoisomers` still embeds a random sample of 64, and the function then returns `None` by its own rule. That costs 47.5 s for docetaxel and 9 s for cholesterol, for `null`.
+- One answer changes: artemisinin without descriptors goes from open 6 to null. A full enumeration finds 64 buildable isomers of 128, which the function's own "≥ 64 → None" rule makes null; the old value came from the sample.
+
+**Verified by:** `stereo_proposed_probe.py`, `stereo_truncation_probe.py`. Test: fail (about 39 s, open 6) → pass. Suite after 07+21: 160 pass.
+
+**Patch:** `21-stereo-sampled-none.patch` (apply after 07). Return `None` at once when `GetStereoisomerCount > 64`.
+
+### 22 · bug · an arrow on a ring-closure bond cannot be drawn, so a valid mechanism is refused
+**Where:** `src/engine/chemistryScene.ts:162`, `src/engine/chemistryRuleRender.ts:12`
+
+**What goes wrong:** the ring-closing bond is exported as `?[rN,order]`, which has no `@{bN}` anchor. Hydroxide opening 2-methyloxirane at the CH2 passes the electron ledger (`CC(O)C[O-]`) and is then refused with `Unknown electron-flow anchor: m1b3`.
+
+**Verified by:** `p19.cjs`. Test: fail → pass.
+
+**Patch:** `22-ring-closure-arrow-anchor.patch`. Bonds that carry an arrow are ranked into the spanning tree, after stereo bonds.
+
+### 23 · bug · the lone-pairs depiction leaves out electrons and is still labelled verified
+**Where:** `src/engine/chemistryScene.ts:96, 105` (`VALENCE_ELECTRONS`, `assignLonePairs`)
+
+**What goes wrong:** Se, Te, As, Sb, Ge, Sn, Xe and the s-block and Al-group elements are missing from the table, and odd counts are rounded down. `[SeH2]` draws 0 lone-pair dots (fully verified), `[Xe](F)F` 12 dots instead of 18, and `[CH3]` drops its radical electron.
+
+**Verified by:** `p20.cjs`. Test: 0 pairs on Se → pass.
+
+**Patch:** `23-lone-pairs-main-group.patch`. It extends the table to the main group and draws an unpaired electron.
+
+### 24 · bug · a legacy document renders a "Verified structure" badge for any status, and malformed payloads throw
+**Where:** `src/view.ts:21` (`documentView`, reached from `renderLegacyResult`)
+
+**What goes wrong:** a payload with `status: 'bogus'` or `needs-clarification` gets `{label: 'Verified structure', tone: 'success'}` over its SVG. `{}`, `null` and `{"species":[{"input":{}}]}` throw `TypeError` instead of `CHEMISTRY_LEGACY_UNREADABLE`.
+
+**Verified by:** `p9.cjs`. Test: `TypeError` → pass.
+
+**Patch:** `24-legacy-document-status.patch`. Anything but a `verified`/`partial` document with well-formed species is refused as unreadable.
+
+### 25 · bug · the compatibility check flags standard acid deprotections as "nothing removes it"
+**Where:**
+- `python/reactions_worker.py:1339-1344`
+- `python/compat_tables.py:311`
+
+**What goes wrong:**
+- Boc with "4 M HCl in dioxane" is classed as aqueous acid only, so it is flagged "the Boc carbamate is gone … none of the named reagents removes it".
+- A ketal with "aq. HCl" or "H3O+", and a TMS ether with "1 M HCl", are flagged too.
+
+**Verified by:** `compat_probe.py`. Test: fail → pass.
+
+**Patch:** `25-compat-acid-deprotections.patch`
+- HCl in dioxane, ether, EtOAc, MeOH or CPME counts as strong acid; "1 N HCl" stays a work-up.
+- `aqueous-acid` is added to the removers of acetal, silyl ether and trityl.
+
+### 26 · bug (low) · a reaction intent refuses coefficients the balancer itself produces
+**Where:** `src/engine/chemistryIdentity.ts:137`, `skills/chemistry-studio/SKILL.md:48`
+
+**What goes wrong:** the intent caps coefficients at 12, while the balancer and renderer allow 30. A user-written dichromate/iodide equation with 14 H+ is refused at parse time, which costs a repair round.
+
+**Verified by:** `probe-intent-coeff.mjs`. Test: fail → pass.
+
+**Patch:** `26-intent-coefficient-ceiling.patch`. A shared `MAX_REACTION_COEFFICIENT = 30` in `chemistryLimits.ts`, and SKILL.md now says 1–30.
 
 ---
 
@@ -226,6 +452,14 @@ AGENT_FINDINGS_PLACEHOLDER
   - So with a large window, a 16–64 k-character step passes the host's schema check and is then refused by name. The refusal is visible, not silent; this was verified by code trace only.
 - **Parallel steps.** After 03 the audit is 0.4 s for 20 steps, so splitting it across subworkers would save at most about 0.3 s. Each extra subworker also pays the 0.55 s RDKit WebAssembly load, and the manifest declares `subworkers.max: 1` (not enforced, known item (f)). Not worth it.
 - **`agentMisplacementHint`** (`chemistryRouteAudit.ts:295, 304`) still names an Agent by formula, not by the author's name, because it is reached from inside `stepBalance`. This is the same class as 04, but it was left out because threading the names through costs more code than it is worth.
-- **Unbuilt-step and refused-salt names** (agent finding 3) are re-resolved by the label pass without resolve-names' corrections. The agents' findings below cover the verified part.
+- **`netColumnBalance`** (`chemistryReaction.ts:467`) can write coefficients up to 61: a free value of up to 2 × 30, plus 1. Nothing re-checks them against `MAX_COEFFICIENT`.
+- **`smallestPositiveEquation`** at dimension 3 or 4 with a ceiling of 12 could still return a non-smallest equation, or call one unique when a tying equation lies beyond the ceiling. No case was constructed.
+- **`refuseUnbalancedSalts`** would refuse a genuine charged complex that PubChem writes with dots (a diammine record, for example). Whether PubChem records such ions that way could not be checked offline.
+- **`cancelledSpectators`** keys species on formula and charge, so isomers cancel as spectators. That case was verified (an isomerisation declared 2:1 is refused), but it only fires when the declared coefficients do not balance, so the route audit, which passes all 1s, is unaffected. Not patched.
+- **Local mirror name look-up** uses `WHERE name = ? COLLATE NOCASE`, which cannot use a plain index. On 1 M synonyms it took 2.6 s per 48 names, against 0.00 s with a NOCASE index. The mirror builder is in neither repository, so whether its index is NOCASE is unknown.
+- **OPSIN pipe encoding:** `subprocess.run(text=True)` uses the locale encoding, so a non-ASCII name on a non-UTF-8 Windows locale could lose every OPSIN answer.
+- **`--check`** reports the runtime as fine without importing `drfp` or `rdchiral`.
+- **Compile time of large shallow structures:** about 100 ms per atom, so species of 100–135 atoms may exceed the 15 s validate budget even after 13 and 14.
+- **Legacy blocks:** a forged `chemistry-document` fence with `"status":"verified"` would still render as verified (24 only rejects malformed ones). Whether model text can reach `renderLegacyResult` depends on the host.
 - **Inversion check (05) abstains** at a centre whose branches cannot be placed one to one unless the letters among such centres differ. A coupling that rewrites two branches of one centre at once (both the acyl and the amine side) is therefore not judged. The old check judged it only by letter, and unsoundly.
 - **The pacer and abort** (known item (b)) still apply to every patched path: a refused PubChem now fails fast to the other source (01), but a slow one still waits.

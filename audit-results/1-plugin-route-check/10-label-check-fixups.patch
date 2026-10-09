@@ -1,0 +1,65 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply AFTER 01-label-references-local-and-paced.patch (same function); the diff is against audit/2026-10-09 + patch 01.
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index c945992..0204499 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -502,6 +502,19 @@ function covalentForIonicOxide(resolutions: SpeciesNameResolution[]): void {
+   }
+ }
+ 
++/** The label pass's candidates for a name, with the fix-ups resolve-names applies to the same
++ *  answer. Without them a salt resolve-names refused, or an oxide it rewrote as covalent, is
++ *  compared in its raw form, and the structure the author supplied in its place — as the refusal
++ *  asked — is reported as a different compound. A refused candidate is dropped, so a name left
++ *  with none is unchecked, not a disagreement. */
++function fixedCandidates(name: string, candidates: string[]): string[] {
++  const entries: SpeciesNameResolution[] = candidates.map((smiles) => ({ name, status: 'resolved', smiles }));
++  refuseUnbalancedSalts(entries);
++  dihydrogenForHydrogen(entries);
++  covalentForIonicOxide(entries);
++  return [...new Set(entries.flatMap((entry) => (entry.status === 'resolved' && entry.smiles ? [entry.smiles] : [])))];
++}
++
+ async function canonicalizeResolutions(resolutions: SpeciesNameResolution[], cache: ReferenceCache, signal: AbortSignal): Promise<void> {
+   refuseUnbalancedSalts(resolutions);
+   dihydrogenForHydrogen(resolutions);
+@@ -731,7 +744,7 @@ async function resolveRouteLabels(
+         cursor += 1;
+         if (next >= lookedUp.length) return;
+         signal?.throwIfAborted();
+-        cache.set(lookedUp[next], await resolveNameReferences(lookedUp[next], deps, signal));
++        cache.set(lookedUp[next], fixedCandidates(lookedUp[next], await resolveNameReferences(lookedUp[next], deps, signal)));
+       }
+     };
+     await Promise.all(Array.from({ length: Math.min(NAME_CONCURRENCY, lookedUp.length) }, run));
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 7ee0941..07d31f1 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3121,3 +3121,26 @@ test('the route label check and compile ask the local references first, once per
+   assert.equal(drawn.artifacts?.[0]?.data.species[0].graph.canonicalSmiles, 'CCO', 'compile resolved the name from the mirror');
+   assert.equal(sent, 0, 'not one request was sent to PubChem or EBI');
+ });
++
++test('the route label check applies the fix-ups resolve-names applies to the same name', async () => {
++  // Synthetic records: a "salt" PubChem writes as the neutral diester beside a sodium ion, which
++  // resolve-names refuses and asks to be given as SMILES, and an oxide written as bare ions, which
++  // it rewrites as covalent. The structures the author then supplies must not read as mismatches.
++  const records = { 'sodium diethyl propanedioate': 'CCOC(=O)CC(=O)OCC.[Na+]', 'chromium trioxide': '[Cr+6].[O-2].[O-2].[O-2]' };
++  const names = Object.keys(records);
++  lib.resetPubchemPacing();
++  const worker = lib.createWorker(stubHost({ fetch: (endpointId, requestPath) => {
++    if (endpointId !== 'pubchem') return undefined;
++    const byName = /\/compound\/name\/([^/]+)\/cids\/JSON/.exec(requestPath);
++    if (byName) { const index = names.indexOf(decodeURIComponent(byName[1])); return index < 0 ? undefined : { IdentifierList: { CID: [index + 1] } }; }
++    const byCid = /\/compound\/cid\/(\d+)\/property\//.exec(requestPath);
++    const name = byCid && names[Number(byCid[1]) - 1];
++    return name ? { PropertyTable: { Properties: [{ CID: Number(byCid[1]), IsomericSMILES: records[name] }] } } : undefined;
++  } }));
++  const result = await worker.invoke({ invocationId: 'label-fixups', toolId: 'verify-route', locale: 'en', input: {
++    steps: ['CCOC(=O)[CH-]C(=O)OCC.[Na+].CCBr>>CCOC(=O)C(CC)C(=O)OCC.[Na+].[Br-]', 'O=[Cr](=O)=O.O>>O[Cr](=O)(=O)O'],
++    labels: [[{ role: 'reactant', name: 'sodium diethyl propanedioate', smiles: 'CCOC(=O)[CH-]C(=O)OCC.[Na+]' }],
++      [{ role: 'reactant', name: 'chromium trioxide', smiles: 'O=[Cr](=O)=O' }]],
++  } });
++  for (const step of result.artifacts[0].data.steps) assert.deepEqual(step.nameProblems ?? [], [], `step ${step.index}`);
++});

@@ -1,0 +1,42 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
+diff --git a/plugins/chemistry-studio/src/engine/chemistry.ts b/plugins/chemistry-studio/src/engine/chemistry.ts
+index 8f8028d..eb1c8fd 100644
+--- a/plugins/chemistry-studio/src/engine/chemistry.ts
++++ b/plugins/chemistry-studio/src/engine/chemistry.ts
+@@ -245,6 +245,9 @@ async function compileChemfigSerial(source: string): Promise<string> {
+   // can be larger after adding measurement hooks; whitespace between molecules
+   // is semantically inert and keeps every input line bounded.
+   const input = `\\begin{document}\n${layout.source.replace(/\\chemfig\b/g, '\n\\chemfig')}\n\\end{document}`;
++  // One molecule is one line, and a large one outgrows the buffer anyway. Past it the engine
++  // throws from a timer, which no caller can catch and which ends the whole process.
++  if (input.split('\n').some(line => line.length > 4_900)) throw new Error('A ChemFig line exceeds the TeX input buffer.');
+   let timer: ReturnType<typeof setTimeout> | undefined;
+   const raw = await Promise.race([
+     getChemfigEngine()(input, { texPackages: { amsmath: '', chemfig: '' }, showConsole: process.env.NODUS_CHEMFIG_DEBUG === '1' }),
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..b772e1c 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,22 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++// ---------------------------------------------------------------- TeX input buffer
++
++test('a ChemFig line longer than the TeX input buffer is refused, not fatal', async () => {
++  // A shallow 163-atom alkane exports one ~5.5k-character line. node-tikzjax reads lines into a
++  // 5000-character buffer and, past it, throws from a timer that no caller can catch. The run
++  // is in a child process because, unguarded, it ends whichever process it runs in.
++  const { spawnSync } = await import('node:child_process');
++  const script = `
++    const lib = require(${JSON.stringify(bundle)});
++    const tree = depth => depth === 0 ? 'C' : 'C(' + tree(depth - 1) + ')(' + tree(depth - 1) + ')' + tree(depth - 1);
++    lib.validateChemicalReferences({ references: ['C(' + tree(4) + ')' + tree(3) + 'C'], exportChemfig: true, openStereo: true })
++      .then(result => { process.stdout.write(JSON.stringify(result.chemfig)); process.exit(0); });`;
++  const run = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 120_000 });
++  assert.equal(run.status, 0, `the validator process survived: ${run.stderr.slice(0, 300)}`);
++  const chemfig = JSON.parse(run.stdout);
++  assert.equal(chemfig.status, 'unsupported');
++  assert.match(chemfig.reason, /input buffer/);
++});

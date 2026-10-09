@@ -1,0 +1,90 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
+diff --git a/plugins/chemistry-studio/skills/chemistry-studio/SKILL.md b/plugins/chemistry-studio/skills/chemistry-studio/SKILL.md
+index a51888e..b0d81ce 100644
+--- a/plugins/chemistry-studio/skills/chemistry-studio/SKILL.md
++++ b/plugins/chemistry-studio/skills/chemistry-studio/SKILL.md
+@@ -45,7 +45,7 @@ Do not balance the numbers yourself: the `verify-route` check solves the coeffic
+ Name species with true systematic IUPAC names, with stereodescriptors such as (Z) or (2R) when the structure is stereodefined.
+ A route is a proposal. Never state or imply that the steps, their order, the conditions or the yields are verified: what the application checks is that each species is a real structure and that each equation balances. Say so if the user's phrasing assumes otherwise.
+ 
+-Outside a synthesis route — a single reaction the user asks to see drawn — with explicitly supplied reactants AND products, use kind "reaction": every species needs an explicit role (reactant, product or agent) and integer coefficient 1–12; include ALL species, counterions and stated agents (at most twelve). Nodus independently checks each component, atom/isotope balance and net charge, and displays agents separately. Balance does NOT verify feasibility or a mechanism. If products are missing, ask for them. When the user supplies a complete reaction SMILES on its own line or in backticks, an alternative is {"version":2,"kind":"reaction","depiction":"skeletal","reactionSmiles":"EXACT COMPLETE USER REACTION SMILES"} preserving all three reactants>agents>products fields. A route request never uses kind "reaction", even when it names its starting materials and target: its steps follow the appended route contract above. General reaction schemes use a forward arrow only; do not substitute one for an explicitly requested equilibrium.
++Outside a synthesis route — a single reaction the user asks to see drawn — with explicitly supplied reactants AND products, use kind "reaction": every species needs an explicit role (reactant, product or agent) and integer coefficient 1–30; include ALL species, counterions and stated agents (at most twelve). Nodus independently checks each component, atom/isotope balance and net charge, and displays agents separately. Balance does NOT verify feasibility or a mechanism. If products are missing, ask for them. When the user supplies a complete reaction SMILES on its own line or in backticks, an alternative is {"version":2,"kind":"reaction","depiction":"skeletal","reactionSmiles":"EXACT COMPLETE USER REACTION SMILES"} preserving all three reactants>agents>products fields. A route request never uses kind "reaction", even when it names its starting materials and target: its steps follow the appended route contract above. General reaction schemes use a forward arrow only; do not substitute one for an explicitly requested equilibrium.
+ 
+ WHEN SOMETHING STILL CANNOT BE DRAWN
+ If an intent is rejected, the error names the JSON field and what was expected. Fix that field; it is a formatting problem, not a chemistry problem, and rewriting the chemistry will not help.
+diff --git a/plugins/chemistry-studio/src/engine/chemistryIdentity.ts b/plugins/chemistry-studio/src/engine/chemistryIdentity.ts
+index 676842d..dc33991 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryIdentity.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryIdentity.ts
+@@ -1,5 +1,6 @@
+ import type { ChemistryIntent, ChemistryPartialReason, ChemistryReference, ChemistryResolution, ChemistryValidationRequest, ChemistryValidationResult } from './chemistryDocument';
+ import { reactionSmilesSpecies } from './chemistryReactionShared';
++import { MAX_REACTION_COEFFICIENT } from './chemistryLimits';
+ import { buildingBlockSmiles, isResinBoundName } from './peptideBuildingBlocks';
+ 
+ export interface ChemistryIdentityDependencies {
+@@ -134,7 +135,7 @@ export function parseChemistryIntent(source: string, question: string): Chemistr
+     ids.add(item.id);
+     if (raw.kind === 'reaction' && raw.depiction !== 'skeletal') throw new Error('A reaction scheme must use depiction "skeletal".');
+     if (raw.kind === 'reaction' && !['reactant', 'product', 'agent'].includes(item.role)) throw new Error(`${at}.role must be "reactant", "product" or "agent".`);
+-    if (raw.kind === 'reaction' && (!Number.isInteger(item.coefficient) || item.coefficient < 1 || item.coefficient > 12)) throw new Error(`${at}.coefficient must be a whole number from 1 to 12.`);
++    if (raw.kind === 'reaction' && (!Number.isInteger(item.coefficient) || item.coefficient < 1 || item.coefficient > MAX_REACTION_COEFFICIENT)) throw new Error(`${at}.coefficient must be a whole number from 1 to ${MAX_REACTION_COEFFICIENT}.`);
+     const input = item.input;
+     if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['kind', 'value'].includes(key))) throw new Error(`${at}.input must be an object with exactly "kind" and "value".`);
+     if (!['name', 'pubchem-cid', 'smiles'].includes(input.kind)) throw new Error(`${at}.input.kind must be "name", "pubchem-cid" or "smiles".`);
+diff --git a/plugins/chemistry-studio/src/engine/chemistryLimits.ts b/plugins/chemistry-studio/src/engine/chemistryLimits.ts
+index 9cda05d..853dde5 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryLimits.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryLimits.ts
+@@ -126,6 +126,11 @@ export const maxSpeciesTotal = (budget?: ChemistryCapBudget): number =>
+ /** One species' structure, and a label's structure: the same bound in both places. Not derived —
+  *  no real SMILES or systematic name approaches this, whatever the window. */
+ export const MAX_SPECIES_CHARS = 4000;
++/** The largest stoichiometric coefficient anywhere: what an intent may declare, what the renderer
++ *  accepts and what the balancer solves to (MAX_COEFFICIENT in chemistryReaction.ts). One number,
++ *  because the intent's own 12 refused "14 H+" copied from a user's dichromate equation that the
++ *  balancer would have solved to exactly 14. */
++export const MAX_REACTION_COEFFICIENT = 30;
+ /** A species label. A species given as its own structure carries that structure as its name. */
+ export const MAX_LABEL_NAME_CHARS = 4000;
+ 
+diff --git a/plugins/chemistry-studio/src/engine/chemistryReaction.ts b/plugins/chemistry-studio/src/engine/chemistryReaction.ts
+index 1fcbb2d..373c9a9 100644
+--- a/plugins/chemistry-studio/src/engine/chemistryReaction.ts
++++ b/plugins/chemistry-studio/src/engine/chemistryReaction.ts
+@@ -1,4 +1,4 @@
+-import { MAX_SPECIES_CHARS } from './chemistryLimits';
++import { MAX_REACTION_COEFFICIENT, MAX_SPECIES_CHARS } from './chemistryLimits';
+ import type { ChemistryReactionArtifact, ChemistryValidationRequest, ChemistryValidationResult, ReactionSpecies } from './chemistryDocument';
+ import { compileChemfig } from './chemistry';
+ import { colourChemfigAtoms } from './elementColours';
+@@ -183,7 +183,7 @@ interface Composition { atoms: Record<string, number>; charge: number }
+  *  balance is more likely a wrong species set than a real equation. The multi-solution search
+  *  keeps its own smaller ceiling, since its cost grows with the ceiling to the power of the
+  *  solution-space dimension. */
+-export const MAX_COEFFICIENT = 30;
++export const MAX_COEFFICIENT = MAX_REACTION_COEFFICIENT;
+ 
+ type Frac = [bigint, bigint];
+ const gcd = (a: bigint, b: bigint): bigint => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) { const t = a % b; a = b; b = t; } return a; };
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..433429b 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,16 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++test('a reaction intent may declare any coefficient the balancer can solve to', () => {
++  // Dichromate oxidising iodide takes 14 H+. Copied from the user, it was refused at 12, though
++  // the balancer accepts and solves to coefficients up to 30.
++  const question = 'Draw the balanced scheme: [O-][Cr](=O)(=O)O[Cr](=O)(=O)[O-] + 6 [I-] + 14 [H+] gives 2 [Cr+3] + 3 II + 7 O';
++  const species = [
++    ['dichromate', '[O-][Cr](=O)(=O)O[Cr](=O)(=O)[O-]', 'reactant', 1], ['iodide', '[I-]', 'reactant', 6], ['proton', '[H+]', 'reactant', 14],
++    ['chromium', '[Cr+3]', 'product', 2], ['iodine', 'II', 'product', 3], ['water', 'O', 'product', 7],
++  ].map(([id, value, role, coefficient]) => ({ id, input: { kind: 'smiles', value }, role, coefficient }));
++  const intent = (list) => JSON.stringify({ version: 2, kind: 'reaction', depiction: 'skeletal', species: list });
++  assert.equal(lib.parseChemistryIntent(intent(species), question).species[2].coefficient, 14);
++  assert.throws(() => lib.parseChemistryIntent(intent(species.map((entry, i) => (i === 2 ? { ...entry, coefficient: 31 } : entry))), question), /from 1 to 30/);
++});

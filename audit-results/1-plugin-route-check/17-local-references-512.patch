@@ -1,0 +1,98 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace. Apply with git apply from the repository root, against audit/2026-10-09.
+diff --git a/plugins/chemistry-studio/python/reactions_worker.py b/plugins/chemistry-studio/python/reactions_worker.py
+index c17c941..b6d4012 100644
+--- a/plugins/chemistry-studio/python/reactions_worker.py
++++ b/plugins/chemistry-studio/python/reactions_worker.py
+@@ -1480,6 +1480,11 @@ def _compatibility(steps, textbook_dir=None):
+     return results
+ 
+ 
++# The most names, or structures, the application sends in one call: SCHEMA_CEILINGS.names and
++# .structures in src/engine/chemistryLimits.ts. A lower cap here sent the rest to the network.
++LOCAL_REFERENCE_LIMIT = 512
++
++
+ def _pubchem_mirror(mirror_dir, names, smiles):
+     """Answer name and structure lookups from a local PubChem mirror (built by the application's
+     tools from NCBI's bulk files), so a route's species need no network round trip.
+@@ -1496,7 +1501,7 @@ def _pubchem_mirror(mirror_dir, names, smiles):
+     db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+     out = {"names": {}, "smiles": {}, "available": True}
+     try:
+-        for name in names[:256]:
++        for name in names[:LOCAL_REFERENCE_LIMIT]:
+             cids = [row[0] for row in db.execute("SELECT DISTINCT cid FROM synonym WHERE name = ? COLLATE NOCASE LIMIT 2", (name,))]
+             if len(cids) != 1:
+                 continue
+@@ -1510,7 +1515,7 @@ def _pubchem_mirror(mirror_dir, names, smiles):
+             from rdkit import Chem, RDLogger
+ 
+             RDLogger.DisableLog("rdApp.*")
+-            for value in smiles[:256]:
++            for value in smiles[:LOCAL_REFERENCE_LIMIT]:
+                 mol = Chem.MolFromSmiles(value)
+                 key = Chem.MolToInchiKey(mol) if mol is not None else ""
+                 if not key:
+@@ -1536,7 +1541,7 @@ def _opsin_local(opsin_dir, names):
+     jars = [n for n in os.listdir(opsin_dir) if n.startswith("opsin-") and n.endswith(".jar")] if os.path.isdir(opsin_dir) else []
+     if not names or not jars or not os.path.exists(java) or not os.path.isfile(os.path.join(opsin_dir, "OpsinBatch.class")):
+         return {}
+-    clean = [n.replace("\n", " ").replace("\r", " ") for n in names[:256]]
++    clean = [n.replace("\n", " ").replace("\r", " ") for n in names[:LOCAL_REFERENCE_LIMIT]]
+     try:
+         run = subprocess.run([java, "-cp", os.pathsep.join([os.path.join(opsin_dir, jars[0]), opsin_dir]), "OpsinBatch"],
+                              input="\n".join(clean) + "\n", capture_output=True, text=True, timeout=120)
+@@ -1546,7 +1551,7 @@ def _opsin_local(opsin_dir, names):
+     if run.returncode != 0 or len(lines) < len(clean):
+         return {}
+     out = {}
+-    for name, line in zip(names[:256], lines):
++    for name, line in zip(names[:LOCAL_REFERENCE_LIMIT], lines):
+         status, smiles, warnings, message = (line.split("\t") + ["", "", "", ""])[:4]
+         out[name] = {"status": status, **({"smiles": smiles} if smiles else {}),
+                      **({"warnings": warnings.split("|")} if warnings else {}), **({"message": message} if message else {})}
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..ff1db33 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,40 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++test('the local references answer every name and structure the application may send (needs CHEMISTRY_TEST_PYTHON)', { skip: !process.env.CHEMISTRY_TEST_PYTHON || process.platform === 'win32' }, async () => {
++  // resolve-names and resolve-structure send up to 512 (SCHEMA_CEILINGS.names / structures); the
++  // worker used to look up only the first 256, so the rest went to the network, or came back
++  // unresolved on a local-only run, although the mirror and the local OPSIN had them.
++  const { execFileSync } = await import('node:child_process');
++  const script = `
++import json, os, sys, sqlite3, stat, tempfile
++sys.path.insert(0, ${JSON.stringify(new URL('../python', import.meta.url).pathname)})
++import reactions_worker as w
++from rdkit import Chem
++d = tempfile.mkdtemp(); db = sqlite3.connect(os.path.join(d, 'pubchem.sqlite'))
++db.executescript('''CREATE TABLE inchikey (key TEXT PRIMARY KEY, cid INTEGER) WITHOUT ROWID;
++  CREATE TABLE smiles (cid INTEGER PRIMARY KEY, smiles TEXT); CREATE TABLE iupac (cid INTEGER PRIMARY KEY, name TEXT);
++  CREATE TABLE formula (cid INTEGER PRIMARY KEY, formula TEXT); CREATE TABLE synonym (name TEXT, cid INTEGER, rank INTEGER);''')
++structures = ['C' * n + 'O' for n in range(1, 513)]
++for cid, smi in enumerate(structures, 1):
++    db.execute('INSERT INTO inchikey VALUES (?, ?)', (Chem.MolToInchiKey(Chem.MolFromSmiles(smi)), cid))
++    db.execute('INSERT INTO smiles VALUES (?, ?)', (cid, smi)); db.execute('INSERT INTO iupac VALUES (?, ?)', (cid, f'compound {cid}'))
++    db.execute('INSERT INTO synonym VALUES (?, ?, 0)', (f'compound {cid}', cid))
++db.commit(); db.close()
++o = tempfile.mkdtemp()
++for n in ('opsin-cli-2.8.0-jar-with-dependencies.jar', 'OpsinBatch.class'):
++    open(os.path.join(o, n), 'w').close()
++java = os.path.join(o, 'java')
++open(java, 'w').write('#!/bin/sh\\nwhile IFS= read -r line; do printf "SUCCESS\\\\tC\\\\t\\\\t\\\\n"; done\\n')
++os.chmod(java, os.stat(java).st_mode | stat.S_IEXEC)
++names = [f'compound {cid}' for cid in range(1, 513)]
++out = w.handle({'pubchemDir': d, 'opsinDir': o, 'pubchemNames': names, 'pubchemSmiles': structures})
++print(json.dumps([len(out['pubchem']['names']), len(out['pubchem']['smiles']), len(out['opsin']), out['pubchem']['names'].get('compound 512', {}).get('cid')]))
++`;
++  const [names, structures, opsin, last] = JSON.parse(execFileSync(process.env.CHEMISTRY_TEST_PYTHON, ['-c', script], { encoding: 'utf8' }));
++  assert.equal(names, 512, 'every name the mirror holds is answered');
++  assert.equal(structures, 512, 'every structure the mirror holds is answered');
++  assert.equal(opsin, 512, 'every name goes to the local OPSIN');
++  assert.equal(last, 512, 'the last name is answered with its own record');
++});
