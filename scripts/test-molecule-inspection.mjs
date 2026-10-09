@@ -1515,8 +1515,9 @@ test('the route rules agree with each other and with what the checker does', () 
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /goes under Agents as the solvent and under Byproducts as the amount formed, never under Reactants/);
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /Name each salt whole \(sodium sulfate, chromium\(III\) sulfate\) even when two salts share an ion/);
   assert.doesNotMatch(SYNTHESIS_TEMPLATE_ADDENDUM, /do not repeat an ion that two salts share/);
-  // The checker files an idle reagent under Agents, so only an unformed product is removed.
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A reagent listed under Reactants that takes no part is treated as an Agent by the checker/);
+  // A declared reactant that takes no part fails the step (routeStepFailure, `refiledReactant`),
+  // so the rules say so instead of promising it is harmless.
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A species listed under Reactants that takes no part fails the step/);
   // One definition of a folded workup, in the author's rules and the reviewer's, and the
   // product's isolated form is a naming choice in both.
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /folds a workup when it lists the workup's acid or base together with the transformation's reagents/);
