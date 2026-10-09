@@ -1,0 +1,44 @@
+# Repository: bloosqr/nodus-research-skill-marketplace (against audit/2026-10-09). Chemistry Studio worker: verify-route's label check does not ask the references again for a name the resolve pass just found nothing for.
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index d89dd08..ca43520 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -519,6 +519,11 @@ async function canonicalizeResolutions(resolutions: SpeciesNameResolution[], cac
+     } catch { /* the raw writing still resolves; the route audit canonicalises it again */ }
+   }
+   for (const entry of resolutions) {
++    // A name the references answered with no structure is remembered as such for this worker: the
++    // route audit's label check would otherwise ask them again, one name after another, for the
++    // same answer. Only a real answer counts — a lookup that failed carries no feedback — and a
++    // refused salt keeps its structure, so its label is still compared against it.
++    if (entry.status === 'unresolved' && entry.feedback && !entry.smiles && !cache.has(entry.name)) { cache.set(entry.name, []); continue; }
+     if (entry.status !== 'resolved' || !entry.smiles) continue;
+     entry.smiles = canonical.get(entry.smiles) ?? entry.smiles;
+     cache.set(entry.name, [entry.smiles]);
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..a54439f 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,22 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++test('the route audit does not look up again, over the network, a name the resolve pass already found nothing for', async () => {
++  // The application resolves every name first, then sends the route with the same names as labels.
++  // A name that resolved to nothing went back to the network once more, one name after another,
++  // inside the route check; its answer was "unchecked" either way.
++  lib.resetPubchemPacing();
++  const host = resolveHost(() => undefined); // every reference answers 404
++  const worker = lib.createWorker(host);
++  const resolved = await worker.invoke({ invocationId: 'neg1', toolId: 'resolve-names', locale: 'en', input: { names: ['frobnicated ethyl widget'] } });
++  assert.equal(resolved.artifacts[0].data.results[0].status, 'unresolved');
++  const before = host.calls.filter(call => !call.startsWith('subworker:')).length;
++  const result = await worker.invoke({ invocationId: 'neg2', toolId: 'verify-route', locale: 'en', input: {
++    steps: ['CCO>>CC=O'],
++    labels: [[{ role: 'reactant', byproduct: false, name: 'frobnicated ethyl widget', smiles: 'CCO' }]],
++  } });
++  assert.ok(result.artifacts.some(artifact => artifact.artifactType === 'route-audit'));
++  const network = host.calls.filter(call => !call.startsWith('subworker:')).slice(before);
++  assert.deepEqual(network, [], `the route check asked the network again: ${network.join(', ')}`);
++});

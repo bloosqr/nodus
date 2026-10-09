@@ -1,0 +1,4 @@
+not ok 1 - the route audit does not look up again, over the network, a name the resolve pass already found nothing for
+    the route check asked the network again: opsin/opsin/ws/frobnicated%20ethyl%20widget.json, pubchem/rest/pug/compound/name/frobnicated%20ethyl%20widget/cids/JSON?name_type=complete
+# pass 0
+# fail 1
