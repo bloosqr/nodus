@@ -1,0 +1,27 @@
+# All nodus patches applied together (patch -p1 --fuzz=3 in numeric order) plus the four hand-merges described in REPORT.md. tsc electron: 0 errors; tsc renderer: 0 errors.
+test-molecule-inspection: # pass 132 # fail 0 
+test-molecule-inspection-compatibility: # pass 5 # fail 0 
+test-route-report-overlap: # pass 1 # fail 0 
+test-route-names-abort: # pass 1 # fail 0 
+test-synthesis-evidence: # pass 15 # fail 0 
+test-synthesis-evidence-without-ord: # pass 18 # fail 0 
+test-route-evidence: # pass 4 # fail 0 
+test-thinking-catalog-cache: # pass 2 # fail 0 
+test-research-step-bounds: # pass 2 # fail 0 
+test-ai-provider-retries: # pass 6 # fail 0 
+test-ai-transient-network: # pass 7 # fail 0 
+test-embedding-contract: # pass 5 # fail 0 
+test-web-research-flow: # pass 5 # fail 0 
+test-research-synthesis-context: ℹ pass 18 ℹ fail 0 
+test-research-inventory-builds: ℹ pass 1 ℹ fail 0 
+test-research-opening-searches: ℹ pass 2 ℹ fail 0 
+test-research-receipts-between-searches: ℹ pass 1 ℹ fail 0 
+test-research-corpus-run: exit 0 — Corpus run: pre-ranking scope, mixed Ideas, lexical-only retrieval, shared section budget, no profile barrier and select
+test-research-chat-agent: exit 0 — Research chat agent: follow-up planning, catalogue by author, groundwork reads, refused premature finishes and carried c
+test-research-actions: exit 0 — Structured actions, invalid decisions, independent source search, separate evidence and decision allowances, explicit re
+test-research-evidence-request: exit 0 — Evidence request: real retrieval, JSON expansion, complete citations, large-window recovery and dispatch passed.
+test-research-zotero-agents: exit 0 — Research Chat, Deep Research and Immersion: managed Zotero original access, observable calls, resolvable citations, retr
+test-research-null-idea-statement: exit 0 — Ideas without a statement no longer break Research Chat retrieval.
+test-job-thinking-effort: exit 0 — Job thinking level: text, JSON and streamed calls carry it on the wire with room to think; other models, concurrent jobs
+test-research-native-effort: exit 0 — 30 real native-engine requests passed with intercepted transports: old models, Sol, Luna, Astra; Standard/High and uncha
+test-ai-json-retry: exit 0 — AI JSON retry budget verified.

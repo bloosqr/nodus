@@ -353,7 +353,7 @@ All four read the labels or queries, yet they start only after `await invokeRout
 
 ## Applying the patches together
 
-Each patch applies alone to `audit/2026-10-09`. Most pairs also apply together with `patch -p1 --fuzz=3` in numeric order. The test files gain tests at shared anchors, so `git apply` without fuzz refuses some pairs.
+Each patch applies alone to `audit/2026-10-09`. Each nodus patch was also run alone against the related suites (molecule-inspection, compatibility, synthesis-evidence ×2, route-evidence, ai-provider-retries, web-research-flow, research-synthesis-context, corpus-run, chat-agent, actions, evidence-request, plus the tests it adds) and the Electron typecheck: no failures and no type errors for any patch (`logs/per-patch-suites.txt`). Most pairs also apply together with `patch -p1 --fuzz=3` in numeric order. The test files gain tests at shared anchors, so `git apply` without fuzz refuses some pairs.
 
 Four pairs overlap in code and need these hand-merges:
 
@@ -364,8 +364,8 @@ Four pairs overlap in code and need these hand-merges:
 - **02 + 09:** the `readOriginal` call becomes `recordScopedSourcePassage(…, this.inventory().documents, this.pendingReceipts)`.
 - **19 + 21:** keep 21's `embedMany` line, then 19's loop over every query, passing `vectors[index]`.
 
-With all 24 applied this way (the scratch tree is not committed):
-- Electron typecheck clean.
+With all 24 applied this way (the scratch tree is not committed; output in `logs/all-patches-together.txt`):
+- Electron and renderer typecheck clean.
 - molecule-inspection 132, compatibility 5, route-report-overlap 1, route-names-abort 1, synthesis-evidence 15, without-ord 18, route-evidence 4, thinking-catalog 2, step-bounds 2, ai-provider-retries 6, ai-transient-network 7, embedding-contract 5, web-research-flow 5.
 - research-synthesis-context 18/18; inventory-builds, opening-searches (2) and receipts-between-searches pass.
 - corpus-run, chat-agent, actions, evidence-request, zotero-agents, null-idea-statement, job-thinking-effort, native-effort and ai-json-retry exit 0.
