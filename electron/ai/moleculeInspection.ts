@@ -96,6 +96,10 @@ interface InspectOptions {
   /** A runner shared across the whole post-answer phase, so the capability worker is opened
    *  once. When absent each phase opens and closes its own. */
   runner?: Runner;
+  /** The conversation's capability scope: every runner opened with it shares one worker per
+   *  capability, so the evidence gather, the checks and the correction rounds of an answer find
+   *  the worker — and the references it already looked up — still running. */
+  scope?: string;
   /** Called with the deterministic report and drawings as soon as they exist, before the
    *  route review lands, so the reply can show them without waiting on the reviewer. */
   onDeterministic?: (text: string) => void;
@@ -198,6 +202,7 @@ export function chemistryRunner(options: InspectOptions): { runner: Runner; disp
     pins: pinCapabilitiesForTurn(),
     signal: options.signal,
     ...(options.owner ? { owner: options.owner } : {}),
+    ...(options.scope ? { scope: options.scope } : {}),
     runCoreStages: async (text) => text,
   });
   return { runner, dispose: async () => { await runner.dispose?.(); } };

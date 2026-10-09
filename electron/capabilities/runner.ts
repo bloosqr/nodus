@@ -1,6 +1,5 @@
 import type { VisionSession } from './vision/service';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import type { ModelRef } from '@shared/types';
 import { serializeChatVisualPart } from '@shared/chatSkills';
@@ -11,7 +10,7 @@ import { validateViewDocument, type ViewDocumentV1 } from '../../packages/capabi
 import type { WorkerArtifactV1 } from '../../packages/capability-api/src/artifacts';
 import type { ChatAstNode } from '../../packages/capability-api/src/chat';
 import type { ChatModelBudgetV1 } from '../../packages/capability-api/src/worker';
-import { acquireCapabilityWorker, stopCapabilityWorkers, type TrustedWorkerRuntime } from './workerHost';
+import { acquireCapabilityWorker, leaseCapabilityScope, type TrustedWorkerRuntime } from './workerHost';
 import { createCapabilityHostServices, type CapabilityServiceAdapters } from './hostServices';
 import { resolveTrustedCapability } from './pluginStoreV2';
 import { serializeArtifactReference, storeCapabilityArtifact } from './artifactStore';
@@ -49,6 +48,11 @@ export interface TrustedTurnContext {
   locale: string;
   model?: ModelRef | null;
   pins: TurnPins;
+  /** Runners naming the same scope share their capability workers (see `leaseCapabilityScope`):
+   *  one answer's phases, and the correction rounds after it, then reuse one process with its
+   *  module caches instead of starting a cold one per phase. Absent, the runner's workers are
+   *  its own and stop when it is disposed. */
+  scope?: string;
   signal?: AbortSignal;
   beforeInvoke?: () => void;
   beforePaidCall?: () => void;
@@ -143,7 +147,7 @@ export function createCapabilityAdapters(context: TrustedTurnContext): Capabilit
 export function createTrustedCapabilityRunner(context: TrustedTurnContext): TrustedCapabilityRunner {
   // Computed once per turn, not per call: the model does not change inside a turn.
   const budget = chatModelBudget(context.model);
-  const scopeKey = randomUUID();
+  const { scopeKey, release } = leaseCapabilityScope(context.scope);
   const services = createCapabilityHostServices(createCapabilityAdapters(context));
   const workerFor = (provider: CapabilityProvider) => {
     const runtime = runtimeFor(provider, context.pins);
@@ -159,7 +163,7 @@ export function createTrustedCapabilityRunner(context: TrustedTurnContext): Trus
     });
 
   return {
-    dispose: () => stopCapabilityWorkers(key => key.endsWith(`#${scopeKey}`)),
+    dispose: release,
     async invoke({ provider, toolId, input, nodeId }) {
       const tool = provider.tools.find(candidate => candidate.id === toolId);
       if (!tool) throw new Error(`${provider.id} has no tool ${toolId}.`);

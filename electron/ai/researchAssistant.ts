@@ -212,6 +212,10 @@ interface PromptBuild {
 
 const CHAT_CITATION_ATTEMPTS = 3;
 
+/** The capability scope of a conversation: its answers' chemistry runners share one worker. */
+const capabilityScope = (request: ResearchChatRequest): string | undefined =>
+  request.conversationId ? `research:${getActiveVault().id}:${request.conversationId}` : undefined;
+
 function skillExecution(request: ResearchChatRequest) {
   const vaultId = getActiveVault().id;
   const owner = request.conversationId ? chatAssetOwner('assistant', request.conversationId, vaultId) : undefined;
@@ -238,7 +242,7 @@ function skillExecution(request: ResearchChatRequest) {
   const fixSkills = routeTurn ? capabilityChatSkills('nodus:chemistry') : [];
   const invoked = [...invokedChatSkills(request.skillIds), ...fixSkills]
     .filter((skill, index, all) => !standing.some(item => item.id === skill.id) && all.findIndex(item => item.id === skill.id) === index);
-  return { skills: [...standing, ...invoked], evidenceScope: chemistryEvidenceScope(request), question: userMessages.at(-1), request: lastRequest ?? userMessages.at(-1), target: requestedTargetFor(userMessages), model: request.model, owner, routeTurn, version: owner ? chatAssetVersion(owner) : 0,
+  return { skills: [...standing, ...invoked], evidenceScope: chemistryEvidenceScope(request), question: userMessages.at(-1), request: lastRequest ?? userMessages.at(-1), target: requestedTargetFor(userMessages), model: request.model, owner, scope: capabilityScope(request), routeTurn, version: owner ? chatAssetVersion(owner) : 0,
     isCurrent: () => getActiveVault().id === vaultId && (!request.conversationId || !!getConversation(request.conversationId)) };
 }
 
@@ -248,7 +252,7 @@ async function withRouteEvidence(answer: string, execution: ReturnType<typeof sk
   const question = execution.question ?? '';
   const chemistry = execution.skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry'));
   if (!routeEvidencePassEnabled() || !chemistry || isRouteFixPrompt(question) || !looksLikeSynthesisRequest(question)) return answer;
-  return reviseRouteWithEvidence(answer, { model: execution.model, evidenceScope: execution.evidenceScope, target: execution.target, question: execution.request ?? question, signal, locale: getSettings().promptLanguage ?? 'en' },
+  return reviseRouteWithEvidence(answer, { model: execution.model, evidenceScope: execution.evidenceScope, scope: execution.scope, target: execution.target, question: execution.request ?? question, signal, locale: getSettings().promptLanguage ?? 'en' },
     async brief => finalizeAnswer(await completeTextStream({ ...opts, user: revisionUserMessage(opts.user, answer, brief) }, () => {}, execution.model, signal), local, sourceContext));
 }
 
@@ -281,7 +285,7 @@ async function auditAnswer(answer: string, execution: ReturnType<typeof skillExe
   // step drawings) take seconds more and repaint the answer when they finish.
   if (onDeterministic && skilled !== answer) onDeterministic(skilled);
   const chemistryEnabled = execution.skills.some(skill => (skill.capabilities ?? []).includes('nodus:chemistry'));
-  const base = { model: execution.model, evidenceScope: execution.evidenceScope, locale: getSettings().promptLanguage ?? 'en', enabled: chemistryEnabled, owner: execution.owner, signal, question: execution.request ?? execution.question, ...(onDeterministic ? { onDeterministic } : {}) };
+  const base = { model: execution.model, evidenceScope: execution.evidenceScope, scope: execution.scope, locale: getSettings().promptLanguage ?? 'en', enabled: chemistryEnabled, owner: execution.owner, signal, question: execution.request ?? execution.question, ...(onDeterministic ? { onDeterministic } : {}) };
   // One capability runner for the whole phase: the resolve pass warms the worker's reference
   // cache and the route audit reuses it, so a route opens one worker, not three.
   const session = chemistryEnabled ? chemistryRunner(base) : null;
@@ -641,7 +645,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   // Started here and awaited below, beside the evidence gather: neither reads the other.
   // A correction chip carries no new structure: its only SMILES-like tokens come from the shared
   // rules, so inspecting it costs a worker start for nothing.
-  const inspecting = genealogy || !chemistryEnabled || isRouteFixPrompt(question) ? Promise.resolve([]) : inspectResearchMolecules(question, { model, locale: promptLanguage, signal });
+  const inspecting = genealogy || !chemistryEnabled || isRouteFixPrompt(question) ? Promise.resolve([]) : inspectResearchMolecules(question, { model, locale: promptLanguage, signal, scope: capabilityScope(request) });
   inspecting.catch(() => undefined);
   // What this conversation is doing about a route, read from the whole authorized history rather
   // than from the latest message. A human follow-up ("you can solve this directly") is neither a
@@ -670,7 +674,7 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   let evidenceSoFar: (evidence: SynthesisEvidence | null) => void = () => {};
   const early = new Promise<SynthesisEvidence | null>(resolve => { evidenceSoFar = resolve; });
   const gathering = chemistryRoute && !council?.member
-    ? gatherSynthesisEvidence(routeQuestion, { model, locale: promptLanguage, signal, evidenceScope: chemistryEvidenceScope(request), vaultId: getActiveVault().id, onDisconnections: evidenceSoFar })
+    ? gatherSynthesisEvidence(routeQuestion, { model, locale: promptLanguage, signal, evidenceScope: chemistryEvidenceScope(request), vaultId: getActiveVault().id, onDisconnections: evidenceSoFar, scope: capabilityScope(request) })
     : Promise.resolve(null);
   // A failed gather still surfaces where it is awaited below; here it only releases the wait.
   gathering.then(evidenceSoFar, () => evidenceSoFar(null));

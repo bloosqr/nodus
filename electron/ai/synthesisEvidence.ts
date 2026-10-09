@@ -81,6 +81,8 @@ interface EvidenceOptions {
   locale?: string;
   signal?: AbortSignal;
   owner?: string;
+  /** The conversation's capability scope (see moleculeInspection's InspectOptions). */
+  scope?: string;
   /** The phases of this gather that failed rather than found nothing. Set by the gather, so a
    *  degraded result is used for this turn but not remembered as the whole evidence. */
   failures?: string[];
