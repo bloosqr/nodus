@@ -575,7 +575,7 @@ export function findStepConditions(text: string, count: number): string[] {
 /** A step's title and the first paragraph under its heading, stopping at its species lines. */
 function stepProseText(title: string, block: string): string {
   const body = block.replace(/^[^\n]*\n?/, '');
-  const cut = body.search(/(?:`{1,2}|\*\*|__)?[ \t]*\b(?:reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：]/i);
+  const cut = body.search(/(?:(?:`{1,2}|\*\*|__)[ \t]*|(?<![ \t])[ \t]+)?\b(?:reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：]/i);
   const paragraph = (cut >= 0 ? body.slice(0, cut) : body).split(/\n{2,}/)[0] ?? '';
   const prose = paragraph.replace(/[*_`>#]/g, '').replace(/\s+/g, ' ').trim().slice(0, 360);
   return prose ? `${title} — ${prose}` : title;
@@ -797,12 +797,17 @@ export function findStepProse(text: string, count: number): string[] {
 /** A role marker wherever it appears: line-leading, bulleted, inline in a paragraph, and
  *  wrapped in the backticks or bold a model likes to use (`` `Reactants:` ``, `**Products:**`).
  *  The colon is required so ordinary prose ("each reactant") is never mistaken for a label. */
-const ROLE_MARKER = /(?:`{1,2}|\*\*|__)?[ \t]*\b(reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
+/** Blanks before a label are taken only from the start of their run (`(?<![ \t])`). A bare
+ *  `[ \t]*` ahead of `\b` is retried from every position of a run of blanks, which is quadratic
+ *  in the run — and `maskDrawnRegions` turns every drawing into exactly such a run: a 100 KB
+ *  picture took 13 s to scan, per call. The match still starts where it did, so every offset into
+ *  the answer is unchanged. */
+const ROLE_MARKER = /(?:(?:`{1,2}|\*\*|__)[ \t]*|(?<![ \t])[ \t]+)?\b(reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
 /** The name-first path reads only the four plural labels the contract asks for. A model's
  *  prose sentence that begins with a singular "Product:" (its own summary, beside the real
  *  `Products:` list) is therefore not mistaken for a species label. The legacy path keeps the
  *  singular-tolerant `ROLE_MARKER` so older answers still parse. */
-const NAME_ROLE_MARKER = /(?:`{1,2}|\*\*|__)?[ \t]*\b(reactants|products|by[-\s]?products|agents)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
+const NAME_ROLE_MARKER = /(?:(?:`{1,2}|\*\*|__)[ \t]*|(?<![ \t])[ \t]+)?\b(reactants|products|by[-\s]?products|agents)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
 /** A markdown heading (`## …`) or a wholly bold line (`**…**`). The route's step headings are
  *  the subset whose title begins with "Step N"; a heading like "Alternative for Step 3" is a
  *  section of the answer, not a step, and its labels are not part of the sequential route. */
