@@ -2320,6 +2320,9 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     // sentence is what makes the assumption reviewable; the verdict above now counts it as a
     // failure too, which it already did in the route header and in the per-step fix chip.
     const refiledNote = step.refiledReactant ? ` ${step.refiledReactant}` : '';
+    // Not plain "balanced" beside FAIL: the equation closed only after the checker moved a species
+    // the author declared consumed.
+    const balanceNote = step.balanced && step.refiledReactant ? REFILED_BALANCE : balance;
     // Printed for the same reason, and it is the more urgent of the two: a lone atom of a diatomic
     // element said nothing at all in this line, so the step named no fault while failing.
     const monatomicNote = step.monatomicSpecies ? ` ${step.monatomicSpecies}` : '';
@@ -2328,7 +2331,7 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const stepLabels = labels[step.index] ?? [];
     const reactantSide = groupedSideTrace(step.reactants, stepLabels.filter((entry) => entry.role === 'reactant'), names, step.balanced === true, step.products);
     const productSide = groupedSideTrace(step.products, stepLabels.filter((entry) => entry.role === 'product'), names, step.balanced === true, step.reactants);
-    lines.push(`- ${label} ${verdict} — ${balance}${stereo}.${nameNote}${largeNote}${refiledNote}${monatomicNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
+    lines.push(`- ${label} ${verdict} — ${balanceNote}${stereo}.${nameNote}${largeNote}${refiledNote}${monatomicNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
     const alpha = alphaConfigurationLine(step, stepLabels);
     if (alpha) lines.push(alpha);
   }
@@ -2539,6 +2542,9 @@ function sentence(text: string): string {
   return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
 }
 
+/** How a step that balanced only after the checker refiled a declared reactant is described. */
+const REFILED_BALANCE = 'balanced only after the checker refiled a declared reactant';
+
 export function routeStepFailure(step: RouteStepAudit): string | null {
   if (step.nameProblems?.length) return step.nameProblems.join('; ');
   if (!step.ok) return step.error ?? 'could not be parsed';
@@ -2563,7 +2569,7 @@ export function routeStepFailure(step: RouteStepAudit): string | null {
   // silent; two that cannot both be moved are reported and fixed. That is an artifact of how far
   // the rescue search reaches, not a judgement about the chemistry, so the two cases are now
   // reported alike.
-  if (step.refiledReactant) return step.refiledReactant;
+  if (step.refiledReactant) return `${REFILED_BALANCE}: ${step.refiledReactant}`;
   // And a species written as a lone atom of a diatomic element. Reported here rather than as a
   // balance failure because it usually sits under Agents, which take no part in the balance: the
   // equation is right and the structure is not, so calling it unbalanced would name the wrong
