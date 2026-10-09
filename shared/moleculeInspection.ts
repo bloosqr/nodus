@@ -1935,6 +1935,16 @@ export function isolatedSteps(audit: RouteAudit): number[] {
   });
 }
 
+/** Links between steps the checker refused: a later step consumes a different stereoisomer or
+ *  charge state of what an earlier one makes, or a declared intermediate is not the same structure
+ *  on both sides. The package counts these against `continuous`, and the continuity rule tells the
+ *  model such a route is rejected; neither step is isolated by it, so `isolatedSteps` alone never
+ *  sees one. Every verdict reads this, so the header, the chips and the drawing gate agree. A link
+ *  reported as carried is never broken: the package sets `ok` from that reason. */
+export function brokenRouteLinks(audit: RouteAudit): RouteLinkAudit[] {
+  return audit.links.filter((link) => !link.ok && link.reason !== 'carried');
+}
+
 const sideTrace = (species: RouteSpeciesSummary[], names?: Map<string, string>): string => species.map((entry) => {
   const name = names?.get(entry.input) ?? names?.get(entry.canonicalSmiles) ?? entry.name;
   const identity = entry.formula || entry.canonicalSmiles;
@@ -2242,6 +2252,8 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
   if (assembled.length) reasons.push(`${assembled.length === 1 ? 'a step' : 'steps'} cannot be assembled from a single substrate molecule (${assembled.map((index) => `step ${index}`).join(', ')})`);
   if (skeletal.length) reasons.push(`${skeletal.length === 1 ? 'a step makes or breaks a bond' : 'steps make or break bonds'} its reactants cannot (${skeletal.map((index) => `step ${index}`).join(', ')})`);
   if (isolated.length) reasons.push(`${isolated.length} step(s) are disconnected from the rest of the route`);
+  const broken = brokenRouteLinks(audit);
+  if (broken.length) reasons.push(`${broken.length} intermediate link(s) do not carry the same structure (${broken.map((link) => `step ${link.from + 1} → ${link.to + 1}`).join(', ')})`);
   if (audit.target?.reason === 'not-formed') reasons.push('no step forms the requested target');
   else if (audit.target?.reason === 'stereo-mismatch') reasons.push('the target is formed only with the wrong stereochemistry');
   if (reviewProblems.length) reasons.push(`a route review raised ${reviewProblems.length} problem(s)`);
@@ -2668,6 +2680,11 @@ function namedRouteProblems(labels: RouteSpeciesLabel[][], audit: RouteAudit): s
     problems.push(duplicate
       ? `- Step ${index + 1} is disconnected: none of its species is made by an earlier step or used by a later one.${duplicate}`
       : `- Step ${index + 1} is disconnected: none of its species is made by an earlier step or used by a later one. Insert the missing step where it belongs, or write the carried species with the same IUPAC name in both steps.`);
+  }
+  for (const link of brokenRouteLinks(audit)) {
+    if (link.reason === 'constitution-only') problems.push(`- Step ${link.from + 1} → ${link.to + 1}: step ${link.to + 1} consumes a different stereoisomer or charge state of the intermediate step ${link.from + 1} makes. Carry it with exactly the name step ${link.from + 1} gives it, or add the step that changes its form.`);
+    else if (link.reason === 'declared-mismatch') problems.push(`- The intermediate declared as entering step ${link.to + 1} is not the same structure on both sides. Name it identically in step ${link.from + 1}'s Products and step ${link.to + 1}'s Reactants.`);
+    else if (link.reason === 'no-overlap') problems.push(`- Step ${link.from + 1} → ${link.to + 1}: no intermediate is carried over. Make a product of step ${link.from + 1} a reactant of step ${link.to + 1}, with the same name.`);
   }
   const target = audit.target;
   if (target && audit.steps.every((step) => step.ok)) {

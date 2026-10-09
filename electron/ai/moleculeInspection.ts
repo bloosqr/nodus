@@ -8,6 +8,7 @@ import {
   classifyCoProducts,
   countRouteSteps,
   isBareSmilesName,
+  brokenRouteLinks,
   isolatedSteps,
   stepDeclaresRacemic,
   stepDeclaresRearrangement,
@@ -821,6 +822,7 @@ function routePasses(audit: RouteAudit): boolean {
   return audit.steps.length > 0
     && audit.steps.every((step) => !routeStepFailure(step))
     && !isolatedSteps(audit).length
+    && !brokenRouteLinks(audit).length
     && audit.target?.reason !== 'not-formed'
     && audit.target?.reason !== 'stereo-mismatch';
 }
@@ -836,7 +838,8 @@ function routePasses(audit: RouteAudit): boolean {
  *  it only on a route that passed is both the clearer answer and the cheaper one.
  *
  *  The gate is deterministic and does not wait for the model review: every step passes, no step is
- *  disconnected, and the target is formed with the stereochemistry asked for. */
+ *  disconnected, every intermediate is carried as the same structure, and the target is formed
+ *  with the stereochemistry asked for. */
 async function printFinalReport(
   runner: Runner,
   provider: CapabilityProvider,
