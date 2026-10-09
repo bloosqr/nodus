@@ -423,6 +423,14 @@ export function completionTimeoutMs(model: ModelRef): number {
   return runsOnDevice(model.provider) ? ON_DEVICE_COMPLETION_TIMEOUT_MS : CLOUD_COMPLETION_TIMEOUT_MS;
 }
 
+/** A research turn's own short JSON calls (its plan, each supervisor decision): a few hundred
+ *  output tokens, each with a fallback. A cloud provider that stalls one held the turn for the
+ *  full completion timeout, three minutes, before that fallback ran. On-device models keep theirs. */
+export function researchStepTimeoutMs(model?: ModelRef | null): number | undefined {
+  // No model configured: the call itself reports that, not this bound.
+  try { return runsOnDevice(resolveModel(model).provider) ? undefined : 30_000; } catch { return undefined; }
+}
+
 /**
  * Size max_tokens to a local model's real context window, refusing up front when the
  * prompt itself won't fit. Returns the max_tokens to use; throws an actionable AiError
@@ -2435,6 +2443,11 @@ async function requestEmbeddings(
     apiKey: key,
     baseURL: endpoint,
     defaultHeaders: openAiClientHeaders({ provider }),
+    // withProviderRetries owns 429/5xx recovery: the SDK's own two retries inside each of its
+    // attempts made one 503 nine requests, and its ten-minute default, retried twice, let a
+    // stalled endpoint hold a chat search for half an hour. The Gemini path above is bounded alike.
+    maxRetries: 0,
+    timeout: completionTimeoutMs({ provider, model: modelId }),
   });
   try {
     const res = await withProviderRetries(freeTier, () => runEmbeddingRequest(async () => {
