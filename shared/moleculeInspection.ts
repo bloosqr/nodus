@@ -1281,7 +1281,7 @@ export function isConditionPhrase(name: string): boolean {
  *  markup or escaped syntax. A reply that smuggled an SVG, a JSON fragment or a newline into a
  *  name is not shown to the user as a "correction". */
 function isPlausibleSpeciesName(value: string): boolean {
-  return value.length >= 2 && value.length <= 200
+  return value.length >= 2 && value.length <= MAX_SPECIES_NAME
     && /[A-Za-z]/.test(value)
     && !/[<>{}\\\n\r\t`|"]/.test(value)
     && !value.includes('→');
@@ -2965,14 +2965,17 @@ export function parseNameFeedback(raw: string): NameFeedbackEntry[] {
   return list.map((entry) => {
     const item = asRecord(entry);
     if (!item || typeof item.from !== 'string') return null;
-    const from = item.from.trim().slice(0, 200);
+    // As long as the parser lets a name be (MAX_SPECIES_NAME). At 200, a longer name came back as
+    // its first 200 characters: `from` then matched no species, so the rename was never applied,
+    // and a `to` that long was cut short, so it could never resolve.
+    const from = item.from.trim().slice(0, MAX_SPECIES_NAME);
     if (!from || !isPlausibleSpeciesName(from)) return null;
     if (typeof item.smiles === 'string' && item.smiles.trim()) {
       const smiles = item.smiles.trim().slice(0, 2000);
       if (isPlausibleStructure(smiles)) return { from, to: smiles, kind: 'structure' as const };
     }
     if (typeof item.to === 'string' && item.to.trim()) {
-      const to = item.to.trim().slice(0, 200);
+      const to = item.to.trim().slice(0, MAX_SPECIES_NAME);
       if (to && isPlausibleSpeciesName(to)) return { from, to, kind: 'name' as const };
     }
     return null;
