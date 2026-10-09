@@ -2275,6 +2275,23 @@ test('a step that balanced only by refiling a declared reactant is a failing ste
   assert.match(routeStepFailure({ ...base, balanced: false, differences: ['O: reactants 2, products 1'], refiledReactant: refiled }), /not balanced/);
 });
 
+test('a step whose coefficient search gave up reads as unchecked, not as unbalanced', () => {
+  // The package refuses such a step (balanced: false) with a separate balanceUnchecked reason. The
+  // reason was dropped on the way in and the line said "NOT balanced (… was not checked …)".
+  const unchecked = 'This step leaves 5 species free to vary independently, more than the 4 the checker'
+    + ' determines coefficients for, so its balance was not checked: it has been shown neither balanced'
+    + ' nor unbalanced. Split it into consecutive steps, each naming fewer species.';
+  const audit = normalizeRouteAudit({ continuous: false, blocked: [], links: [], steps: [{
+    index: 0, reaction: 'a>>b', ok: true, reactants: [], agents: [], products: [],
+    balanced: false, chargeBalanced: true, differences: [unchecked], unspecifiedStereocentres: 0, balanceUnchecked: unchecked,
+  }] });
+  assert.equal(audit.steps[0].balanceUnchecked, unchecked, 'the reason survives normalisation');
+  const line = formatRouteAudit(audit).split('\n').find((entry) => entry.startsWith('- Step 1'));
+  assert.match(line, /^- Step 1 FAIL — balance NOT checked \(This step leaves 5 species/);
+  assert.doesNotMatch(line, /NOT balanced/);
+  assert.match(routeStepFailure(audit.steps[0]), /^balance not checked \(.*Split it/);
+});
+
 test('a route answer draws only through the final report', () => {
   // The route lane decides what is drawn and when. A `chemistry-plan` fence let the model draw on
   // any turn whatever the verdict; on the 30-target cascade all 58 of them failed the capability's
