@@ -126,6 +126,10 @@ export interface RouteStepAudit {
   /** Why the per-molecule packing search gave up. Absent when the step's shape is simply outside
    *  what packing models (a convergent coupling), which is not a gap in coverage. */
   assemblyUnchecked?: string;
+  /** Set when the coefficient search gave up: more species free to vary than it determines
+   *  coefficients for. `balanced` is false, so the step fails, but it is unchecked, not unbalanced,
+   *  and its one action is to split the step. */
+  balanceUnchecked?: string;
   /** The bonds at carbon this balanced step forms and breaks, read as a graph edit by the
    *  capability. Facts for the report and the reviewer, whether or not the step was refused. */
   skeleton?: RouteSkeletonFacts;
@@ -1622,6 +1626,7 @@ function normalizeRouteStep(entry: unknown, index: number): RouteStepAudit | nul
     ...(value.stereoNotRequired === true ? { stereoNotRequired: true } : {}),
     ...(typeof value.assemblyProblem === 'string' && value.assemblyProblem ? { assemblyProblem: value.assemblyProblem.slice(0, 400) } : {}),
     ...(typeof value.assemblyUnchecked === 'string' && value.assemblyUnchecked ? { assemblyUnchecked: value.assemblyUnchecked.slice(0, 300) } : {}),
+    ...(typeof value.balanceUnchecked === 'string' && value.balanceUnchecked ? { balanceUnchecked: value.balanceUnchecked.slice(0, 1000) } : {}),
     ...(normalizeSkeleton(value.skeleton) ? { skeleton: normalizeSkeleton(value.skeleton)! } : {}),
     ...(normalizeBonds(value.bonds) ? { bonds: normalizeBonds(value.bonds)! } : {}),
     ...(value.rearrangement === true ? { rearrangement: true } : {}),
@@ -2297,7 +2302,9 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
           ? `, ${step.unspecifiedStereocentres} open stereocentre(s) not required (lost before the target)`
           : `, ${step.unspecifiedStereocentres} unspecified stereocentre(s) or double bond(s)`
       : '';
-    const balance = step.balanced ? 'balanced' : `NOT balanced (${step.differences.join('; ')})`;
+    const balance = step.balanced
+      ? 'balanced'
+      : step.balanceUnchecked ? `balance NOT checked (${step.balanceUnchecked})` : `NOT balanced (${step.differences.join('; ')})`;
     const nameNote = nameFailure ? ` name check failed: ${step.nameProblems!.join('; ')}.` : '';
     // A step can balance only by solving an odd stoichiometry (8 citric acid → 9 …); the numbers
     // are shown, and a large one is called out, because that usually means a byproduct is wrong.
@@ -2535,7 +2542,7 @@ function sentence(text: string): string {
 export function routeStepFailure(step: RouteStepAudit): string | null {
   if (step.nameProblems?.length) return step.nameProblems.join('; ');
   if (!step.ok) return step.error ?? 'could not be parsed';
-  if (step.balanced !== true) return `not balanced (${step.differences.join('; ')})`;
+  if (step.balanced !== true) return step.balanceUnchecked ? `balance not checked (${step.balanceUnchecked})` : `not balanced (${step.differences.join('; ')})`;
   // A balanced step can still be impossible: the packing check refuses an equation that
   // assembles a product from more than one substrate. The report already shows this, so the
   // one-click prompts must name it too, or they point at a different step than the checker did.
