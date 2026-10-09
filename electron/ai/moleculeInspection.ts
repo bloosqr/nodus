@@ -4,6 +4,7 @@ import {
   buildNameFeedbackRequest,
   buildRouteReviewRequest,
   buildPrecedentQueries,
+  blockingReviewProblems,
   buildRouteSteps,
   classifyCoProducts,
   countRouteSteps,
@@ -728,6 +729,12 @@ export async function resolveNamedRoute(
  *  small pool hides the RDKit load without thrashing the machine. */
 const DRAW_CONCURRENCY = 2;
 
+/** The final report's opening claim, and what replaces it when the model review, which the drawing
+ *  gate does not wait for, comes back with a blocking problem. Left as it was, the answer said
+ *  "Route check failed" in its header and "every step passed the check" under it, about one route. */
+const FINAL_REPORT_PASSED = 'Every step of this route passed the check, so the route is drawn.';
+const FINAL_REPORT_REVIEW_HELD = 'Every step passed the RDKit check, so the route is drawn, but the model review above found a named structure wrong for its step: the route is not verified until that is corrected.';
+
 /** One reaction scheme from the compile tool, rendered for the answer, or null when the tool
  *  produced no view. A stored reference and its inline view would each render the same
  *  drawing, so only the view is kept. */
@@ -908,7 +915,7 @@ async function printFinalReport(
   const lines = [
     '### Final report',
     '',
-    `Every step of this route passed the check, so the route is drawn. ${ordered.length} step(s), one diagram each. This is still bookkeeping: conditions, selectivity, yields and safety are not checked.`,
+    `${FINAL_REPORT_PASSED} ${ordered.length} step(s), one diagram each. This is still bookkeeping: conditions, selectivity, yields and safety are not checked.`,
     '',
     ...ordered.flatMap((figure) => [
       `**Step ${figure.index + 1}** — ${summaries.get(figure.index) ?? ''}`,
@@ -1068,6 +1075,7 @@ export async function appendRouteReportAndDrawings(
     const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
     const review = await reviewPromise;
     const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
+    const finalReport = blockingReviewProblems(review).length ? drawings.replace(FINAL_REPORT_PASSED, FINAL_REPORT_REVIEW_HELD) : drawings;
     const precedentText = await precedentSection;
     const support = await supportPromise;
     // A step's high-severity clashes ride along in its fix prompt, as evidence.
@@ -1085,7 +1093,7 @@ export async function appendRouteReportAndDrawings(
     const stockLine = await stockPromise;
     const textbookText = await textbookSection;
     console.info(`${new Date().toISOString()} [routeReport] ${((Date.now() - started) / 1000).toFixed(1)}s · ${timings.join(' · ')}`);
-    return `${finalAnswer.trimEnd()}\n\n${report}\n${stockLine ? `${stockLine}\n\n` : ''}${drawings}${precedentText}${textbookText}${compatibilityText}${sources}${fix ? `\n${fix}\n` : ''}`;
+    return `${finalAnswer.trimEnd()}\n\n${report}\n${stockLine ? `${stockLine}\n\n` : ''}${finalReport}${precedentText}${textbookText}${compatibilityText}${sources}${fix ? `\n${fix}\n` : ''}`;
   } catch (error) {
     if (options.signal?.aborted) return finalAnswer;
     return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable(error instanceof Error ? error.message : 'the route check failed')}\n`;
