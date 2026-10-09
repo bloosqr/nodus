@@ -587,6 +587,12 @@ function stepProseText(title: string, block: string): string {
  *  ("**Target structure**"): those belong to the answer, not to the last step. The first
  *  section for each number wins. The evidence summary reads its citations from here. */
 export function findStepBlocks(text: string, count: number): string[] {
+  // The same sections the species, prose and conditions are read from, when the answer has them.
+  // Matched on its own, a "Step 1: …" line in an overview above the route claimed step 1 (the first
+  // section for each number wins), and every citation in the real step was counted as cited
+  // outside the steps — the step read "model knowledge only" beside its own textbook citation.
+  const sections = stepSections(text);
+  if (sections) return Array.from({ length: count }, (_, index) => sections[index] ? text.slice(sections[index].start, sections[index].end) : '');
   const lines = text.split('\n');
   let starts: Array<{ step: number; line: number }> = [];
   lines.forEach((line, at) => {
