@@ -290,6 +290,7 @@ import { exportImmersionSessionPdf } from '../export/immersionExport';
 import { generateProjectSuggestions } from '../ai/projectInsertion';
 import { exportProject, exportProjectChapter } from '../export/projectExport';
 import path from 'node:path';
+import { tempFileFor } from '../util/tempFileName';
 import { openDocumentPath } from '../util/openDocument';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -1532,7 +1533,7 @@ export function registerAcademicIpc(context: IpcContext): void {
       fs.writeFileSync(picked.filePath, ics, 'utf8');
       return { path: picked.filePath };
     }
-    const filePath = path.join(os.tmpdir(), `nodus-${event.id}.ics`);
+    const filePath = tempFileFor(os.tmpdir(), 'nodus-', event.id, '.ics');
     fs.writeFileSync(filePath, ics, 'utf8');
     const error = await shell.openPath(filePath);
     if (error) throw new Error(error);
