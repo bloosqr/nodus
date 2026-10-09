@@ -52,24 +52,46 @@ function databaseFor(file: string): Database.Database {
  *  the same way, so a similarity here is the same double the callback returned. A row whose vector
  *  is missing or the wrong length is absent from the cache and scores 0, exactly as `vec_scan` does.
  *
- *  Freshness: `PRAGMA data_version` changes whenever another connection commits to the file, and
- *  this worker's connection is read-only, so ANY write since the cache was built rebuilds it. It is
- *  never trusted across a write, in-place re-embeddings included. Every rebuild is logged, so a
- *  trace shows how often that happens. Idle caches are dropped after a few minutes. */
+ *  Freshness: the vault's triggers count writes per table (db/vectorScanGenerations.ts). The vectors
+ *  are keyed on the scanned table's counter and each statement's filtered rows on the counters of
+ *  every table that statement reads, so any write to one of them, in-place re-embeddings included,
+ *  rebuilds what depends on it, and a write anywhere else (a setting, a citation receipt, a chat
+ *  message) rebuilds nothing. A vault without the counters, or a statement reading a table they do
+ *  not cover, falls back to `PRAGMA data_version`, which changes on ANY commit by another
+ *  connection. Every rebuild is logged, so a trace shows how often that happens. Idle caches are
+ *  dropped after a few minutes. */
 interface VectorCache {
-  version: number; dim: number; slots: Map<number, number>; vectors: Float32Array; norms: Float64Array; timer?: NodeJS.Timeout;
-  /** The rows the caller's own statement keeps, per statement + parameters, window by window. The
-   *  same database version gives the same rows, so the filter (a JOIN and a text-hash test on every
-   *  row, ~10 µs a row) runs once per version rather than once per query. Bounded per table. */
+  version: string; dim: number; slots: Map<number, number>; vectors: Float32Array; norms: Float64Array; timer?: NodeJS.Timeout;
+  /** The rows the caller's own statement keeps, per statement + parameters + the versions of the
+   *  tables it reads, window by window. The same versions give the same rows, so the filter (a JOIN
+   *  and a text-hash test on every row, ~10 µs a row) runs once per version rather than once per
+   *  query. Bounded per table. */
   eligible: Map<string, Array<Array<Record<string, unknown> & { rid: number }>>>;
 }
 const ELIGIBLE_SETS = 8;
 const vectorCaches = new Map<string, VectorCache>();
 const CACHE_IDLE_MS = 5 * 60_000;
 
+/** The tables a statement reads: every name after FROM or JOIN, table-valued functions aside. */
+function tablesRead(sql: string): string[] {
+  return [...new Set([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_]\w*)/gi)].map((match) => match[1].toLowerCase()))]
+    .filter((name) => name !== 'json_each')
+    .sort();
+}
+
+/** The write counters of `tables`, or the connection's data_version when any is not counted. */
+function versionOf(database: Database.Database, tables: string[]): string {
+  try {
+    const rows = database.prepare('SELECT name, generation FROM vector_scan_generations WHERE name IN (SELECT value FROM json_each(?)) ORDER BY name')
+      .all(JSON.stringify(tables)) as Array<{ name: string; generation: number }>;
+    if (rows.length === tables.length) return rows.map((row) => `${row.name}:${row.generation}`).join(',');
+  } catch { /* A vault opened before the counters existed. */ }
+  return `data_version:${database.pragma('data_version', { simple: true }) as number}`;
+}
+
 function vectorCacheFor(database: Database.Database, file: string, table: string, dim: number): VectorCache {
   const key = `${path.resolve(file)}|${table}`;
-  const version = database.pragma('data_version', { simple: true }) as number;
+  const version = versionOf(database, [table]);
   let cache = vectorCaches.get(key);
   if (!cache || cache.version !== version || cache.dim !== dim) {
     const started = performance.now();
@@ -92,7 +114,7 @@ function vectorCacheFor(database: Database.Database, file: string, table: string
     if (cache?.timer) clearTimeout(cache.timer);
     cache = { version, dim, slots, vectors, norms, eligible: new Map() };
     vectorCaches.set(key, cache);
-    console.info(`${new Date().toISOString()} [vectorScanWorker] ${table} cache built in ${((performance.now() - started) / 1000).toFixed(2)}s · ${slot} vectors · data_version ${version}`);
+    console.info(`${new Date().toISOString()} [vectorScanWorker] ${table} cache built in ${((performance.now() - started) / 1000).toFixed(2)}s · ${slot} vectors · ${version}`);
   }
   if (cache.timer) clearTimeout(cache.timer);
   cache.timer = setTimeout(() => vectorCaches.delete(key), CACHE_IDLE_MS);
@@ -159,7 +181,7 @@ function scan(request: WorkerRequest, trace?: SweepTrace): unknown[] {
   const filterSql = input.sql.replace(/vec_scan\(\s*[\w.]+\s*\)/, '0');
   if (process.env.NODUS_VECTOR_SCAN_CACHE !== '0' && filterSql !== input.sql) {
     const cache = vectorCacheFor(database, databasePath, input.table, query.length);
-    const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}`;
+    const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}\u0000${versionOf(database, tablesRead(filterSql))}`;
     let windows = cache.eligible.get(key);
     if (!windows) {
       const filter = database.prepare(filterSql);

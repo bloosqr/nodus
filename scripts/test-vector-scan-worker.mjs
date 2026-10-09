@@ -117,3 +117,40 @@ test('a write from another connection is never answered from the old vectors', a
   await scan(cached, { limit: 3 });
   assert.equal(builds, before + 1, 'and not again without a write');
 });
+
+// The vault's per-table write counters (electron/db/vectorScanGenerations.ts), installed here as
+// openDatabase installs them: a write the scan cannot see must not throw the cache away, and a
+// write to any table the statement reads must still reach the answer.
+const countersFile = path.join(outDir, 'counters.cjs');
+await build({ entryPoints: [path.join(repoRoot, 'electron/db/vectorScanGenerations.ts')], outfile: countersFile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' });
+const { ensureVectorScanGenerationTriggers } = require(countersFile);
+
+test('a write to a table no scan reads keeps the cached vectors and rows', async () => {
+  const writer = new Database(dbFile);
+  writer.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE IF NOT EXISTS works (nodus_id TEXT PRIMARY KEY, archived INTEGER NOT NULL DEFAULT 0); INSERT OR IGNORE INTO works VALUES ('a', 0), ('b', 0)");
+  ensureVectorScanGenerationTriggers(writer);
+  await scan(cached, {});
+  const before = builds;
+  for (let i = 0; i < 3; i += 1) writer.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('unrelated', String(i));
+  const rows = await scan(cached, {});
+  assert.deepEqual(rows, await scan(callback, {}));
+  assert.equal(builds, before, 'no rebuild for a write the scan cannot see');
+  writer.close();
+});
+
+test("a write to a table the statement's filter reads is never answered from the old rows", async () => {
+  const input = { sql: sql(' AND kind IN (SELECT nodus_id FROM works WHERE archived = 0)'), limit: 5000 };
+  const both = await scan(cached, input);
+  assert.ok(both.some((row) => Number(row.passage_id.slice(1)) % 3 === 0) && both.some((row) => Number(row.passage_id.slice(1)) % 3 !== 0));
+  const before = builds;
+  const writer = new Database(dbFile);
+  writer.prepare("UPDATE works SET archived = 1 WHERE nodus_id = 'b'").run();
+  const rows = await scan(cached, input);
+  assert.deepEqual(rows, await scan(callback, input));
+  assert.ok(rows.length > 0 && rows.every((row) => Number(row.passage_id.slice(1)) % 3 === 0), 'the archived kind is gone at once');
+  assert.equal(builds, before, 'the vectors themselves were not rebuilt: only the filtered rows');
+  writer.prepare('UPDATE passages SET embedding = ? WHERE passage_id = ?').run(vector(), 'p1');
+  await scan(cached, input);
+  assert.equal(builds, before + 1, 'a write to the vector table rebuilds the vectors');
+  writer.close();
+});
