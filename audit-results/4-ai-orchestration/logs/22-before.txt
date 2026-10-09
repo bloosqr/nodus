@@ -1,0 +1,5 @@
+7 searches; the vault changed before 5 of the 6 later ones; evidence 48
+✖ the turn writes its citation receipts once, after its searches, not between them (222.569301ms)
+ℹ pass 0
+ℹ fail 1
+✖ failing tests:

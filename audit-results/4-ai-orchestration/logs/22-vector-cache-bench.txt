@@ -1,0 +1,5 @@
+# Vector scan worker, 30,000 x 1024-dim passage vectors: one scan after an unrelated vault write vs a cached scan (agent probe vcache.mjs, re-run here)
+after one receipt INSERT into an unrelated table: 409 ms
+again, no write: 127 ms
+after an IGNORED receipt insert: 110 ms
+N=30000 dim=1024: unrelated write costs 4.0x a cached scan

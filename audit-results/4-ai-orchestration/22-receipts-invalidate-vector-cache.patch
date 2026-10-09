@@ -1,0 +1,164 @@
+# Repository: bloosqr/nodus (against audit/2026-10-09). Corpus run: the turn's citation receipts are written once when investigate() ends, so they do not invalidate the vector scan worker's caches between its searches.
+diff --git a/electron/ai/researchCorpusRun.ts b/electron/ai/researchCorpusRun.ts
+index 3a5a4f8c..f95bbe72 100644
+--- a/electron/ai/researchCorpusRun.ts
++++ b/electron/ai/researchCorpusRun.ts
+@@ -19,7 +19,7 @@ import { embed, resolveModelRef, researchModelContextWindow } from './aiClient';
+ import { createResearchSectionCoverage } from './researchSectionCoverage';
+ import { withResearchValidationThinking } from './thinkingEffort';
+ import { withResearchRequestBudget } from './researchRequestBudget';
+-import { recordScopedSourcePassage, recordScopedLegacyPassage } from '../citations/scopedLegacyCitations';
++import { insertScopedReceipts, recordScopedSourcePassage, recordScopedLegacyPassage, type ScopedReceiptRow } from '../citations/scopedLegacyCitations';
+ import { documentaryCitationId } from '../citations/documentaryCitations';
+ import { getSettings } from '../db/settingsRepo';
+ import { readAutomaticResearchZotero, pinZoteroOriginals, type ZoteroOriginalPins } from '../mcp/researchZotero';
+@@ -89,6 +89,8 @@ export class ResearchCorpusRun {
+   private readonly ideaIds: string[];
+   private originalPins?: Promise<ZoteroOriginalPins>;
+   private graphSnapshot: Pick<WritingWorkshopSnapshot, 'gaps' | 'contradictions' | 'themes'> | null = null;
++  /** Receipts found while investigate() runs, written when it ends. See insertScopedReceipts. */
++  private pendingReceipts?: ScopedReceiptRow[];
+   private readonly sourceCoverage: NonNullable<ResearchTraversal['sourceCoverage']>;
+   constructor(readonly scope: ResolvedResearchScope, settings: RetrievalSettings, readonly signal?: AbortSignal, readonly pinRevisions = false) {
+     this.budget = new ResearchRetrievalBudget(settings);
+@@ -121,6 +123,11 @@ export class ResearchCorpusRun {
+   }
+   /** Research Chat's agent starts from every query of its plan; other callers from one. */
+   async investigate(query: string, model?: ModelRef | null): Promise<void> {
++    this.pendingReceipts = [];
++    try { await this.investigateSteps(query, model); }
++    finally { const rows = this.pendingReceipts; this.pendingReceipts = undefined; insertScopedReceipts(rows); }
++  }
++  private async investigateSteps(query: string, model?: ModelRef | null): Promise<void> {
+     if (this.pinRevisions && !this.originalPins) {
+       const controller = new AbortController();
+       const signal = this.signal ? AbortSignal.any([this.signal, controller.signal]) : controller.signal;
+@@ -181,7 +188,7 @@ export class ResearchCorpusRun {
+     const separable = readDocuments ? scopedIdeaEvidencePassages(query, stableWorks, settings.candidates) : [];
+     const inventory = researchCorpusInventory().documents;
+     const legacy = selectPassageEvidence([...hierarchy.passages, ...separable], settings.passagesPerRound, { preferLexical: true, preferSourceDiversity: true }).flatMap(hit => {
+-      const receipt = recordScopedLegacyPassage(this.scope, hit.passage_id, inventory);
++      const receipt = recordScopedLegacyPassage(this.scope, hit.passage_id, inventory, this.pendingReceipts);
+       return receipt ? [{ id: receipt.passage_id, label: hit.title, summary: receipt.text, nodus_id: hit.nodus_id, pageLabel: receipt.page_label,
+         authors: this.scope.documents.find(document => document.workId === hit.nodus_id)?.authors ?? [], year: hit.year, zotero_key: hit.zotero_key,
+         citation: `nodus://passage/${encodeURIComponent(receipt.passage_id)}`, score: hit.similarity, reason: 'source' }] : [];
+@@ -315,7 +322,7 @@ export class ResearchCorpusRun {
+       const receipt = recordScopedSourcePassage(this.scope, document.id, { passage_id: '', nodus_id: document.workId ?? document.id,
+         libraryItemId: library?.id ?? null, attachmentId, attachmentRevision, revision: document.revision, provenance: 'source',
+         text: page.text, page_label: page.pageLabel, page_number: page.pageNumber, source_ref: sourceRef, chunk_index: 0,
+-        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } });
++        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } }, undefined, this.pendingReceipts);
+       if (!receipt || !this.budget.accept(receipt.passage_id, page.text)) continue;
+       this.evidence.set(receipt.passage_id, { id: receipt.passage_id, nodus_id: receipt.nodus_id, label: document.title, summary: page.text,
+         authors: document.authors, year: document.year, pageLabel: page.pageLabel, zotero_key: receipt.work.zotero_key,
+diff --git a/electron/citations/scopedLegacyCitations.ts b/electron/citations/scopedLegacyCitations.ts
+index 48741f8a..c3c06468 100644
+--- a/electron/citations/scopedLegacyCitations.ts
++++ b/electron/citations/scopedLegacyCitations.ts
+@@ -20,18 +20,18 @@ type StoredScope = ResolvedResearchScope & { legacyEvidence?: Record<string, Rec
+ /** Adapt a legacy passage only after its content hash and scoped work match.
+  * The immutable receipt lives with the backend scope, never in renderer input or
+  * synced chat metadata. Old raw passage URLs remain a compatibility API. */
+-export function recordScopedLegacyPassage(scope: ResolvedResearchScope, passageId: string, current = researchCorpusInventory().documents): PassageDetail | null {
++export function recordScopedLegacyPassage(scope: ResolvedResearchScope, passageId: string, current = researchCorpusInventory().documents, pending?: ScopedReceiptRow[]): PassageDetail | null {
+   const detail = getPassageDetail(passageId);
+   if (!detail) return null;
+   const document = scope.documents.find(item => item.workId === detail.nodus_id);
+   if (!document || (document.indexedSource && document.indexedSource.revision !== document.revision)) return null;
+   assertResearchDocument(scope, document.id, current.find(item => item.id === document.id));
+-  return recordScopedSourcePassage(scope, document.id, detail, current);
++  return recordScopedSourcePassage(scope, document.id, detail, current, pending);
+ }
+ 
+ /** Preserve only backend-read bytes; no index or preparation consent is implied. A caller
+  * recording several passages in one step may pass the inventory it just read. */
+-export function recordScopedSourcePassage(scope: ResolvedResearchScope, documentId: string, detail: PassageDetail, current = researchCorpusInventory().documents): PassageDetail | null {
++export function recordScopedSourcePassage(scope: ResolvedResearchScope, documentId: string, detail: PassageDetail, current = researchCorpusInventory().documents, pending?: ScopedReceiptRow[]): PassageDetail | null {
+   const document = assertResearchDocument(scope, documentId, current.find(item => item.id === documentId));
+   if (detail.nodus_id !== (document.workId ?? document.id)) throw new Error('research_source_not_authorized');
+   const receipt: Receipt = { documentId: document.id, detail: { ...detail, revision: document.revision } };
+@@ -39,11 +39,22 @@ export function recordScopedSourcePassage(scope: ResolvedResearchScope, document
+   recordResearchScope(scope);
+   // One row, so the cost is the receipt and not the scope. Recording the same passage twice is
+   // the normal case across turns of one conversation and simply keeps the first row.
+-  getDb().prepare('INSERT OR IGNORE INTO research_scope_receipts(scope_id,key,receipt_json,created_at) VALUES (?,?,?,?)')
+-    .run(scope.id, key, JSON.stringify(receipt), new Date().toISOString());
++  const row: ScopedReceiptRow = [scope.id, key, JSON.stringify(receipt), new Date().toISOString()];
++  if (pending) pending.push(row); else insertScopedReceipts([row]);
+   return { ...receipt.detail, passage_id: `scoped:${scope.id}:${key}` };
+ }
+ 
++export type ScopedReceiptRow = [scopeId: string, key: string, receiptJson: string, createdAt: string];
++/** A receipt's id is its content hash, known before the row exists, so a caller between searches
++ *  may write its receipts later in one transaction. Any commit to the vault changes its
++ *  `data_version`, and the vector scan worker then rebuilds every table's vectors before the
++ *  next search: a receipt written between two searches of one turn cost the second a rebuild. */
++export function insertScopedReceipts(rows: readonly ScopedReceiptRow[]): void {
++  if (!rows.length) return;
++  const insert = getDb().prepare('INSERT OR IGNORE INTO research_scope_receipts(scope_id,key,receipt_json,created_at) VALUES (?,?,?,?)');
++  getDb().transaction(() => { for (const row of rows) insert.run(...row); })();
++}
++
+ export function getScopedLegacyPassageDetail(id: string): PassageDetail | null {
+   const match = /^scoped:([a-f0-9]{64}):([a-f0-9]{64})$/.exec(id);
+   if (!match) return null;
+diff --git a/scripts/test-research-receipts-between-searches.mjs b/scripts/test-research-receipts-between-searches.mjs
+new file mode 100644
+index 00000000..33bb2f69
+--- /dev/null
++++ b/scripts/test-research-receipts-between-searches.mjs
+@@ -0,0 +1,54 @@
++// The vault must not change between the searches of one chat turn because of the turn's own
++// citation receipts. The vector scan worker reads PRAGMA data_version from its own connection, and
++// any change makes it reload every table's vectors before the next scan.
++import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
++import { createRequire } from 'node:module';
++import { fileURLToPath } from 'node:url';
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { installRuntimeHooks, repoRoot, requireElectronRuntime } from './lib/tsRuntimeHooks.mjs';
++if (requireElectronRuntime(fileURLToPath(import.meta.url), '--native-receipts-between-searches')) {
++const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-receipts-between-searches-'));
++installRuntimeHooks(scratch);
++const require = createRequire(import.meta.url);
++const load = file => require(path.join(repoRoot, file));
++globalThis.fetch = () => { throw new Error('network forbidden'); };
++const db = load('electron/db/database.ts').getDb();
++const passages = load('electron/db/passagesRepo.ts');
++for (let w = 0; w < 6; w++) {
++  db.prepare("INSERT INTO works(nodus_id,zotero_key,title,authors_json,year,item_type,source_type) VALUES(?,?,?,'[]',2000,'book','text')").run(`w${w}`, `w${w}`, `Work ${w}`);
++  passages.replaceWorkPassages(`w${w}`, `h${w}`, Array.from({ length: 8 }, (_, i) => ({ text: `${['esterification','nitration','reduction','oxidation','hydrolysis','acylation'][w]} topic${w} passage ${i} ${'word '.repeat(i)}`, pageLabel: String(i + 1), embedding: null })));
++}
++const Database = require(path.join(repoRoot, 'node_modules/better-sqlite3'));
++const reader = new Database(db.name, { readonly: true });
++const version = () => reader.pragma('data_version', { simple: true });
++const scope = load('electron/ai/researchNotebookService.ts').resolveAcademicResearchScope();
++const preparation = load('electron/ai/documentaryPreparation.ts');
++preparation.getResearchPreparationInventory = () => ({ documents: [] });
++preparation.retrieveSharedDocumentaryEvidence = async () => ({ evidence: [], traversal: { rounds: 1, candidates: 0, partial: false } });
++const ai = load('electron/ai/aiClient.ts');
++ai.embed = async () => null; ai.embedMany = async texts => texts.map(() => null);
++let decisions = 0;
++ai.completeJson = async () => (++decisions > 4 ? { action: 'finish' } : { action: 'search', query: ['reduction topic2', 'oxidation topic3', 'hydrolysis topic4', 'acylation topic5'][decisions - 1] });
++const hier = load('electron/ai/hierarchicalRetrieval.ts');
++const real = hier.retrieveHierarchical;
++const seen = [];
++hier.retrieveHierarchical = (...args) => { seen.push(version()); return real(...args); };
++const { ResearchCorpusRun } = load('electron/ai/researchCorpusRun.ts');
++const { RESEARCH_CHAT_AGENT_SETTINGS } = load('shared/researchCorpus.ts');
++const { literalResearchTurnPlan } = load('electron/ai/researchTurnPlanner.ts');
++test('the turn writes its citation receipts once, after its searches, not between them', async () => {
++  const run = new ResearchCorpusRun(scope, RESEARCH_CHAT_AGENT_SETTINGS);
++  run.agent = { plan: { ...literalResearchTurnPlan('x'), queries: ['nitration topic1', 'reduction topic2'] }, question: 'x', compact: false, minSources: 1 };
++  await run.investigate('esterification topic0');
++  const changes = seen.slice(1).filter((v, i) => v !== seen[i]).length;
++  console.log(`${seen.length} searches; the vault changed before ${changes} of the ${seen.length - 1} later ones; evidence ${run.evidence.size}`);
++  assert.ok(seen.length >= 4, 'the turn searched');
++  assert.ok(run.evidence.size > 0, 'and found evidence');
++  assert.equal(changes, 0);
++  const receipts = db.prepare('SELECT COUNT(*) AS n FROM research_scope_receipts').get().n;
++  assert.ok(receipts > 0, 'the receipts were written when the turn ended');
++  reader.close();
++  fs.rmSync(scratch, { recursive: true, force: true });
++});
++}
