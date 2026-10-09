@@ -89,6 +89,7 @@ export class ResearchCorpusRun {
   private readonly ideaIds: string[];
   private originalPins?: Promise<ZoteroOriginalPins>;
   private graphSnapshot: Pick<WritingWorkshopSnapshot, 'gaps' | 'contradictions' | 'themes'> | null = null;
+  private inventoryMemo?: { at: number; documents: ReturnType<typeof researchCorpusInventory>['documents']; byId: Map<string, ReturnType<typeof researchCorpusInventory>['documents'][number]> };
   /** Receipts found while investigate() runs, written when it ends. See insertScopedReceipts. */
   private pendingReceipts?: ScopedReceiptRow[];
   private readonly sourceCoverage: NonNullable<ResearchTraversal['sourceCoverage']>;
@@ -106,11 +107,22 @@ export class ResearchCorpusRun {
     const manual = getSettings().academicMode === 'manual' ? activeManualIdeaIds(getDb()) : null;
     this.ideaIds = [...resolveResearchSourceScope({ enabled: true, authorIds: [], workIds: this.workIds }, true)!.ideaIds].filter(id => !manual || manual.has(id));
   }
+  /** The corpus inventory for this step. Building it reads every work, library item and note,
+   * synchronously (~150 ms on a 14,000-work library), and one chat turn asked for it ~96 times:
+   * seven times per search and twice per decision. Within a second it is the same inventory; the
+   * next step after a model call or a read builds it again, so a change made meanwhile is seen. */
+  inventory(): NonNullable<ResearchCorpusRun['inventoryMemo']> {
+    if (!this.inventoryMemo || performance.now() - this.inventoryMemo.at > 1000) {
+      const documents = researchCorpusInventory().documents;
+      this.inventoryMemo = { at: performance.now(), documents, byId: documentsById(documents) };
+    }
+    return this.inventoryMemo;
+  }
   validate(): void {
     this.signal?.throwIfAborted();
     if (getActiveVault().id !== this.scope.vaultId) throw new Error('research_scope_changed');
     if (this.scope.notebookId && getResearchNotebook(this.scope.notebookId)?.revision !== this.scope.notebookRevision) throw new Error('research_scope_changed');
-    const current = documentsById(researchCorpusInventory().documents);
+    const current = this.inventory().byId;
     for (const document of this.scope.documents) (this.pinRevisions ? assertResearchDocumentPermission : assertResearchDocument)(this.scope, document.id, current.get(document.id));
     if (this.pinRevisions && this.scope.documents.some(document => current.get(document.id)?.revision !== document.revision)) {
       // Shared evidence and scoped legacy receipts are immutable. Graph analyses are not;
@@ -169,8 +181,8 @@ export class ResearchCorpusRun {
       this.limitations.add('embedding_provider_unavailable'); return null;
     });
     this.validate();
-    const current = researchCorpusInventory().documents;
-    const stableWorks = this.pinRevisions ? this.scope.documents.filter(document => (!document.indexedSource || document.indexedSource.revision === document.revision) && current.find(item => item.id === document.id)?.revision === document.revision).flatMap(document => document.workId ? [document.workId] : []) : this.workIds;
+    const current = this.inventory().byId;
+    const stableWorks = this.pinRevisions ? this.scope.documents.filter(document => (!document.indexedSource || document.indexedSource.revision === document.revision) && current.get(document.id)?.revision === document.revision).flatMap(document => document.workId ? [document.workId] : []) : this.workIds;
     const stableIdeas = stableWorks.length === this.workIds.length ? this.ideaIds : [];
     const hierarchy = await retrieveHierarchical(query, { embedding: vector, nodusIds: stableWorks, ideaIds: stableIdeas,
       documentLimit: readDocuments ? settings.candidates : 0, ideaLimit: readIdeas ? settings.passagesPerRound : 0, passageLimit: readDocuments ? settings.candidates : 0,
@@ -180,13 +192,13 @@ export class ResearchCorpusRun {
     const acceptRound = (id: string, text: string) => this.budget.usedEvidenceTokens - usedBeforeRound + Buffer.byteLength(text) <= remaining && this.budget.accept(id, text);
     const expansion = settings.autoExpand ? Math.max(1, Math.min(expandRounds, settings.rounds - this.budget.rounds + 1)) : 1;
     const shared = readDocuments && remaining >= 256 ? await retrieveSharedDocumentaryEvidence(this.scope, query,
-      { ...settings, rounds: expansion, evidenceTokens: remaining }, vector, this.signal) : { evidence: [], traversal: { rounds: 1, candidates: 0, partial: true } };
+      { ...settings, rounds: expansion, evidenceTokens: remaining }, vector, this.signal, undefined, () => this.inventory().documents) : { evidence: [], traversal: { rounds: 1, candidates: 0, partial: true } };
     for (let round = 1; round < shared.traversal.rounds; round++) this.budget.nextRound();
     this.validate();
     // Interleave independent native/shared lanes, retaining source diversity.
     const candidates = shared.evidence.map(item => this.passage(item));
     const separable = readDocuments ? scopedIdeaEvidencePassages(query, stableWorks, settings.candidates) : [];
-    const inventory = researchCorpusInventory().documents;
+    const inventory = this.inventory().documents;
     const legacy = selectPassageEvidence([...hierarchy.passages, ...separable], settings.passagesPerRound, { preferLexical: true, preferSourceDiversity: true }).flatMap(hit => {
       const receipt = recordScopedLegacyPassage(this.scope, hit.passage_id, inventory, this.pendingReceipts);
       return receipt ? [{ id: receipt.passage_id, label: hit.title, summary: receipt.text, nodus_id: hit.nodus_id, pageLabel: receipt.page_label,
@@ -242,7 +254,7 @@ export class ResearchCorpusRun {
       return { scopeId: this.scope.id, evidence: [], partial: true };
     }
     const result = await retrieveSharedDocumentaryEvidence({ ...this.scope, documents: [document] }, query,
-      { ...this.budget.settings, rounds: 1, autoExpand: false, evidenceTokens: this.stepAllowance() }, null, this.signal, read);
+      { ...this.budget.settings, rounds: 1, autoExpand: false, evidenceTokens: this.stepAllowance() }, null, this.signal, read, () => this.inventory().documents);
     this.validate();
     const evidence = result.evidence.filter(item => {
       const candidate = this.passage(item);
@@ -263,7 +275,7 @@ export class ResearchCorpusRun {
     this.validate(); validateResearchDocumentRead(read);
     const document = this.scope.documents.find(item => item.id === documentId);
     if (!document) throw new Error('research_source_not_authorized');
-    const current = researchCorpusInventory().documents.find(item => item.id === documentId);
+    const current = this.inventory().byId.get(documentId);
     assertResearchDocument(this.scope, documentId, current);
     if (read.attachmentId && document.attachments && !document.attachments.some(item => item.id === read.attachmentId)) throw new Error('research_source_not_authorized');
     this.attemptedDocuments.add(document.id);
@@ -311,7 +323,7 @@ export class ResearchCorpusRun {
       if (pages.length) this.zoteroMcpReads.add(document.id);
     }
     if (!pages) { this.limitations.add('original_unavailable'); this.budget.partial = true; return { evidence: [], scopeId: this.scope.id, partial: true }; }
-    this.validate(); assertResearchDocument(this.scope, documentId, researchCorpusInventory().documents.find(item => item.id === documentId));
+    this.validate(); assertResearchDocument(this.scope, documentId, this.inventory().byId.get(documentId));
     const evidence: ResearchEvidence[] = [];
     for (const page of pages) {
       // Ask the budget before the row is written. The receipt has to come first for its id, so a
@@ -322,7 +334,7 @@ export class ResearchCorpusRun {
       const receipt = recordScopedSourcePassage(this.scope, document.id, { passage_id: '', nodus_id: document.workId ?? document.id,
         libraryItemId: library?.id ?? null, attachmentId, attachmentRevision, revision: document.revision, provenance: 'source',
         text: page.text, page_label: page.pageLabel, page_number: page.pageNumber, source_ref: sourceRef, chunk_index: 0,
-        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } }, undefined, this.pendingReceipts);
+        work: { title: document.title, authors: document.authors, year: document.year, zotero_key: document.origin.kind === 'zotero' ? document.origin.itemKey : '' } }, this.inventory().documents, this.pendingReceipts);
       if (!receipt || !this.budget.accept(receipt.passage_id, page.text)) continue;
       this.evidence.set(receipt.passage_id, { id: receipt.passage_id, nodus_id: receipt.nodus_id, label: document.title, summary: page.text,
         authors: document.authors, year: document.year, pageLabel: page.pageLabel, zotero_key: receipt.work.zotero_key,
