@@ -523,6 +523,12 @@ export async function pullReplica(vaultId: string, options: { force?: boolean } 
     const db = openReplicaDb(vault);
     if (!db) throw new Error('No se ha podido abrir la base de datos de la réplica.');
     applySnapshotToReplica(db, snapshot);
+    // Recorded as soon as it is applied, not after the relay and the images. Those are
+    // retried on their own on every tick (the 304 path pulls the relay too); leaving the
+    // revision unrecorded when one of them threw made each retry download and re-apply the
+    // whole unchanged publication for as long as that one failure lasted.
+    const revision = response.headers.get('x-nodus-revision') || snapshot.revision || null;
+    updateVaultRemote(vaultId, { lastPulledRevision: revision, lastPulledAt: new Date().toISOString() });
     await pullRelayOperations(vault, token, db, snapshot.revision ?? vault.remote.lastPulledRevision);
 
     // The JSON carries no binary by design, so the illustration of every Deep Research
@@ -541,8 +547,6 @@ export async function pullReplica(vaultId: string, options: { force?: boolean } 
     });
     runtime.lastImages = images;
 
-    const revision = response.headers.get('x-nodus-revision') || snapshot.revision || null;
-    updateVaultRemote(vaultId, { lastPulledRevision: revision, lastPulledAt: new Date().toISOString() });
     runtime.phase = 'ok';
     runtime.lastError = null;
     runtime.lastPulledAt = new Date().toISOString();
