@@ -2,7 +2,6 @@ import type { VisionSession } from './vision/service';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import { utilityProcess } from 'electron';
 import type { ModelRef } from '@shared/types';
 import { serializeChatVisualPart } from '@shared/chatSkills';
 import { documentedContextWindow } from '@shared/providerContextWindows';
@@ -18,6 +17,7 @@ import { resolveTrustedCapability } from './pluginStoreV2';
 import { serializeArtifactReference, storeCapabilityArtifact } from './artifactStore';
 import { inspectCapabilitySvg, refineCapabilitySvg, validateCapabilitySvg } from './svgServices';
 import { ensurePythonRuntime, runInPythonRuntime, validateRuntimeLock } from './pythonRuntime';
+import { runCapabilitySubworker } from './subworkerPool';
 import type { CapabilityProvider } from './registry';
 import type { TurnPins } from './registry';
 import type { TrustedCapabilityRunner } from './chatPipeline';
@@ -129,57 +129,7 @@ export function createCapabilityAdapters(context: TrustedTurnContext): Capabilit
     },
     // An auxiliary process from the package's own bundle, with its own deadline and a kill
     // the host controls. It talks to nothing: one input in, one value out.
-    async subworker(runtime, request, signal) {
-      const entry = path.resolve(path.dirname(runtime.entryPath), request.entry);
-      const base = path.resolve(path.dirname(runtime.entryPath));
-      if (entry !== base && !entry.startsWith(base + path.sep)) throw new Error('A subworker entry must live inside its own package.');
-      const max = runtime.permissions.subworkers?.max ?? 0;
-      if (max < 1) throw new Error('Capability subworkers are not permitted.');
-      const child = utilityProcess.fork(entry, [], { serviceName: `Nodus capability subworker ${runtime.capabilityId}`, stdio: 'ignore' });
-      // Same reason as the tool budget above: "the capability subworker exceeded its time limit"
-      // named no number and no cause. The work it bounds was measured at a third of a second
-      // against a budget of fifteen, so an overrun is a starved or unstarted process rather than a
-      // hard molecule — and that is only visible with the spawn-to-result time written down.
-      // Both clocks on purpose. performance.now() is monotonic, so a duration measured with it
-      // survives an NTP correction or a sleep; Date.now() is kept beside it as a cross-check,
-      // because a disagreement between the two IS the finding — it says the wall clock moved
-      // under the measurement, and a number taken from it should not be trusted. Two timing
-      // calls cost nothing against a subprocess spawn.
-      const spawned = performance.now();
-      const spawnedWall = Date.now();
-      const budget = Math.min(Math.max(request.timeoutMs, 1_000), 300_000);
-      return new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = (error?: Error, value?: unknown) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          signal.removeEventListener('abort', abort);
-          try { child.kill(); } catch { /* already gone */ }
-          const spent = performance.now() - spawned;
-          const wallSpent = Date.now() - spawnedWall;
-          const drift = Math.abs(wallSpent - spent) > Math.max(250, spent * 0.1) ? ` · CLOCK STEPPED: wall says ${(wallSpent / 1000).toFixed(1)}s` : '';
-          // Always, and with the reason. Logging only past half the budget hid the useful case:
-          // on one measured run 12 of 13 of these failed, most of them well inside the budget, so
-          // they were not timeouts — and the line said nothing about what had gone wrong. The
-          // drawing path degrades silently, so a route can verify while almost every structure
-          // validation fails, and nothing anywhere records it.
-          console.info(`${new Date().toISOString()} [capability] ${runtime.capabilityId} subworker ${request.entry} ${error ? 'failed' : 'ok'} in ${(spent / 1000).toFixed(1)}s of a ${(budget / 1000).toFixed(0)}s budget${error ? ` — ${error.message.replace(/\s+/g, ' ').slice(0, 200)}` : ''}${drift}`);
-          if (error) reject(error); else resolve(value);
-        };
-        const abort = () => finish(new DOMException('The capability subworker was cancelled.', 'AbortError'));
-        const timer = setTimeout(() => finish(new Error(`The capability subworker exceeded its time limit of ${(budget / 1000).toFixed(0)} seconds.`)), budget);
-        signal.addEventListener('abort', abort, { once: true });
-        child.on('message', (message: { error?: string; result?: unknown }) => {
-          if (message?.error) finish(new Error(String(message.error).slice(0, 2_000)));
-          else finish(undefined, message?.result);
-        });
-        child.once('error', error => finish(new Error(String(error))));
-        child.once('exit', () => finish(new Error('The capability subworker exited without a result.')));
-        try { child.postMessage(request.input); }
-        catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
-      });
-    },
+    subworker: (runtime, request, signal) => runCapabilitySubworker(runtime, request, signal),
     async attachments(runtime, request) {
       if (!context.owner) throw new Error('Start a saved chat before creating capability attachments.');
       const source = storeCapabilityFile(context.owner, { bytes: request.bytes, mimeType: request.mimeType, name: request.name });
