@@ -1,0 +1,13 @@
+== before (schema v200 as on audit/2026-10-09)
+BENCH user_version before: 200
+BENCH replace one work (100 passages): 5305 ms
+BENCH replace one work (100 passages): 5334 ms
+BENCH rewrite one passage's text: 66 ms
+BENCH fts integrity-check ok
+== after (migrated to v201 by the patch)
+BENCH user_version before: 200
+BENCH migration to v201: 924 ms
+BENCH replace one work (100 passages): 12 ms
+BENCH replace one work (100 passages): 10 ms
+BENCH rewrite one passage's text: 0 ms
+BENCH fts integrity-check ok

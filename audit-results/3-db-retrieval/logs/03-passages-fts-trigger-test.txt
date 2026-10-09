@@ -1,0 +1,4 @@
+== after patch
+Passage index triggers find rows by lookup and keep the index in step.
+== before patch (migrations.ts as on audit/2026-10-09)
+AssertionError [ERR_ASSERTION]: passages_document_fts_au finds the row by index, not by scanning every row (SCAN passages_fts VIRTUAL TABLE INDEX 0:)
