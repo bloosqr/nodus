@@ -1469,8 +1469,12 @@ export function uncheckedRouteNote(answer: string, options: { correction: boolea
   if (countRouteSteps(typeof answer === 'string' ? answer : '') > 0) return '';
   return options.correction
     ? '_This reply re-stated no route, so nothing in it could be checked or drawn. The last checked route is the one above it._'
-    : '_Nothing in this reply was checked. A route is read from numbered `Step N` headings with `Reactants:`, `Products:`, `Byproducts:` and `Agents:` lines under each step, and this reply has neither, so no name was resolved, no equation was balanced and no step was drawn. Whatever steps it describes stand as unverified prose._';
+    : UNCHECKED_ROUTE_NOTE;
 }
+
+/** The first-answer note names the four labels itself, so `countRouteSteps` reads it as a route;
+ *  `routeConversationState` removes it before counting. */
+const UNCHECKED_ROUTE_NOTE = '_Nothing in this reply was checked. A route is read from numbered `Step N` headings with `Reactants:`, `Products:`, `Byproducts:` and `Agents:` lines under each step, and this reply has neither, so no name was resolved, no equation was balanced and no step was drawn. Whatever steps it describes stand as unverified prose._';
 
 /** Whether the application asked this turn for a route: a fresh request, one of its own fix
  *  chips, or a turn in a conversation whose route request no answer has met yet.
@@ -1515,7 +1519,8 @@ export function routeConversationState(turns: ReadonlyArray<{ role: string; cont
     if (turn?.role === 'user' && typeof turn.content === 'string' && !isRouteFixPrompt(turn.content) && looksLikeSynthesisRequest(turn.content)) asked = index;
   }
   if (asked < 0) return { request: null, delivered: false };
-  const delivered = list.slice(asked + 1).some((turn) => turn?.role === 'assistant' && countRouteSteps(typeof turn.content === 'string' ? turn.content : '') > 0);
+  const delivered = list.slice(asked + 1).some((turn) => turn?.role === 'assistant'
+    && countRouteSteps(typeof turn.content === 'string' ? turn.content.split(UNCHECKED_ROUTE_NOTE).join('') : '') > 0);
   return { request: list[asked].content, delivered };
 }
 
