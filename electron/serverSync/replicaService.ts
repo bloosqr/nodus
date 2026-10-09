@@ -25,6 +25,7 @@ import {
   negotiateRemoteMutationLimits,
   type RemoteMutationLimits,
 } from './serverCompatibility';
+import { requestTimeoutMs } from './serverNetwork';
 
 /**
  * A connected vault: a local replica of a Nodus Server space.
@@ -41,7 +42,6 @@ import {
 
 const CHECK_INTERVAL_MS = 30_000;
 const FIRST_TICK_MS = 7_000;
-const REQUEST_TIMEOUT_MS = 60_000;
 const OUTBOX_BATCH = 100;
 const SHARED_BLOB_CHUNK_BYTES = 1024 * 1024;
 
@@ -104,7 +104,7 @@ function normalizeUrl(value: string): string {
 }
 
 async function request(url: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  return fetch(url, { ...init, signal: AbortSignal.timeout(requestTimeoutMs(init)) });
 }
 
 function deviceName(): string {
