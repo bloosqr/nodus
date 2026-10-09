@@ -1,0 +1,16 @@
+apply-check  evidence: disconnections, target then 3 side by side                     2.24 s
+apply-check  route check 1: stereo (in verify-route, before the audit)                0.56 s
+apply-check  route check 1: precedent + support + compatibility + stock, side by side 6.88 s
+apply-check  route check 2: stereo (in verify-route, before the audit)                0.68 s
+apply-check  route check 2: precedent + support + compatibility + stock, side by side 4.50 s
+apply-check  route check 3: stereo (in verify-route, before the audit)                0.50 s
+apply-check  route check 3: precedent + support + compatibility + stock, side by side 4.30 s
+apply-check  TOTAL                                                                    19.67 s
+nodus        evidence: disconnections, target then 3 side by side                     1.34 s
+nodus        route check 1: stereo (in verify-route, before the audit)                0.16 s
+nodus        route check 1: precedent + support + compatibility + stock, side by side 3.76 s
+nodus        route check 2: stereo (in verify-route, before the audit)                0.15 s
+nodus        route check 2: precedent + support + compatibility + stock, side by side 2.38 s
+nodus        route check 3: stereo (in verify-route, before the audit)                0.16 s
+nodus        route check 3: precedent + support + compatibility + stock, side by side 2.02 s
+nodus        TOTAL                                                                    9.97 s

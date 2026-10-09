@@ -1,0 +1,92 @@
+TAP version 13
+# 2026-10-09T06:33:17.201Z [capability] nodus:probe subworker echo.js ok in 0.0s of a 10s budget
+# 2026-10-09T06:33:17.268Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget
+# Subtest: a subworker that answered is kept for the next request
+not ok 1 - a subworker that answered is kept for the next request
+  ---
+  duration_ms: 123.209984
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-subworker-pool.mjs:80:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the second request was answered by the same process
+    
+    6484 !== 6477
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 6477
+  actual: 6484
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-subworker-pool.mjs:84:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# 2026-10-09T06:33:17.325Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget
+# 2026-10-09T06:33:18.329Z [capability] nodus:probe subworker echo.js failed in 1.0s of a 1s budget — The capability subworker exceeded its time limit of 1 seconds.
+# 2026-10-09T06:33:18.385Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget
+# 2026-10-09T06:33:18.490Z [capability] nodus:probe subworker echo.js failed in 0.1s of a 10s budget — The capability subworker was cancelled.
+# 2026-10-09T06:33:18.565Z [capability] nodus:probe subworker echo.js failed in 0.1s of a 10s budget — The capability subworker exited without a result.
+# 2026-10-09T06:33:18.623Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget
+# Subtest: a subworker that timed out, was cancelled or exited is never reused
+ok 2 - a subworker that timed out, was cancelled or exited is never reused
+  ---
+  duration_ms: 1352.73477
+  type: 'test'
+  ...
+# 2026-10-09T06:33:18.808Z [capability] nodus:probe subworker echo.js ok in 0.2s of a 1s budget
+# 2026-10-09T06:33:19.287Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget
+# 2026-10-09T06:33:19.291Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget
+# 2026-10-09T06:33:19.305Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget
+# 2026-10-09T06:33:19.321Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget
+# Subtest: no more subworkers run at once than the manifest allows, and a queued request keeps its whole budget
+not ok 3 - no more subworkers run at once than the manifest allows, and a queued request keeps its whole budget
+  ---
+  duration_ms: 697.38102
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-subworker-pool.mjs:104:1'
+  failureType: 'testCodeFailure'
+  error: '5 subworkers ran at once with subworkers.max = 2'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-subworker-pool.mjs:114:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# 2026-10-09T06:33:19.500Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget
+# Subtest: a request cancelled while it waits for a slot never starts
+not ok 4 - a request cancelled while it waits for a slot never starts
+  ---
+  duration_ms: 179.03681
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-capability-subworker-pool.mjs:117:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection (AbortError).'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    name: 'AbortError'
+  operator: 'rejects'
+  stack: |-
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async TestContext.<anonymous> (file:///home/user/nodus/scripts/test-capability-subworker-pool.mjs:125:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# 2026-10-09T06:33:20.174Z [capability] nodus:probe subworker echo.js ok in 0.8s of a 10s budget
+1..4
+# tests 4
+# suites 0
+# pass 1
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3248.954009

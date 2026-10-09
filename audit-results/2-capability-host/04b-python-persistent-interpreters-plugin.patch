@@ -1,0 +1,263 @@
+# Repository: bloosqr/nodus-research-skill-marketplace — unified diff against branch audit/2026-10-09. Apply from the repository root with: git apply 04b-python-persistent-interpreters-plugin.patch
+diff --git a/plugins/chemistry-studio/python/reactions_worker.py b/plugins/chemistry-studio/python/reactions_worker.py
+index c17c941..e525183 100644
+--- a/plugins/chemistry-studio/python/reactions_worker.py
++++ b/plugins/chemistry-studio/python/reactions_worker.py
+@@ -169,7 +169,11 @@ def _open_store(index_dir):
+     from rdkit import RDLogger
+ 
+     RDLogger.DisableLog("rdApp.*")
+-    return _LazyStore(index_dir)
++    # Kept for the life of the process: a served worker then maps the fingerprint index and reads
++    # the key list once, not once per request. `_drop_stale` forgets it when the index changes.
++    if index_dir not in _stores:
++        _stores[index_dir] = _LazyStore(index_dir)
++    return _stores[index_dir]
+ 
+ 
+ def _canon(smiles):
+@@ -1689,7 +1693,93 @@ def handle(request):
+     return {"reactions": reactions, "products": products, "similar": similar}
+ 
+ 
++_dir_signatures = {}
++RDCHIRAL_CACHE_CAP = 5000
++
++
++def _dir_signature(path):
++    """Names, sizes and modification times of a directory's files: what changes when an index is
++    downloaded again or a stock list is imported again into the same directory."""
++    try:
++        return tuple(sorted((entry.name, entry.stat().st_size, entry.stat().st_mtime_ns) for entry in os.scandir(path) if entry.is_file()))
++    except OSError:
++        return None
++
++
++def _cached_dirs():
++    return set(_stores) | set(_retro_cache) | set(_retro_screen) | set(_STOCK_CACHE) | set(_SKELETON_CACHE) | {os.path.dirname(path) for path in _block_cache}
++
++
++def _drop_stale():
++    """Forget every per-directory cache whose directory changed since the request that filled it.
++
++    A one-shot process could never see a stale table; a served one lives across requests, so an
++    index rebuilt or a stock list re-imported under the same path must not be answered from the
++    tables of the previous one."""
++    for path in _cached_dirs():
++        if path in _dir_signatures and _dir_signatures[path] == _dir_signature(path):
++            continue
++        for cache in (_stores, _retro_cache, _retro_screen, _STOCK_CACHE, _SKELETON_CACHE):
++            cache.pop(path, None)
++        for key in [key for key in _block_cache if os.path.dirname(key) == path]:
++            del _block_cache[key]
++        _dir_signatures.pop(path, None)
++    # Parsed templates are keyed by their own text, so they never go stale, but a process that serves
++    # many targets would otherwise keep every template it ever applied.
++    if len(_rdchiral_cache) > RDCHIRAL_CACHE_CAP:
++        _rdchiral_cache.clear()
++
++
++def _note_cached():
++    """What each directory a request has just cached looked like, for `_drop_stale` to compare."""
++    for path in _cached_dirs():
++        if path not in _dir_signatures:
++            _dir_signatures[path] = _dir_signature(path)
++
++
++def serve():
++    """Answer requests until stdin closes, so the interpreter, RDKit and the index's parsed tables
++    are paid for once rather than once per request.
++
++    One request per line in, {"id", "stdin"}, where "stdin" is exactly what a one-shot run reads;
++    one reply per line out, {"id", "code", "stdout", "stderr"}, with what a one-shot run would have
++    exited with and printed. The reply channel is a private copy of stdout: everything else written
++    to stdout, from Python or from a C library, goes to stderr instead and never into a reply."""
++    import traceback
++
++    channel = os.fdopen(os.dup(1), "w", encoding="utf-8", newline="\n")
++    os.dup2(2, 1)
++    sys.stdout = sys.stderr
++    for line in sys.stdin:
++        if not line.strip():
++            continue
++        try:
++            message = json.loads(line)
++            request_id = message.get("id")
++        except Exception:
++            continue
++        code, stdout, stderr = 0, "", ""
++        try:
++            _drop_stale()
++            try:
++                stdout = json.dumps(handle(json.loads(message.get("stdin") or "{}"))) + "\n"
++            finally:
++                _note_cached()
++        except SystemExit as stop:
++            code = stop.code if isinstance(stop.code, int) else 1
++            stderr = "" if isinstance(stop.code, int) or stop.code is None else str(stop.code)
++        except Exception:
++            code, stderr = 1, traceback.format_exc()[-8000:]
++        channel.write(json.dumps({"id": request_id, "code": code, "stdout": stdout, "stderr": stderr}) + "\n")
++        channel.flush()
++
++
+ def main():
++    # The host asks for the loop by environment, so a host that does not know it runs the same
++    # arguments once per call, as before.
++    if "--serve" in sys.argv[1:] or os.environ.get("NODUS_PYTHON_SERVE") == "1":
++        serve()
++        return
+     if "--check" in sys.argv[1:]:
+         print(json.dumps(_versions()))
+         return
+diff --git a/plugins/chemistry-studio/src/engine/host.ts b/plugins/chemistry-studio/src/engine/host.ts
+index 390895f..a4d4030 100644
+--- a/plugins/chemistry-studio/src/engine/host.ts
++++ b/plugins/chemistry-studio/src/engine/host.ts
+@@ -12,7 +12,7 @@ export interface CapabilityHost {
+   subworker: { run(request: { entry: string; input: unknown; timeoutMs: number }): Promise<unknown> };
+   python: {
+     ensureRuntime(runtimeId: string): Promise<{ ready: boolean; detail?: string }>;
+-    run(request: { runtimeId: string; args: string[]; stdin?: string; secretId?: string; timeoutMs: number }): Promise<{ code: number; stdout: string; stderr: string }>;
++    run(request: { runtimeId: string; args: string[]; stdin?: string; secretId?: string; timeoutMs: number; persistent?: boolean }): Promise<{ code: number; stdout: string; stderr: string }>;
+   };
+   attachments: { store(request: { bytes: Uint8Array; name: string; mimeType: string }): Promise<{ attachmentId: string; bytes: number }> };
+   storage: { state: KeyValue; cache: KeyValue; temp: { dir(): Promise<string>; clear(): Promise<void> } };
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index d89dd08..a4e5804 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -56,6 +56,9 @@ const REPAIR_ATTEMPTS = 2;
+ const DISCONNECT_BUDGET_SECONDS = 180;
+ const REACTIONS_RUNTIME_ID = 'chemistry';
+ const REACTIONS_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'python', 'reactions_worker.py');
++// Every call asks for a persistent interpreter: the script answers requests in a loop when the host
++// sets NODUS_PYTHON_SERVE=1, so RDKit and the index tables load once per process instead of once
++// per call. A host that does not know the flag ignores it and runs the script once per call.
+ 
+ interface ChatNode { id: string; kind: 'prose' | 'fence'; fence?: string; content: string; complete: boolean }
+ 
+@@ -539,7 +542,7 @@ async function localReferencesFor(input: { pubchemDir?: unknown; opsinDir?: unkn
+   const opsinDir = typeof input?.opsinDir === 'string' && input.opsinDir && names.length ? input.opsinDir : undefined;
+   if ((!pubchemDir && !opsinDir) || (!names.length && !smiles.length)) return {};
+   try {
+-    const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT],
++    const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT], persistent: true,
+       stdin: JSON.stringify({ ...(pubchemDir ? { pubchemDir } : {}), ...(opsinDir ? { opsinDir } : {}), pubchemNames: names, pubchemSmiles: smiles }), timeoutMs: 120_000 });
+     if (run.code !== 0) return {};
+     const data = JSON.parse(run.stdout) as {
+@@ -723,7 +726,7 @@ async function productStereoChoices(steps: string[]): Promise<Record<string, { o
+   try {
+     const ready = await host().python.ensureRuntime(REACTIONS_RUNTIME_ID);
+     if (!ready.ready) return {};
+-    const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT], stdin: JSON.stringify({ stereoChoices: products }), timeoutMs: 60_000 });
++    const run = await host().python.run({ runtimeId: REACTIONS_RUNTIME_ID, args: ['-I', REACTIONS_SCRIPT], persistent: true, stdin: JSON.stringify({ stereoChoices: products }), timeoutMs: 60_000 });
+     if (run.code !== 0) return {};
+     return (JSON.parse(run.stdout) as { stereoChoices?: Record<string, { open: number; mirrorOnly: boolean } | number | null> }).stereoChoices ?? {};
+   } catch {
+@@ -773,7 +776,7 @@ async function knownReactions(input: { indexDir?: string; reactions?: string[];
+   if (!ready.ready) throw new Error(ready.detail ?? 'The chemistry runtime could not be installed.');
+   const run = await host().python.run({
+     runtimeId: REACTIONS_RUNTIME_ID,
+-    args: ['-I', REACTIONS_SCRIPT],
++    args: ['-I', REACTIONS_SCRIPT], persistent: true,
+     stdin: JSON.stringify({
+       indexDir,
+       reactions: Array.isArray(input.reactions) ? input.reactions.slice(0, 32) : [],
+@@ -803,7 +806,7 @@ async function proposeDisconnections(input: { indexDir?: string; targets?: strin
+   if (!ready.ready) throw new Error(ready.detail ?? 'The chemistry runtime could not be installed.');
+   const run = await host().python.run({
+     runtimeId: REACTIONS_RUNTIME_ID,
+-    args: ['-I', REACTIONS_SCRIPT],
++    args: ['-I', REACTIONS_SCRIPT], persistent: true,
+     stdin: JSON.stringify({
+       indexDir,
+       disconnect: targets,
+@@ -838,7 +841,7 @@ async function checkStock(input: { stockDir?: string; molecules?: string[] }) {
+   if (!ready.ready) throw new Error(ready.detail ?? 'The chemistry runtime could not be installed.');
+   const run = await host().python.run({
+     runtimeId: REACTIONS_RUNTIME_ID,
+-    args: ['-I', REACTIONS_SCRIPT],
++    args: ['-I', REACTIONS_SCRIPT], persistent: true,
+     stdin: JSON.stringify({ stock: molecules, stockDir }),
+     timeoutMs: 60_000,
+   });
+@@ -867,7 +870,7 @@ async function searchRoutes(input: { indexDirs?: string[]; target?: string; star
+   if (!ready.ready) throw new Error(ready.detail ?? 'The chemistry runtime could not be installed.');
+   const run = await host().python.run({
+     runtimeId: REACTIONS_RUNTIME_ID,
+-    args: ['-I', REACTIONS_SCRIPT],
++    args: ['-I', REACTIONS_SCRIPT], persistent: true,
+     stdin: JSON.stringify({
+       indexDirs,
+       route: target,
+@@ -904,7 +907,7 @@ async function checkCompatibility(input: { steps?: CompatibilityStepInput[]; tex
+   if (!ready.ready) throw new Error(ready.detail ?? 'The chemistry runtime could not be installed.');
+   const run = await host().python.run({
+     runtimeId: REACTIONS_RUNTIME_ID,
+-    args: ['-I', REACTIONS_SCRIPT],
++    args: ['-I', REACTIONS_SCRIPT], persistent: true,
+     stdin: JSON.stringify({ compatibility: steps, ...(typeof input.textbookDir === 'string' && input.textbookDir ? { textbookDir: input.textbookDir } : {}) }),
+     timeoutMs: 90_000,
+   });
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..1ae87cc 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,56 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++test('every Python call asks the host for a persistent interpreter', async () => {
++  const requests = [];
++  const host = stubHost();
++  host.python = { ensureRuntime: async () => ({ ready: true }), run: async request => { requests.push(request); return { code: 0, stdout: JSON.stringify({ stereoChoices: {}, compatibility: [], stock: {}, orderable: {}, lists: [], orderLists: [] }), stderr: '' }; } };
++  const worker = lib.createWorker(host);
++  await worker.invoke({ invocationId: 'p1', toolId: 'verify-route', locale: 'en', input: { steps: ['CC(=O)C>>CC(O)C'], enumerateStereo: true } });
++  await worker.invoke({ invocationId: 'p2', toolId: 'check-stock', locale: 'en', input: { stockDir: '/stock', molecules: ['CCO'] } });
++  await worker.invoke({ invocationId: 'p3', toolId: 'check-compatibility', locale: 'en', input: { steps: [{ reactants: ['CCO'], products: ['CC=O'], reagents: 'PCC' }] } });
++  assert.equal(requests.length, 3);
++  assert.ok(requests.every(request => request.persistent === true), 'each call opted in');
++});
++
++test('the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)', { skip: !process.env.CHEMISTRY_TEST_PYTHON }, async () => {
++  const { execFileSync } = await import('node:child_process');
++  const worker = new URL('../python/reactions_worker.py', import.meta.url).pathname;
++  const script = `
++import json, os, subprocess, sys, tempfile
++import numpy as np
++sys.path.insert(0, ${JSON.stringify(new URL('../python', import.meta.url).pathname)})
++import reactions_worker as w
++stock = tempfile.mkdtemp()
++def add(vendor, smiles):
++    np.array(sorted(w._stock_hash(w._inchikey(s)) for s in smiles), dtype="<u8").tofile(os.path.join(stock, vendor + ".u64"))
++add("acme", ["CCO"])
++served = subprocess.Popen([sys.executable, "-I", ${JSON.stringify(worker)}], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
++                          env={"PATH": os.environ.get("PATH", ""), "NODUS_PYTHON_SERVE": "1"})
++def ask(n, request):
++    served.stdin.write(json.dumps({"id": n, "stdin": json.dumps(request)}) + "\\n")
++    served.stdin.flush()
++    return json.loads(served.stdout.readline())
++first = ask(1, {"stock": ["CCO"], "stockDir": stock})
++add("bravo", ["CCO"])
++second = ask(2, {"stock": ["CCO"], "stockDir": stock})
++refused = ask(3, {"reactions": []})
++stereo = ask(4, {"stereoChoices": ["CC(O)CC"]})
++served.stdin.close()
++served.wait(timeout=30)
++one_shot = subprocess.run([sys.executable, "-I", ${JSON.stringify(worker)}], input=json.dumps({"stereoChoices": ["CC(O)CC"]}), capture_output=True, text=True,
++                          env={"PATH": os.environ.get("PATH", "")})
++print(json.dumps({"first": first, "second": second, "refused": refused, "stereo": stereo, "oneShot": one_shot.stdout, "exit": served.returncode}))
++`;
++  // Bounded: a script that does not serve waits for an end of input that never comes.
++  const out = JSON.parse(execFileSync(process.env.CHEMISTRY_TEST_PYTHON, ['-c', script], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' }));
++  assert.equal(out.first.id, 1);
++  assert.deepEqual(JSON.parse(out.first.stdout).stock, { CCO: ['acme'] });
++  assert.deepEqual(JSON.parse(out.second.stdout).stock, { CCO: ['acme', 'bravo'] }, 'a list imported meanwhile is seen by the next request');
++  assert.equal(out.refused.code, 1, 'a refused request is a failure with the one-shot exit code');
++  assert.match(out.refused.stderr, /indexDir or indexDirs is required/);
++  assert.equal(out.stereo.code, 0);
++  assert.equal(out.stereo.stdout, out.oneShot, 'a served answer is byte-for-byte the one-shot answer');
++  assert.equal(out.exit, 0, 'the loop ends when stdin closes');
++});

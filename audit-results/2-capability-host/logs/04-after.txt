@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: an interpreter killed by a signal is a failure, not an empty success
+ok 1 - an interpreter killed by a signal is a failure, not an empty success
+  ---
+  duration_ms: 90.662381
+  type: 'test'
+  ...
+# Subtest: stderr is bounded in total and keeps the end, where the traceback is
+ok 2 - stderr is bounded in total and keeps the end, where the traceback is
+  ---
+  duration_ms: 72.253762
+  type: 'test'
+  ...
+# Subtest: multi-byte characters split across pipe reads arrive intact
+ok 3 - multi-byte characters split across pipe reads arrive intact
+  ---
+  duration_ms: 28.962624
+  type: 'test'
+  ...
+# Subtest: an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+ok 4 - an interpreter that exits without reading its input is reported by its exit code, not as a main-process fault
+  ---
+  duration_ms: 223.644086
+  type: 'test'
+  ...
+# Subtest: cancelling a call also stops what the interpreter started
+ok 5 - cancelling a call also stops what the interpreter started
+  ---
+  duration_ms: 1554.447591
+  type: 'test'
+  ...
+# Subtest: interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget
+ok 6 - interpreters are admitted up to a machine-wide limit, and a queued call keeps its whole budget
+  ---
+  duration_ms: 1367.102444
+  type: 'test'
+  ...
+# Subtest: a call cancelled while it waits for a slot never starts
+ok 7 - a call cancelled while it waits for a slot never starts
+  ---
+  duration_ms: 1029.828143
+  type: 'test'
+  ...
+# Subtest: a persistent script is started once and answers call after call
+ok 8 - a persistent script is started once and answers call after call
+  ---
+  duration_ms: 1621.545106
+  type: 'test'
+  ...
+# Subtest: a call that carries a secret is never given a persistent interpreter
+ok 9 - a call that carries a secret is never given a persistent interpreter
+  ---
+  duration_ms: 33.057025
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 126320.55829

@@ -1,0 +1,45 @@
+TAP version 13
+# Subtest: every Python call asks the host for a persistent interpreter
+not ok 1 - every Python call asks the host for a persistent interpreter
+  ---
+  duration_ms: 960.275043
+  type: 'test'
+  location: '/home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3093:1'
+  failureType: 'testCodeFailure'
+  error: 'each call opted in'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3102:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)
+not ok 2 - the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)
+  ---
+  duration_ms: 60082.55775
+  type: 'test'
+  location: '/home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3105:1'
+  failureType: 'testCodeFailure'
+  error: 'spawnSync /tmp/claude-0/-home-user-nodus/5b890adb-48b2-5b70-978c-a4eed36f32a3/scratchpad/chemvenv/bin/python ETIMEDOUT'
+  code: 'ETIMEDOUT'
+  stack: |-
+    Object.spawnSync (node:internal/child_process:1120:20)
+    spawnSync (node:child_process:902:24)
+    execFileSync (node:child_process:945:15)
+    TestContext.<anonymous> (file:///home/user/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:3135:26)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 61783.401802

@@ -1,0 +1,2 @@
+apply-check: subworker traffic of one route-check round (10 calls) — 8.42s, 8.78s, 9.34s (rounds 1..3)
+nodus: subworker traffic of one route-check round (10 calls) — 1.90s, 0.72s, 0.72s (rounds 1..3)

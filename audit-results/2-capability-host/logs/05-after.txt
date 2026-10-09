@@ -1,0 +1,50 @@
+TAP version 13
+# 2026-10-09T06:33:08.358Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# 2026-10-09T06:33:08.366Z [capability] nodus:probe subworker echo.js ok in 0.0s of a 10s budget · reused
+# 2026-10-09T06:33:08.369Z [capability] nodus:probe subworker echo.js failed in 0.0s of a 10s budget · reused — refused
+# 2026-10-09T06:33:08.370Z [capability] nodus:probe subworker echo.js ok in 0.0s of a 10s budget · reused
+# Subtest: a subworker that answered is kept for the next request
+ok 1 - a subworker that answered is kept for the next request
+  ---
+  duration_ms: 90.562315
+  type: 'test'
+  ...
+# 2026-10-09T06:33:08.430Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# 2026-10-09T06:33:09.432Z [capability] nodus:probe subworker echo.js failed in 1.0s of a 1s budget · reused — The capability subworker exceeded its time limit of 1 seconds.
+# 2026-10-09T06:33:09.496Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# 2026-10-09T06:33:09.597Z [capability] nodus:probe subworker echo.js failed in 0.1s of a 10s budget · reused — The capability subworker was cancelled.
+# 2026-10-09T06:33:09.662Z [capability] nodus:probe subworker echo.js failed in 0.1s of a 10s budget · started — The capability subworker exited without a result.
+# 2026-10-09T06:33:09.736Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 10s budget · started
+# Subtest: a subworker that timed out, was cancelled or exited is never reused
+ok 2 - a subworker that timed out, was cancelled or exited is never reused
+  ---
+  duration_ms: 1365.689939
+  type: 'test'
+  ...
+# 2026-10-09T06:33:10.394Z [capability] nodus:probe subworker echo.js ok in 0.7s of a 10s budget · started
+# 2026-10-09T06:33:10.395Z [capability] nodus:probe subworker echo.js ok in 0.6s of a 10s budget · started
+# 2026-10-09T06:33:10.996Z [capability] nodus:probe subworker echo.js ok in 0.6s of a 10s budget · reused · queued 0.7s
+# 2026-10-09T06:33:10.997Z [capability] nodus:probe subworker echo.js ok in 0.6s of a 10s budget · reused · queued 0.7s
+# 2026-10-09T06:33:11.098Z [capability] nodus:probe subworker echo.js ok in 0.1s of a 1s budget · reused · queued 1.3s
+# Subtest: no more subworkers run at once than the manifest allows, and a queued request keeps its whole budget
+ok 3 - no more subworkers run at once than the manifest allows, and a queued request keeps its whole budget
+  ---
+  duration_ms: 1360.980269
+  type: 'test'
+  ...
+# 2026-10-09T06:33:11.956Z [capability] nodus:probe subworker echo.js ok in 0.9s of a 10s budget · started
+# Subtest: a request cancelled while it waits for a slot never starts
+ok 4 - a request cancelled while it waits for a slot never starts
+  ---
+  duration_ms: 857.718203
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3989.473607

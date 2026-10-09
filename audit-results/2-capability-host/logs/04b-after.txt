@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: every Python call asks the host for a persistent interpreter
+ok 1 - every Python call asks the host for a persistent interpreter
+  ---
+  duration_ms: 836.907677
+  type: 'test'
+  ...
+# Subtest: the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)
+ok 2 - the Python worker serves requests in a loop, and forgets a stock list that changed (needs CHEMISTRY_TEST_PYTHON)
+  ---
+  duration_ms: 1416.764703
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2970.790467

@@ -1,0 +1,285 @@
+# Repository: bloosqr/nodus — unified diff against branch audit/2026-10-09 with 01,02,03 applied first. Apply from the repository root with: git apply 04-python-persistent-interpreters-host.patch
+diff --git a/electron/capabilities/hostServices.ts b/electron/capabilities/hostServices.ts
+index 2468b0f9..ec0703b4 100644
+--- a/electron/capabilities/hostServices.ts
++++ b/electron/capabilities/hostServices.ts
+@@ -32,7 +32,7 @@ export interface CapabilityServiceAdapters {
+   };
+   python?: {
+     ensureRuntime: (runtime: TrustedWorkerRuntime, runtimeId: string, signal: AbortSignal) => Promise<{ ready: boolean; detail?: string }>;
+-    run: (runtime: TrustedWorkerRuntime, request: { runtimeId: string; args: string[]; stdin?: string; secret?: string; timeoutMs: number }, signal: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
++    run: (runtime: TrustedWorkerRuntime, request: { runtimeId: string; args: string[]; stdin?: string; secret?: string; timeoutMs: number; persistent?: boolean }, signal: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
+   };
+   subworker?: (runtime: TrustedWorkerRuntime, request: { entry: string; input: unknown; timeoutMs: number }, signal: AbortSignal) => Promise<unknown>;
+   /** Bound by the caller to the conversation the invocation belongs to. */
+@@ -314,7 +314,7 @@ export function createCapabilityHostServices(adapters: CapabilityServiceAdapters
+         ? readCapabilitySecret(runtime.plugin.id, runtime.manifest.id, secretId)
+         : undefined;
+       if (secretId && !secret) throw new Error('That capability credential is not configured.');
+-      return adapters.python.run(runtime, { runtimeId, args, stdin: typeof value.stdin === 'string' ? value.stdin : undefined, secret, timeoutMs: Number(value.timeoutMs ?? 120_000) }, signal);
++      return adapters.python.run(runtime, { runtimeId, args, stdin: typeof value.stdin === 'string' ? value.stdin : undefined, secret, timeoutMs: Number(value.timeoutMs ?? 120_000), persistent: value.persistent === true }, signal);
+     }
+ 
+     // `nodus:3d`. The core owns the format check and the storage; the capability owns
+diff --git a/electron/capabilities/pythonRuntime.ts b/electron/capabilities/pythonRuntime.ts
+index df2c8729..139d7638 100644
+--- a/electron/capabilities/pythonRuntime.ts
++++ b/electron/capabilities/pythonRuntime.ts
+@@ -202,6 +202,10 @@ export interface PythonRunRequest {
+    *  arguments are visible to anything that can list processes. */
+   secret?: string;
+   timeoutMs: number;
++  /** The script answers requests in a loop, so one interpreter may serve many calls (see
++   *  `askServedInterpreter`). Ignored with a secret: a served process outlives the call that
++   *  was entitled to it. */
++  persistent?: boolean;
+ }
+ 
+ const STDOUT_LIMIT = 32 * 1024 * 1024;
+@@ -224,6 +228,10 @@ export const pythonRuntimeConcurrency = (): number => pythonSlots.size;
+ const liveInterpreters = new Set<ChildProcess>();
+ process.once('exit', () => { for (const child of liveInterpreters) killInterpreter(child); });
+ 
++const interpreterEnvironment = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({
++  PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1', ...extra,
++});
++
+ /** Kills the interpreter AND whatever it started. A capability's Python may run its own helpers —
+  *  a local OPSIN under Java, a multiprocessing pool — and killing only the interpreter left them
+  *  running, unbudgeted, after the call that wanted them had been cancelled. On POSIX the
+@@ -251,17 +259,150 @@ export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request:
+   // calls is not time this one spent running, and must not be reported as it.
+   const release = await pythonSlots.acquire(signal);
+   try {
+-    return await spawnInterpreter(root, request, signal);
++    return await (request.persistent && !request.secret ? askServedInterpreter(root, request, signal) : spawnInterpreter(root, request, signal));
+   } finally { release(); }
+ }
+ 
++/** An interpreter that answers one request per line until its stdin closes.
++ *
++ *  A one-shot call pays for the interpreter, RDKit and whatever tables the script loads before it
++ *  does any work: measured on the chemistry runtime, 0.2 to 1.8 s a call, 30 to 45 calls an answer.
++ *  A script that opts in (`persistent`) is started with NODUS_PYTHON_SERVE=1 and kept: the host
++ *  writes {"id", "stdin"} and reads {"id", "code", "stdout", "stderr"}, the same three things a
++ *  one-shot run returns. The interpreter is reused only after a clean answer; a timeout, a
++ *  cancellation, a malformed reply or an exit kills it, and the next call starts a fresh one. */
++interface ServedInterpreter {
++  key: string;
++  child: ChildProcess;
++  uses: number;
++  buffer: string;
++  stderr: string;
++  idle?: NodeJS.Timeout;
++  onLine?: (line: string) => void;
++  onExit?: (code: number | null, killedBy: NodeJS.Signals | null) => void;
++}
++
++/** Retired after this long unused, so an answer's phases share it but an idle app holds nothing. */
++const SERVED_IDLE_MS = 120_000;
++/** Retired after this many answers, so a slow leak in a script or a library stays bounded. */
++const SERVED_MAX_USES = 200;
++/** Interpreters kept idle per script; more run at once only while the admission above allows. */
++const SERVED_IDLE_PER_KEY = 2;
++const servedIdle = new Map<string, ServedInterpreter[]>();
++let servedRequests = 0;
++
++/** Stops every served interpreter. For shutdown and tests; a call in flight fails as an exit. */
++export function stopServedInterpreters(): void {
++  for (const list of servedIdle.values()) for (const served of list) retireServed(served);
++  servedIdle.clear();
++}
++
++function retireServed(served: ServedInterpreter): void {
++  if (served.idle) clearTimeout(served.idle);
++  const list = servedIdle.get(served.key);
++  if (list?.includes(served)) list.splice(list.indexOf(served), 1);
++  killInterpreter(served.child);
++}
++
++function parkServed(served: ServedInterpreter): void {
++  served.onLine = served.onExit = undefined;
++  const list = servedIdle.get(served.key) ?? [];
++  if (served.uses >= SERVED_MAX_USES || list.length >= SERVED_IDLE_PER_KEY || served.child.exitCode !== null || served.child.signalCode !== null) {
++    retireServed(served);
++    return;
++  }
++  list.push(served);
++  servedIdle.set(served.key, list);
++  served.idle = setTimeout(() => retireServed(served), SERVED_IDLE_MS);
++  served.idle.unref?.();
++}
++
++function startServed(root: string, args: string[], key: string): ServedInterpreter {
++  const child = spawn(interpreter(root), args, {
++    cwd: root, stdio: ['pipe', 'pipe', 'pipe'],
++    env: interpreterEnvironment({ NODUS_PYTHON_SERVE: '1' }),
++    detached: process.platform !== 'win32',
++    windowsHide: true,
++  });
++  liveInterpreters.add(child);
++  const served: ServedInterpreter = { key, child, uses: 0, buffer: '', stderr: '' };
++  child.stdout!.setEncoding('utf8');
++  child.stderr!.setEncoding('utf8');
++  child.stdout!.on('data', (chunk: string) => {
++    served.buffer += chunk;
++    for (let newline = served.buffer.indexOf('\n'); newline >= 0; newline = served.buffer.indexOf('\n')) {
++      const line = served.buffer.slice(0, newline);
++      served.buffer = served.buffer.slice(newline + 1);
++      served.onLine?.(line);
++    }
++    // A reply carries the whole stdout of one request, so this is the one-shot bound plus the envelope.
++    if (served.buffer.length > STDOUT_LIMIT * 2) served.onExit?.(null, null);
++  });
++  child.stderr!.on('data', (chunk: string) => { served.stderr = (served.stderr + chunk).slice(-STDERR_TAIL); });
++  child.stdin!.on('error', () => {});
++  child.once('error', () => { retireServed(served); served.onExit?.(null, null); });
++  child.once('close', (code, killedBy) => { retireServed(served); served.onExit?.(code, killedBy); });
++  return served;
++}
++
++function askServedInterpreter(root: string, request: PythonRunRequest, signal: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
++  const key = [root, ...request.args].join('\0');
++  let served: ServedInterpreter | undefined;
++  for (const candidate of servedIdle.get(key) ?? []) {
++    if (candidate.child.exitCode === null && candidate.child.signalCode === null) { served = candidate; break; }
++  }
++  if (served) {
++    if (served.idle) clearTimeout(served.idle);
++    const list = servedIdle.get(key)!;
++    list.splice(list.indexOf(served), 1);
++  } else {
++    served = startServed(root, request.args, key);
++  }
++  const target = served;
++  target.stderr = '';
++  const id = ++servedRequests;
++  return new Promise((resolve, reject) => {
++    let settled = false;
++    const finish = (outcome: { error?: Error; result?: { code: number; stdout: string; stderr: string } }, reusable: boolean) => {
++      if (settled) return;
++      settled = true;
++      clearTimeout(timer);
++      signal.removeEventListener('abort', abort);
++      target.onLine = target.onExit = undefined;
++      if (reusable) parkServed(target); else retireServed(target);
++      if (outcome.error) reject(outcome.error); else resolve(outcome.result!);
++    };
++    const abort = () => finish({ error: new DOMException('The capability runtime call was cancelled.', 'AbortError') }, false);
++    const timer = setTimeout(() => finish({ error: new Error(`The capability runtime exceeded ${Math.round(request.timeoutMs / 1000)} seconds.`) }, false), Math.min(Math.max(request.timeoutMs, 1_000), 900_000));
++    signal.addEventListener('abort', abort, { once: true });
++    target.onLine = line => {
++      let reply: { id?: unknown; code?: unknown; stdout?: unknown; stderr?: unknown } | null = null;
++      try { reply = JSON.parse(line); } catch { /* handled below */ }
++      if (!reply || reply.id !== id || !Number.isInteger(reply.code) || typeof reply.stdout !== 'string') {
++        finish({ result: { code: 1, stdout: '', stderr: `${target.stderr}\nThe interpreter answered out of turn.`.slice(-STDERR_TAIL) } }, false);
++        return;
++      }
++      if (reply.stdout.length > STDOUT_LIMIT) { finish({ error: new Error('The capability runtime produced too much output.') }, false); return; }
++      target.uses += 1;
++      const stderr = `${target.stderr}${typeof reply.stderr === 'string' ? reply.stderr : ''}`.slice(-STDERR_TAIL);
++      finish({ result: { code: reply.code as number, stdout: reply.stdout, stderr } }, true);
++    };
++    target.onExit = (code, killedBy) => {
++      const stderr = `${target.stderr}\n${killedBy ? `The interpreter was terminated by ${killedBy}.` : 'The interpreter exited before it answered.'}`.slice(-STDERR_TAIL);
++      finish({ result: { code: code === null ? signalExitCode(killedBy) : code || 1, stdout: '', stderr } }, false);
++    };
++    try { target.child.stdin!.write(`${JSON.stringify({ id, stdin: request.stdin ?? '' })}\n`); }
++    catch (error) { finish({ error: error instanceof Error ? error : new Error(String(error)) }, false); }
++  });
++}
++
+ function spawnInterpreter(root: string, request: PythonRunRequest, signal: AbortSignal): Promise<{ code: number; stdout: string; stderr: string }> {
+   return new Promise((resolve, reject) => {
+     const child = spawn(interpreter(root), request.args, {
+       cwd: root, stdio: ['pipe', 'pipe', 'pipe'],
+       // A clean environment: the interpreter gets what it needs and nothing the user's
+       // shell happens to be carrying.
+-      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONIOENCODING: 'utf-8', PYTHONDONTWRITEBYTECODE: '1' },
++      env: interpreterEnvironment(),
+       // Its own process group (POSIX), so a kill reaches everything it started.
+       detached: process.platform !== 'win32',
+       windowsHide: true,
+diff --git a/packages/capability-api/src/worker.ts b/packages/capability-api/src/worker.ts
+index 508b7020..f4c536cd 100644
+--- a/packages/capability-api/src/worker.ts
++++ b/packages/capability-api/src/worker.ts
+@@ -182,7 +182,10 @@ export interface CapabilityHostV2 {
+   };
+   python: {
+     ensureRuntime(runtimeId: string): Promise<{ ready: boolean; detail?: string }>;
+-    run(request: { runtimeId: string; args: string[]; stdin?: string; secretId?: string; timeoutMs: number }): Promise<{ code: number; stdout: string; stderr: string }>;
++    /** `persistent`: the script answers one request per line while NODUS_PYTHON_SERVE=1 is set,
++     *  so the host may keep the interpreter for later calls. A host that predates it runs the
++     *  script once per call, as before. */
++    run(request: { runtimeId: string; args: string[]; stdin?: string; secretId?: string; timeoutMs: number; persistent?: boolean }): Promise<{ code: number; stdout: string; stderr: string }>;
+   };
+   attachments: {
+     /** Stores bytes and returns the id a `download` view node refers to. */
+diff --git a/scripts/test-capability-python-host.mjs b/scripts/test-capability-python-host.mjs
+index 88aca376..c9a55742 100644
+--- a/scripts/test-capability-python-host.mjs
++++ b/scripts/test-capability-python-host.mjs
+@@ -161,3 +161,62 @@ test('a call cancelled while it waits for a slot never starts', async (t) => {
+   await Promise.all(busy);
+   assert.ok(!fs.existsSync(marker), 'the cancelled call ran anyway');
+ });
++
++/** A script that answers in a loop when the host asks it to, and once otherwise. */
++const SERVED = `
++import json, os, sys, time
++def answer(request):
++    if request.get("sleep"): time.sleep(request["sleep"])
++    if request.get("exit") is not None: os._exit(request["exit"])
++    return {"pid": os.getpid(), "echo": request.get("echo")}
++if os.environ.get("NODUS_PYTHON_SERVE") == "1":
++    for line in sys.stdin:
++        message = json.loads(line)
++        reply = {"id": message["id"], "code": 0, "stdout": json.dumps(answer(json.loads(message["stdin"] or "{}"))), "stderr": ""}
++        sys.stdout.write(json.dumps(reply) + "\\n")
++        sys.stdout.flush()
++else:
++    print(json.dumps(answer(json.loads(sys.stdin.read() or "{}"))))
++`;
++
++test('a persistent script is started once and answers call after call', async (t) => {
++  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
++  if (typeof lib.stopServedInterpreters !== 'function') assert.fail('the host has no persistent interpreters');
++  installRuntime();
++  const file = script(SERVED);
++  const ask = (request, extra = {}, signal = new AbortController().signal) => lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', file], stdin: JSON.stringify(request), timeoutMs: 30_000, persistent: true, ...extra }, signal);
++  try {
++    const first = JSON.parse((await ask({ echo: 'é€' })).stdout);
++    const second = JSON.parse((await ask({ echo: 2 })).stdout);
++    assert.equal(first.echo, 'é€');
++    assert.equal(second.pid, first.pid, 'the second call was answered by the same interpreter');
++
++    // A timeout kills the interpreter; the next call gets a fresh one that works.
++    await assert.rejects(ask({ sleep: 5 }, { timeoutMs: 1_000 }), /exceeded 1 seconds/);
++    const afterTimeout = JSON.parse((await ask({ echo: 3 })).stdout);
++    assert.notEqual(afterTimeout.pid, first.pid);
++
++    // So does a cancellation.
++    const controller = new AbortController();
++    const cancelled = ask({ sleep: 5 }, {}, controller.signal);
++    setTimeout(() => controller.abort(), 200);
++    await assert.rejects(cancelled, { name: 'AbortError' });
++
++    // An interpreter that dies mid-request is a failure with its exit code, never a hang or a success.
++    const died = await ask({ exit: 7 });
++    assert.equal(died.code, 7);
++    assert.match(died.stderr, /exited before it answered/);
++
++    // Calls at the same time are answered by different interpreters.
++    const both = await Promise.all([ask({ sleep: 0.3 }), ask({ sleep: 0.3 })]);
++    assert.notEqual(JSON.parse(both[0].stdout).pid, JSON.parse(both[1].stdout).pid);
++  } finally { lib.stopServedInterpreters(); }
++});
++
++test('a call that carries a secret is never given a persistent interpreter', async (t) => {
++  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
++  installRuntime();
++  const file = script('import sys, json, os\nprint(json.dumps({"serve": os.environ.get("NODUS_PYTHON_SERVE"), "first": sys.stdin.readline().strip()}))\n');
++  const result = await lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', file], secret: 'not-a-real-key', timeoutMs: 30_000, persistent: true }, new AbortController().signal);
++  assert.deepEqual(JSON.parse(result.stdout), { serve: null, first: 'not-a-real-key' });
++});
