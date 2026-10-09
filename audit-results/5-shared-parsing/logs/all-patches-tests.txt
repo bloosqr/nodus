@@ -12,4 +12,5 @@ test-route-label-unicode                      # pass 2 # fail 0
 test-route-condition-agents                   # pass 3 # fail 0 
 test-route-final-report-review                # pass 2 # fail 0 
 test-route-label-notes                        # pass 2 # fail 0 
+test-route-name-feedback-long                 # pass 2 # fail 0 
 test-research-synthesis-context (not listed): fails identically on the base — better-sqlite3 native binding not built (npm install ran with --ignore-scripts because cdn.sheetjs.com is blocked by the sandbox proxy).

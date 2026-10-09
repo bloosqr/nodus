@@ -1,0 +1,3 @@
+6 KB, 30 code fences: 0.08 ms per call
+23 KB, 120 code fences: 0.21 ms per call
+76 KB, 400 code fences: 0.36 ms per call

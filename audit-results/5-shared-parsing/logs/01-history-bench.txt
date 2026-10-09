@@ -1,0 +1,3 @@
+follow-up turn after a route that passed on its first answer: the three calls answerResearchChatTurn and skillExecution make before the model is asked
+8 steps x 20 KB drawings: base 15108 ms, patched 13.9 ms
+29 steps x 20 KB drawings: base 52412 ms, patched 95.9 ms
