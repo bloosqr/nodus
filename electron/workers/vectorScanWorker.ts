@@ -204,11 +204,16 @@ function scan(request: WorkerRequest, trace?: SweepTrace): unknown[] {
     const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}\u0000${versionOf(database, tablesRead(filterSql))}`;
     let windows = cache.eligible.get(key);
     if (!windows) {
+      // One execution over every rowid, its rows split into the windows by rowid: each window then
+      // holds what the statement returns for that window alone, in the same order. Run once per
+      // window it repeated the whole plan per window, the caller's IN list of one parameter per work
+      // included: 1.5 s for the passages statement on a real 14,055-work vault, against 0.27 s
+      // once, each time the vault's tables change.
       const filter = database.prepare(filterSql);
       windows = [];
-      for (let from = 0; from < highest; from += WINDOW_ROWIDS) {
-        const to = Math.min(from + WINDOW_ROWIDS, highest);
-        windows.push(filter.all(from, to, ...input.params) as Array<Record<string, unknown> & { rid: number }>);
+      for (let from = 0; from < highest; from += WINDOW_ROWIDS) windows.push([]);
+      for (const row of filter.all(0, highest, ...input.params) as Array<Record<string, unknown> & { rid: number }>) {
+        windows[Math.min(windows.length - 1, Math.max(0, Math.ceil(row.rid / WINDOW_ROWIDS) - 1))].push(row);
       }
       cache.eligible.set(key, windows);
       if (cache.eligible.size > ELIGIBLE_SETS) cache.eligible.delete(cache.eligible.keys().next().value!);
