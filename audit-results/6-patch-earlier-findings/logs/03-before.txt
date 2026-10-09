@@ -1,0 +1,39 @@
+TAP version 13
+# Subtest: a metal reagent that comes out at zero is never advised deleted
+ok 1 - a metal reagent that comes out at zero is never advised deleted
+  ---
+  duration_ms: 16.772899
+  type: 'test'
+  ...
+# Subtest: a metal reactant cancelled as a spectator still counts as supplying its metal
+not ok 2 - a metal reactant cancelled as a spectator still counts as supplying its metal
+  ---
+  duration_ms: 1.225606
+  type: 'test'
+  location: '/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1324:1'
+  failureType: 'testCodeFailure'
+  error: 'a sodium ion is declared under Reactants'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'The declared species cannot be balanced: "NaBr" carries a metal that nothing under Reactants supplies, so the equation balances only with it at zero. Either the reagent that brings the metal is missing from Reactants (a base or a salt the step consumes M-bM-^@M-^T name it), or it is not formed and should be removed.'
+  operator: 'doesNotMatch'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1334:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 543.10206

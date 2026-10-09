@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: a salt written as its ions is one species, so a verified step with salts on both sides still draws
+ok 1 - a salt written as its ions is one species, so a verified step with salts on both sides still draws
+  ---
+  duration_ms: 9646.743132
+  type: 'test'
+  ...
+# Subtest: ions that react with each other stay separate species; a salt with a spectator ion is still one
+ok 2 - ions that react with each other stay separate species; a salt with a spectator ion is still one
+  ---
+  duration_ms: 2104.830167
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12350.699347

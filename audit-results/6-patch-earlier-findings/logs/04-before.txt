@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: a half-built or corrupt PubChem mirror costs only the mirror, not the local OPSIN answers (needs CHEMISTRY_TEST_PYTHON)
+not ok 1 - a half-built or corrupt PubChem mirror costs only the mirror, not the local OPSIN answers (needs CHEMISTRY_TEST_PYTHON)
+  ---
+  duration_ms: 163.119785
+  type: 'test'
+  location: '/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1853:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Command failed: /tmp/claude-0/-home-user-nodus/c051480b-19fc-5738-9b4e-fffab53b8d63/scratchpad/venv/bin/python -c 
+    import json, os, sys, sqlite3, tempfile
+    sys.path.insert(0, "/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/python")
+    import reactions_worker as w
+    w._opsin_local = lambda opsin_dir, names: {name: {'status': 'SUCCESS', 'smiles': 'CCO'} for name in names}
+    half = tempfile.mkdtemp(); db = sqlite3.connect(os.path.join(half, 'pubchem.sqlite'))
+    db.execute('CREATE TABLE synonym (name TEXT, cid INTEGER, rank INTEGER)'); db.commit(); db.close()
+    corrupt = tempfile.mkdtemp(); open(os.path.join(corrupt, 'pubchem.sqlite'), 'wb').write(b'not a database' * 512)
+    print(json.dumps([w.handle({'pubchemDir': d, 'opsinDir': '/opsin', 'pubchemNames': ['ethanol'], 'pubchemSmiles': ['CCO']}) for d in (half, corrupt)]))
+    
+    Traceback (most recent call last):
+      File "<string>", line 9, in <module>
+        print(json.dumps([w.handle({'pubchemDir': d, 'opsinDir': '/opsin', 'pubchemNames': ['ethanol'], 'pubchemSmiles': ['CCO']}) for d in (half, corrupt)]))
+                          ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/python/reactions_worker.py", line 1588, in handle
+        out["pubchem"] = _pubchem_mirror(request["pubchemDir"], names, smiles)
+                         ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/python/reactions_worker.py", line 1518, in _pubchem_mirror
+        row = db.execute("SELECT cid FROM inchikey WHERE key = ?", (key,)).fetchone()
+              ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    sqlite3.OperationalError: no such table: inchikey
+    
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    genericNodeError (node:internal/errors:983:15)
+    wrappedFn (node:internal/errors:537:14)
+    checkExecSyncError (node:child_process:916:11)
+    execFileSync (node:child_process:952:15)
+    TestContext.<anonymous> (file:///home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1867:32)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: a failed local reference run is logged with its stderr, not dropped silently
+not ok 2 - a failed local reference run is logged with its stderr, not dropped silently
+  ---
+  duration_ms: 4.979295
+  type: 'test'
+  location: '/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1874:1'
+  failureType: 'testCodeFailure'
+  error: '[]'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1880:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the Python mirror lookup answers only what it is sure of (needs CHEMISTRY_TEST_PYTHON)
+ok 3 - the Python mirror lookup answers only what it is sure of (needs CHEMISTRY_TEST_PYTHON)
+  ---
+  duration_ms: 150.206783
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 1
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 939.193528

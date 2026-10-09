@@ -1,0 +1,47 @@
+TAP version 13
+# Subtest: the PubChem mirror opens read-only from a folder whose name holds \# ? or % (needs CHEMISTRY_TEST_PYTHON)
+not ok 1 - the PubChem mirror opens read-only from a folder whose name holds \# ? or % (needs CHEMISTRY_TEST_PYTHON)
+  ---
+  duration_ms: 149.675805
+  type: 'test'
+  location: '/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1932:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    every folder name opens the mirror
+    + actual - expected
+    
+      [
+    +   'OperationalError',
+    +   'OperationalError',
+    +   'OperationalError'
+    -   'CCO',
+    -   'CCO',
+    -   'CCO'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'CCO'
+    1: 'CCO'
+    2: 'CCO'
+  actual:
+    0: 'OperationalError'
+    1: 'OperationalError'
+    2: 'OperationalError'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:1950:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 678.853954

@@ -1,0 +1,49 @@
+TAP version 13
+# Subtest: no node:test suite re-runs itself under Electron with the runner context
+not ok 1 - no node:test suite re-runs itself under Electron with the runner context
+  ---
+  duration_ms: 51.189471
+  type: 'test'
+  location: '/home/user/nodus/scripts/test-electron-rerun-test-context.mjs:13:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    use requireElectronRuntime from scripts/lib/tsRuntimeHooks.mjs
+    + actual - expected
+    
+    + [
+    +   'test-backup-vault-revision.mjs',
+    +   'test-teaching-exams.mjs',
+    +   'test-teaching-rubrics.mjs',
+    +   'test-vector-scan.mjs',
+    +   'test-work-deletion.mjs',
+    +   'test-writing-workshop-candidate-pools.mjs'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'test-backup-vault-revision.mjs'
+    1: 'test-teaching-exams.mjs'
+    2: 'test-teaching-rubrics.mjs'
+    3: 'test-vector-scan.mjs'
+    4: 'test-work-deletion.mjs'
+    5: 'test-writing-workshop-candidate-pools.mjs'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/nodus/scripts/test-electron-rerun-test-context.mjs:23:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 162.385867

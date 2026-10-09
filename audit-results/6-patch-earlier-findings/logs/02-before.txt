@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: a salt written as its ions is one species, so a verified step with salts on both sides still draws
+ok 1 - a salt written as its ions is one species, so a verified step with salts on both sides still draws
+  ---
+  duration_ms: 9000.587129
+  type: 'test'
+  ...
+# Subtest: ions that react with each other stay separate species; a salt with a spectator ion is still one
+not ok 2 - ions that react with each other stay separate species; a salt with a spectator ion is still one
+  ---
+  duration_ms: 379.10826
+  type: 'test'
+  location: '/home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:2345:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    a neutralisation has two reactants
+    + actual - expected
+    
+      [
+    +   '[H+].[OH-]'
+    -   '[H+]',
+    -   '[OH-]'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: '[H+]'
+    1: '[OH-]'
+  actual:
+    0: '[H+].[OH-]'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///home/user/bloosqr/nodus-research-skill-marketplace/plugins/chemistry-studio/test/chemistry.test.mjs:2356:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10033.637668
