@@ -330,6 +330,12 @@ export class CompassRequestScheduler {
           task.resolve(value);
         },
         (error) => {
+          // A cancelled request says nothing about the provider. Counting it would let three
+          // cancels (or lane switches) open the circuit and refuse the next real search.
+          if (task.signal.aborted || (error as { name?: unknown })?.name === "AbortError") {
+            task.reject(error);
+            return;
+          }
           const current = this.usage(task.provider, Date.now()).usage;
           current.consecutiveFailures += 1;
           const retryAt = Number((error as { retryAt?: number })?.retryAt);
