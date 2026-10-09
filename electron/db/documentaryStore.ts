@@ -243,6 +243,34 @@ export class DocumentaryStore {
     const row = this.db.prepare('SELECT identity_json FROM documentary_jobs WHERE id=?').get(id) as { identity_json: string } | undefined;
     return row ? JSON.parse(row.identity_json) as DocumentaryIndexIdentity : null;
   }
+  /** `jobIdentity` for many jobs, in one statement. Absent ids are absent from the map. */
+  jobIdentities(ids: string[]): Map<string, DocumentaryIndexIdentity> {
+    const rows = this.db.prepare('SELECT id,identity_json FROM documentary_jobs WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify([...new Set(ids)])) as Array<{ id: string; identity_json: string }>;
+    return new Map(rows.map(row => [row.id, JSON.parse(row.identity_json) as DocumentaryIndexIdentity]));
+  }
+  /** The revisions of many documents without their text, each document's in the order
+   *  `embedding_ready DESC, created_at DESC`, with the revision each was built from. */
+  revisionsOf(documentIds: string[]): Map<string, Array<{ index_key: string; identity_json: string; embedding_ready: number; lexical_ready: number; revision: string | null }>> {
+    const rows = this.db.prepare(`SELECT document_id,index_key,identity_json,embedding_ready,lexical_ready,json_extract(identity_json,'$.revision') revision
+      FROM documentary_revisions WHERE document_id IN (SELECT value FROM json_each(?)) ORDER BY document_id,embedding_ready DESC,created_at DESC`)
+      .all(JSON.stringify([...new Set(documentIds)])) as Array<{ document_id: string; index_key: string; identity_json: string; embedding_ready: number; lexical_ready: number; revision: string | null }>;
+    const byDocument = new Map<string, Array<Omit<typeof rows[number], 'document_id'>>>();
+    for (const { document_id: documentId, ...row } of rows) {
+      const list = byDocument.get(documentId);
+      if (list) list.push(row); else byDocument.set(documentId, [row]);
+    }
+    return byDocument;
+  }
+  /** Chunks per revision: passages counted on their index for a published revision, the chunk
+   *  JSON's length for one still being built. One statement for each kind. */
+  chunkCounts(rows: Array<{ index_key: string; lexical_ready: number }>): Map<string, number> {
+    const published = rows.filter(row => row.lexical_ready).map(row => row.index_key);
+    const building = rows.filter(row => !row.lexical_ready).map(row => row.index_key);
+    const counts = new Map<string, number>();
+    if (published.length) for (const row of this.db.prepare('SELECT index_key,COUNT(*) n FROM documentary_passages WHERE index_key IN (SELECT value FROM json_each(?)) GROUP BY index_key').all(JSON.stringify(published)) as Array<{ index_key: string; n: number }>) counts.set(row.index_key, row.n);
+    if (building.length) for (const row of this.db.prepare('SELECT index_key,json_array_length(chunks_json) n FROM documentary_revisions WHERE index_key IN (SELECT value FROM json_each(?))').all(JSON.stringify(building)) as Array<{ index_key: string; n: number | null }>) counts.set(row.index_key, row.n ?? 0);
+    return counts;
+  }
   revision(id: string): { text: string | null; chunks_json: string | null; lexical_ready: number; embedding_ready: number } | null {
     return this.db.prepare('SELECT text,chunks_json,lexical_ready,embedding_ready FROM documentary_revisions WHERE index_key=?').get(id) as ReturnType<DocumentaryStore['revision']> ?? null;
   }
@@ -262,7 +290,22 @@ export class DocumentaryStore {
   }
   publishedDocument(document: ResearchCorpusDocument): ResearchCorpusDocument | null {
     const row = this.db.prepare('SELECT document_json,index_keys_json FROM documentary_publications WHERE document_id=?').get(document.id) as { document_json: string; index_keys_json: string } | undefined;
-    if (!row) return null;
+    return row ? DocumentaryStore.fromPublication(document, row) : null;
+  }
+  /** `publishedDocument` for many documents, in one statement: an inventory asked once per source. */
+  publishedDocuments(documents: ResearchCorpusDocument[]): Map<string, ResearchCorpusDocument> {
+    const rows = this.db.prepare('SELECT document_id,document_json,index_keys_json FROM documentary_publications WHERE document_id IN (SELECT value FROM json_each(?))')
+      .all(JSON.stringify(documents.map(document => document.id))) as Array<{ document_id: string; document_json: string; index_keys_json: string }>;
+    const byId = new Map(rows.map(row => [row.document_id, row]));
+    const published = new Map<string, ResearchCorpusDocument>();
+    for (const document of documents) {
+      const row = byId.get(document.id);
+      const pinned = row && DocumentaryStore.fromPublication(document, row);
+      if (pinned) published.set(document.id, pinned);
+    }
+    return published;
+  }
+  private static fromPublication(document: ResearchCorpusDocument, row: { document_json: string; index_keys_json: string }): ResearchCorpusDocument | null {
     const published: ResearchCorpusDocument = JSON.parse(row.document_json);
     // An old revision may survive replacement, but never permission revocation
     // or removal of any file contributing to that revision.
