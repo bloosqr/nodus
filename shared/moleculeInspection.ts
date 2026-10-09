@@ -1327,6 +1327,7 @@ const HISTORY_LATEST_ONLY = [
   '### Structure check (RDKit)', '### Route check (RDKit)',
   '### Route review (model)', '### Route review (model, advisory)',
   '### Known reactions (Open Reaction Database)',
+  '### Known reactions (textbook schemes)', '### Functional-group compatibility',
 ];
 /** App notes that follow the reports without a heading of their own; a dropped section ends there. */
 const HISTORY_NOTE = /^(?:Name corrections:|Author-supplied structures)/;
