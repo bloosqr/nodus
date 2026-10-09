@@ -1,0 +1,86 @@
+# Repository: github.com/bloosqr/nodus-research-skill-marketplace (apply with git apply from the repository root, against audit/2026-10-09)
+diff --git a/plugins/chemistry-studio/python/reactions_worker.py b/plugins/chemistry-studio/python/reactions_worker.py
+index c17c941..6ca2547 100644
+--- a/plugins/chemistry-studio/python/reactions_worker.py
++++ b/plugins/chemistry-studio/python/reactions_worker.py
+@@ -1074,7 +1074,7 @@ def _stereo_choices(smiles, max_isomers=64):
+     import math
+     from rdkit import Chem
+     from rdkit.Chem import AllChem
+-    from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
++    from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, GetStereoisomerCount, StereoEnumerationOptions
+ 
+     mol = Chem.MolFromSmiles(smiles)
+     if mol is None or mol.GetNumHeavyAtoms() > 60:
+@@ -1094,6 +1094,11 @@ def _stereo_choices(smiles, max_isomers=64):
+         return False
+ 
+     options = StereoEnumerationOptions(onlyUnassigned=True, unique=True, maxIsomers=max_isomers)
++    # Nothing left unassigned: the one isomer is the structure itself, and the answer is 0 whether
++    # or not it embeds, so no 3D build is needed to say so. Most of a route's species are like this,
++    # and the embedding was most of their time (about 0.15 s each at 50 heavy atoms).
++    if GetStereoisomerCount(mol, options=options) <= 1:
++        return {"open": 0, "mirrorOnly": False}
+     isomers = sorted({Chem.MolToSmiles(m) for m in EnumerateStereoisomers(mol, options=options) if buildable(m)})
+     if len(isomers) >= max_isomers:
+         return None
+diff --git a/plugins/chemistry-studio/src/worker.ts b/plugins/chemistry-studio/src/worker.ts
+index d89dd08..b6139a6 100644
+--- a/plugins/chemistry-studio/src/worker.ts
++++ b/plugins/chemistry-studio/src/worker.ts
+@@ -750,10 +750,12 @@ async function verifySynthesisRoute(input: { steps?: string[]; carriers?: Array<
+     ? input.radical
+     : Array.isArray(input?.radical) ? input.radical.slice(0, steps.length) : undefined;
+   const target = typeof input?.target === 'string' && input.target.trim() ? input.target.trim().slice(0, 2000) : undefined;
+-  const labels = await resolveRouteLabels(input?.labels, steps.length, cache, host().signal, budget);
+   // The enumeration needs the shared Python runtime; the application asks for it only where that
+-  // runtime is already installed (the reaction index is), so a route check never installs it.
+-  const stereoChoices = input?.enumerateStereo === true ? await productStereoChoices(steps) : {};
++  // runtime is already installed (the reaction index is), so a route check never installs it. It
++  // reads only the steps, so it runs while the labels are looked up rather than after them.
++  const stereoPending = input?.enumerateStereo === true ? productStereoChoices(steps) : Promise.resolve({});
++  const labels = await resolveRouteLabels(input?.labels, steps.length, cache, host().signal, budget);
++  const stereoChoices = await stereoPending;
+   const audit = await chemistryDependencies().verifyRoute({ steps, carriers, racemic, ...(rearrangement !== undefined ? { rearrangement } : {}), ...(radical !== undefined ? { radical } : {}), target, ...(labels.some(step => step.length) ? { labels } : {}), ...(Object.keys(stereoChoices).length ? { stereoChoices } : {}) }, host().signal, budget);
+   if (!audit) throw new Error('The route could not be verified.');
+   const summary = audit.continuous
+diff --git a/plugins/chemistry-studio/test/chemistry.test.mjs b/plugins/chemistry-studio/test/chemistry.test.mjs
+index 530c8c8..28951cf 100644
+--- a/plugins/chemistry-studio/test/chemistry.test.mjs
++++ b/plugins/chemistry-studio/test/chemistry.test.mjs
+@@ -3089,3 +3089,35 @@ test('a named diatomic element resolves to its molecule, and nothing else does',
+     assert.equal(f(other), null, `${other} has no single unambiguous free form here`);
+   }
+ });
++
++test('the stereo enumeration runs while the route labels are looked up', async () => {
++  const events = [];
++  const host = resolveHost((endpointId, target) => {
++    events.push(`fetch ${endpointId}`);
++    if (endpointId === 'pubchem' && target.includes('/name/')) return { IdentifierList: { CID: [702] } };
++    if (endpointId === 'pubchem' && target.includes('/cid/702/')) return { PropertyTable: { Properties: [{ CID: 702, SMILES: 'CCO' }] } };
++    return undefined;
++  });
++  const fetch = host.network.fetch;
++  host.network.fetch = async (...args) => { await new Promise(resolve => setTimeout(resolve, 50)); return fetch(...args); };
++  host.python = { ensureRuntime: async () => ({ ready: true }), run: async (request) => {
++    events.push('stereo');
++    return { code: 0, stderr: '', stdout: JSON.stringify({ stereoChoices: Object.fromEntries(JSON.parse(request.stdin).stereoChoices.map(s => [s, { open: 0, mirrorOnly: false }])) }) };
++  } };
++  await lib.createWorker(host).invoke({ invocationId: 'st1', toolId: 'verify-route', locale: 'en',
++    input: { steps: ['CCO.CC(=O)O>>CCOC(C)=O.O'], labels: [[{ role: 'reactant', name: 'ethanol', smiles: 'CCO' }]], enumerateStereo: true } });
++  const stereo = events.indexOf('stereo');
++  assert.ok(stereo >= 0 && stereo < events.length - 1, `the enumeration started before the last look-up (${events.join(', ')})`);
++  lib.resetPubchemPacing();
++});
++
++test('the stereo enumeration answers a fully assigned structure without building it (needs CHEMISTRY_TEST_PYTHON)', { skip: !process.env.CHEMISTRY_TEST_PYTHON }, async () => {
++  const { execFileSync } = await import('node:child_process');
++  const worker = path.join(root, 'python', 'reactions_worker.py');
++  const ask = (smiles) => JSON.parse(execFileSync(process.env.CHEMISTRY_TEST_PYTHON, ['-I', worker], { input: JSON.stringify({ stereoChoices: smiles }), encoding: 'utf8' })).stereoChoices;
++  const out = ask(['CN1C2CCC1CC(=O)C2', 'CC1(C)C2CCC1(C)C(=O)C2', 'OC(=O)C1C2CCC(N2C)C(C(=O)O)C1=O', 'C[C@@H](O)CC', 'C/C=C/C', 'CCO']);
++  assert.deepEqual(out['CN1C2CCC1CC(=O)C2'], { open: 0, mirrorOnly: false }, 'tropinone is meso');
++  assert.deepEqual(out['CC1(C)C2CCC1(C)C(=O)C2'], { open: 1, mirrorOnly: true }, 'camphor: a mirror-image choice');
++  assert.equal(out['OC(=O)C1C2CCC(N2C)C(C(=O)O)C1=O'].open, 2);
++  for (const assigned of ['C[C@@H](O)CC', 'C/C=C/C', 'CCO']) assert.deepEqual(out[assigned], { open: 0, mirrorOnly: false }, assigned);
++});
