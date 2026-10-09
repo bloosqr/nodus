@@ -305,7 +305,7 @@ test('the template asks for names and roles only, and forbids the model from wri
   assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('You never choose coefficients'), 'the equation is the application\'s job');
   // The format example follows its own rules: a released species is a Byproduct, not a Product.
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /Products: sodium ethanoate\n\s+Byproducts: water/);
-  assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('chemistry-plan'), 'the target plan is still requested');
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /Draw nothing: emit no chemistry-plan/, 'a route answer asks for no drawing block: the turn strips them all');
   assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('true catalyst'), 'the agents field is for true catalysts only');
   assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('racemic'), 'a racemate can be stated in the prose');
   // It must not invite a reaction line or a per-species SMILES example any more.
@@ -1016,11 +1016,12 @@ test('the backwards correction names the requested target with its structure', (
   const bare = normalizeRouteAudit({ continuous: false, blocked: ['Step 1 is not balanced.'], steps: [{ index: 0, reaction: 'a>>b', ok: true, balanced: false, chargeBalanced: true, differences: ['x'], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] }], links: [] });
   const plain = routeFixChips(formatNamedRouteFixPrompts(labels, bare)).find((chip) => chip.label === 'Fix from the target backwards');
   assert.match(plain.prompt, /name the requested target as a Product\./);
-  // The target drawing quotes the request's own target, so the drawing tool accepts it; with no
-  // target the correction asks for no drawing rather than one that would be refused.
+  // The correction quotes the request's own target so the model knows what to reach, and asks for
+  // no drawing either way: the route turn strips every chemistry-plan fence.
   assert.ok(back.prompt.includes(`The requested target, exactly as the original request gave it: \`${smiles}\`.`));
-  assert.ok(back.prompt.includes(`"input":{"kind":"smiles","value":"${smiles}"}`));
-  assert.match(plain.prompt, /Do not emit a chemistry-plan block in this correction/);
+  assert.ok(!back.prompt.includes(`"input":{"kind":"smiles","value":"${smiles}"}`), 'no drawing plan is requested');
+  assert.match(back.prompt, /Do not emit a chemistry-plan block/);
+  assert.match(plain.prompt, /Do not emit a chemistry-plan block/);
 });
 
 test('the first request and every correction carry the same species rules, once', () => {
@@ -1119,9 +1120,9 @@ test('the route review blocks a workup folded into another transformation', () =
   assert.match(ROUTE_REVIEW_SYSTEM, /one-pot cascade such as the Robinson tropinone synthesis is one step/, 'true cascades stay allowed');
 });
 
-test('the first request draws the target from its SMILES when the request gives one', () => {
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /If my request gives the\s+target's SMILES, use it \(kind "smiles"\)/);
-  assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('"input":{"kind":"smiles","value":"EXACT TARGET SMILES FROM MY REQUEST"}'));
+test('the first request asks for no target drawing, which the route turn would strip', () => {
+  assert.ok(!SYNTHESIS_TEMPLATE_ADDENDUM.includes('EXACT TARGET SMILES FROM MY REQUEST'));
+  assert.doesNotMatch(SYNTHESIS_TEMPLATE_ADDENDUM, /exactly one fenced code block tagged chemistry-plan/);
 });
 
 test('an unbuildable step keeps every later step on its own number', () => {
@@ -1209,11 +1210,26 @@ test('a named new route never inherits a different target, including Spanish req
   }
 });
 
-test('correction drawing plans preserve backslashes in stereochemical SMILES', () => {
+test('a correction quotes a stereochemical target with its backslashes intact', () => {
   const target = 'C/C=C\\C';
   const prompt = fixPayload(formatMissingSpeciesPrompt(target)).prompt;
-  const json = prompt.match(/chemistry-plan with (\{.*\}), copying/)[1];
-  assert.equal(JSON.parse(json).species[0].input.value, target);
+  assert.ok(prompt.includes(`exactly as the original request gave it: \`${target}\`.`));
+});
+
+// Every turn that is sent the route contract or a correction is a route turn, and a route turn
+// strips every chemistry-plan fence before anything runs it. A prompt that still asks for one makes
+// the model announce a drawing ("the target is drawn below") that the reader sees replaced by the
+// "Not drawn here" placeholder — measured in 96 harness answers before this change.
+test('no route prompt asks for a drawing block the route turn strips', () => {
+  const target = 'CC(=O)Oc1ccccc1C(=O)O';
+  const prompts = [SYNTHESIS_TEMPLATE_ADDENDUM, fixPayload(formatMissingSpeciesPrompt(target)).prompt, fixPayload(formatMissingSpeciesPrompt(null)).prompt];
+  for (const prompt of prompts) {
+    assert.doesNotMatch(prompt, /emit exactly one fenced code block tagged chemistry-plan/);
+    assert.doesNotMatch(prompt, /Draw (?:ONLY|only) (?:the final|that) target/);
+    // What a compliant answer to the old wording produced, to show the turn removes it.
+    const compliant = `Step 1 …\n\n\`\`\`chemistry-plan\n{"version":2,"kind":"structure","depiction":"skeletal","species":[{"id":"target","input":{"kind":"smiles","value":"${target}"}}]}\n\`\`\`\n`;
+    assert.equal(stripDrawingRequests(compliant).removed, 1, 'a route turn strips a target plan');
+  }
 });
 
 const ORD_A = 'ord-72c311ce8dea41689de4d74d72468e40';
@@ -1389,9 +1405,9 @@ test('the route review blocks a workup folded into another transformation', () =
   assert.match(ROUTE_REVIEW_SYSTEM, /one-pot cascade such as the Robinson tropinone synthesis is one step/, 'true cascades stay allowed');
 });
 
-test('the first request draws the target from its SMILES when the request gives one', () => {
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /If my request gives the\s+target's SMILES, use it \(kind "smiles"\)/);
-  assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('"input":{"kind":"smiles","value":"EXACT TARGET SMILES FROM MY REQUEST"}'));
+test('the first request asks for no target drawing, which the route turn would strip', () => {
+  assert.ok(!SYNTHESIS_TEMPLATE_ADDENDUM.includes('EXACT TARGET SMILES FROM MY REQUEST'));
+  assert.doesNotMatch(SYNTHESIS_TEMPLATE_ADDENDUM, /exactly one fenced code block tagged chemistry-plan/);
 });
 
 test('an unbuildable step keeps every later step on its own number', () => {
