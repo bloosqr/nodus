@@ -1024,10 +1024,13 @@ function splitEntrySpans(list: string): Array<{ start: number; end: number }> {
 function parseRoleEntries(fragment: string): RoleEntry[] {
   const out: RoleEntry[] = [];
   const list = fragment.slice(0, speciesListEnd(fragment, 0, fragment.length));
+  let first = true;
   for (const span of splitEntrySpans(list)) {
     const raw = list.slice(span.start, span.end);
     const entry = raw.replace(/^[\s>*_`]+/, '').trim();
     if (!entry) continue;
+    const leading = first;
+    first = false;
     const pair = /^(.+?)\s*[—–]\s*`([^`]+)`/.exec(entry);
     if (pair) {
       const name = cleanSpeciesName(pair[1]);
@@ -1035,6 +1038,11 @@ function parseRoleEntries(fragment: string): RoleEntry[] {
       continue;
     }
     const name = cleanSpeciesName(entry.replace(/[—–]?\s*`[^`]*`/g, '').replace(/[*_`]/g, '').replace(/[.,;:\s]+$/, ''));
+    // A side that opens with "none" is empty, and whatever follows on it is the author explaining
+    // why ("Byproducts: none; the rearrangement loses no atoms"). Read as a species, that sentence
+    // became a byproduct no reference resolves: a name-correction call, then an unbuilt step.
+    // A bare "NO" stays a formula the step may need, so only "no <word>" opens an empty side.
+    if (leading && (/^(?:none|n\/a|nil)\b|^no\s/i.test(name) || /^[—–-]+$/.test(name))) break;
     if (!name || !isNameLikeSpecies(name) || /^(?:none|no|n\/a|nil)\b/i.test(name) || /^[—–-]+$/.test(name)) continue;
     out.push({ name, start: span.start, end: span.end });
   }
