@@ -842,8 +842,16 @@ function roleOf(label: string): { role: RouteLabelRole; byproduct: boolean } | n
  *  than twice and matches the 4000 already used for a declared structure in this file. */
 export const MAX_SPECIES_NAME = 4000;
 
+/** The typographic hyphens and primes a model writes into a name (`4‑nitrophenol` with U+2011,
+ *  `N,N′-dicyclohexylurea`, `2−methylpropan−2−ol`), as the ASCII the references hold. The local
+ *  PubChem mirror matches a synonym exactly, so each of these missed it and went to the network
+ *  service, through the pacer, for a name the mirror had. */
+function asciiNamePunctuation(name: string): string {
+  return name.replace(/[\u2010-\u2013\u2212\uFE63\uFF0D]/g, '-').replace(/[\u2032\u2019]/g, "'").replace(/\u2033/g, "''").replace(/\u2034/g, "'''");
+}
+
 function cleanSpeciesName(raw: string): string {
-  return raw.replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
+  return asciiNamePunctuation(raw).replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
 }
 
 /** Whether a parsed species name can be a chemical name at all. A model that draws its route
