@@ -184,7 +184,18 @@ function deliver(message){if(frame?.contentWindow)frame.contentWindow.postMessag
 window.addEventListener('message',(event)=>{if(!frame||event.source!==frame.contentWindow)return;const message=event.data;if(!message||message.source!=='nodus-miniapp'||message.token!==token)return;const key=typeof message.key==='string'?message.key.slice(0,100):'';try{if(message.type==='storage:get')return response(event.source,message.id,true,state[key]??null);if(message.type==='storage:set'){const encoded=JSON.stringify(message.value);if(!key||encoded.length>64000)throw new Error(tx('storageTooLarge'));state[key]=message.value;return response(event.source,message.id,true,true)}if(message.type==='storage:remove'){delete state[key];return response(event.source,message.id,true,true)}if(message.type==='storage:clear'){state={};return response(event.source,message.id,true,true)}if(message.type==='session:send'&&meta.multiplayer){ws.send(JSON.stringify({type:'app-message',channel:message.channel,payload:message.payload}));return}if(message.type==='runtime:error')showError(message.message)}catch(error){response(event.source,message.id,false,null,error.message)}});boot();
 </script></body></html>`;
 
+/** Anything a LAN client can make throw — a malformed escape, an unparsable Host — runs before
+ *  the PIN check; uncaught it left the socket hanging and logged an uncaught exception per
+ *  request. It is answered 400 instead. */
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
+  try { handleRequestUnsafe(req, res); }
+  catch {
+    if (!res.headersSent) res.writeHead(400).end('Bad request');
+    else res.destroy();
+  }
+}
+
+function handleRequestUnsafe(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const authorized = Boolean(gate?.admit({ remoteAddress: req.socket.remoteAddress, providedPin: url.searchParams.get('pin'), host: req.headers.host, origin: req.headers.origin }));
   if (url.pathname === '/join' || url.pathname === '/') return html(res, PARTICIPANT_SHELL);
