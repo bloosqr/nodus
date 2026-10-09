@@ -1,0 +1,12 @@
+== probe: plain better-sqlite3, a long-lived read-only connection open beside the main one (as the vector-scan worker keeps)
+reader sees 10
+wal left behind: 4152 bytes
+after import, main sees [{"label":"old","n":10},{"label":"old-after","n":200}]
+integrity: ok
+worker connection sees [{"label":"old","n":10},{"label":"old-after","n":200}]
+== control: the same steps without that connection
+reader sees no reader
+wal left behind: none
+after import, main sees [{"label":"imported","n":50}]
+integrity: ok
+worker connection sees "no reader open"
