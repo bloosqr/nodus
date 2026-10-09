@@ -1,0 +1,8 @@
+== after patch
+BENCH resolve the request scope (all works): wall 29 ms · main thread busy 0 ms · output 97287f050f6a
+BENCH preparation inventory: wall 68 ms · main thread busy 0 ms · output 898691e26ef9
+BENCH shared documentary retrieval (one query): wall 1437 ms · main thread busy 60 ms · output 0245ff1bf533
+== before patch
+BENCH resolve the request scope (all works): wall 41 ms · main thread busy 0 ms · output 97287f050f6a
+BENCH preparation inventory: wall 158 ms · main thread busy 0 ms · output 898691e26ef9
+BENCH shared documentary retrieval (one query): wall 1397 ms · main thread busy 93 ms · output 0245ff1bf533

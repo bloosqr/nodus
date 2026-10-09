@@ -1,0 +1,4 @@
+== after patch
+Preparation inventory: 9 statements for 24 or 96 sources, each source's state unchanged.
+== before patch (documentaryPreparation.ts, documentaryStore.ts, researchNotebookService.ts as on audit/2026-10-09)
+AssertionError [ERR_ASSERTION]: the statements do not grow with the library (129 for 24 sources, 507 for 96)

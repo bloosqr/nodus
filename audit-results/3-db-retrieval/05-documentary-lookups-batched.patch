@@ -1,0 +1,341 @@
+# Repository: github.com/bloosqr/nodus — unified diff against audit/2026-10-09. Apply with: git apply 05-documentary-lookups-batched.patch
+diff --git a/electron/ai/documentaryPreparation.ts b/electron/ai/documentaryPreparation.ts
+index 8d633cba..30d1e59e 100644
+--- a/electron/ai/documentaryPreparation.ts
++++ b/electron/ai/documentaryPreparation.ts
+@@ -313,24 +313,29 @@ async function prepareDocumentaryEmbeddingsNow(indexKey: string, chunks: Documen
+  * and chunk JSON (327 MB over 453 revisions in a real library) into the main process for each
+  * of 1,229 sources, and the inventory parsed the chunks twice to count them: 1.3–2.7 s with
+  * the window frozen, at every Research Chat question and every documentary search. */
+-function revisionsFor(document: ResearchCorpusDocument): Array<{ index_key: string; identity_json: string; embedding_ready: number; lexical_ready: number }> {
++function revisionsFor(document: ResearchCorpusDocument, lookups?: DocumentaryLookups): Array<{ index_key: string; identity_json: string; embedding_ready: number; lexical_ready: number }> {
++  const revision = document.indexedSource?.revision ?? document.revision;
++  if (lookups) return (lookups.revisions.get(document.id) ?? []).filter(row => row.revision === revision);
+   return documentaryStore().db.prepare(`SELECT index_key,identity_json,embedding_ready,lexical_ready FROM documentary_revisions WHERE document_id=? AND json_extract(identity_json,'$.revision')=? ORDER BY embedding_ready DESC,created_at DESC`)
+-    .all(document.id, document.indexedSource?.revision ?? document.revision) as ReturnType<typeof revisionsFor>;
+-}
+-/** Chunks in a revision. A published one has exactly one passage per chunk (publishLexical
+- * writes them in the transaction that sets lexical_ready), so they are counted on an index
+- * instead of parsing the chunk JSON; an unpublished one is counted by SQLite. */
+-function chunkCount(store: DocumentaryStore, row: { index_key: string; lexical_ready: number }): number {
+-  const counted = row.lexical_ready
+-    ? store.db.prepare('SELECT COUNT(*) n FROM documentary_passages WHERE index_key=?').get(row.index_key)
+-    : store.db.prepare('SELECT json_array_length(chunks_json) n FROM documentary_revisions WHERE index_key=?').get(row.index_key);
+-  return (counted as { n: number | null } | undefined)?.n ?? 0;
+-}
+-function attachmentRevisions(document: ResearchCorpusDocument): Array<ReturnType<typeof revisionsFor>> {
++    .all(document.id, revision) as ReturnType<typeof revisionsFor>;
++}
++/** What `revisionsFor` and `attachmentRevisions` read, for every document of an inventory or a
++ *  scope at once. They were read one source at a time — a statement prepared and run per source,
++ *  then one more per published index key — which was the largest share of the main thread's
++ *  SQLite time in a retrieval round (2026-10-09). The same rows, in the same order per source. */
++interface DocumentaryLookups {
++  revisions: ReturnType<DocumentaryStore['revisionsOf']>;
++  identities: Map<string, DocumentaryIndexIdentity>;
++}
++function documentaryLookups(documents: ResearchCorpusDocument[]): DocumentaryLookups {
++  const store = documentaryStore();
++  return { revisions: store.revisionsOf(documents.map(document => document.id)), identities: store.jobIdentities(documents.flatMap(document => document.indexedSource?.indexKeys ?? [])) };
++}
++function attachmentRevisions(document: ResearchCorpusDocument, lookups?: DocumentaryLookups): Array<ReturnType<typeof revisionsFor>> {
+   const groups = new Map<string | null, ReturnType<typeof revisionsFor>>();
+   const attachments = document.indexedSource ? document.indexedSource.attachments : document.attachments;
+-  const published = document.indexedSource?.indexKeys.flatMap(key => documentaryStore().jobIdentity(key) ?? []);
+-  for (const row of revisionsFor(document)) {
++  const published = document.indexedSource?.indexKeys.flatMap(key => (lookups ? lookups.identities.get(key) : documentaryStore().jobIdentity(key)) ?? []);
++  for (const row of revisionsFor(document, lookups)) {
+     const identity: DocumentaryIndexIdentity = JSON.parse(row.identity_json);
+     if (published && !published.some(base => base.attachmentId === identity.attachmentId && base.textFingerprint === identity.textFingerprint
+       && base.chunkerVersion === identity.chunkerVersion && base.processingVersion === identity.processingVersion && (base.layout ?? null) === (identity.layout ?? null))) continue;
+@@ -345,12 +350,34 @@ function attachmentRevisions(document: ResearchCorpusDocument): Array<ReturnType
+   return [...groups.values()];
+ }
+ export function pinPublishedResearchDocument(document: ResearchCorpusDocument): ResearchCorpusDocument {
+-  const store = documentaryStore();
+-  const published = store.publishedDocument(document);
+-  if (published) return published;
+-  // No partially built first revision may leak before the all-attachment switch.
+-  const preparing = store.db.prepare('SELECT 1 FROM documentary_requests WHERE document_id=? OR source_id=?').get(document.id, document.id);
+-  return preparing ? { ...document, indexedSource: { revision: document.revision, attachmentId: document.attachmentId, attachments: document.attachments, indexKeys: [] } } : document;
++  return pinPublishedResearchDocuments([document])[0];
++}
++/** The latest request naming each document, as its id or as its source, from one statement.
++ *  Picked as `ORDER BY updated_at DESC LIMIT 1` per document picked it. */
++function latestRequests(documentIds: string[]): Map<string, { state: string; error: string | null; revision: string }> {
++  const wanted = new Set(documentIds);
++  const ids = JSON.stringify([...wanted]);
++  const latest = new Map<string, { state: string; error: string | null; revision: string; updated_at: number }>();
++  for (const row of documentaryStore().db.prepare(`SELECT document_id,source_id,state,error,revision,updated_at FROM documentary_requests
++      WHERE document_id IN (SELECT value FROM json_each(?)) OR source_id IN (SELECT value FROM json_each(?))`).all(ids, ids) as Array<{ document_id: string; source_id: string | null; state: string; error: string | null; revision: string; updated_at: number }>) {
++    for (const id of new Set([row.document_id, row.source_id])) {
++      if (id === null || !wanted.has(id)) continue;
++      const prior = latest.get(id);
++      if (!prior || row.updated_at > prior.updated_at) latest.set(id, row);
++    }
++  }
++  return latest;
++}
++/** `pinPublishedResearchDocument` for a whole inventory: two statements instead of up to two per
++ *  source, every time a scope is resolved. */
++export function pinPublishedResearchDocuments(documents: ResearchCorpusDocument[], requests = latestRequests(documents.map(document => document.id))): ResearchCorpusDocument[] {
++  const published = documentaryStore().publishedDocuments(documents);
++  return documents.map(document => {
++    const pinned = published.get(document.id);
++    if (pinned) return pinned;
++    // No partially built first revision may leak before the all-attachment switch.
++    return requests.has(document.id) ? { ...document, indexedSource: { revision: document.revision, attachmentId: document.attachmentId, attachments: document.attachments, indexKeys: [] } } : document;
++  });
+ }
+ 
+ export function getResearchPreparationInventory(): ResearchPreparationInventory {
+@@ -365,23 +392,32 @@ export function getResearchPreparationInventory(): ResearchPreparationInventory
+       embeddingSpaces.set(id, { id, provider: embedding.provider, model: embedding.model, dimensions: embedding.dimensions, metric: embedding.metric });
+     }
+   }
+-  return { enabled: new DocumentaryCampaigns(store.db).policy(getActiveVault().id).futureAdditions, embeddingSpaces: [...embeddingSpaces.values()], documents: researchCorpusInventory().documents.map(current => {
+-    const document = pinPublishedResearchDocument(current);
++  const inventory = researchCorpusInventory().documents;
++  const requests = latestRequests(inventory.map(document => document.id));
++  const pinned = pinPublishedResearchDocuments(inventory, requests);
++  const lookups = documentaryLookups(pinned);
++  const groupsOf = pinned.map(document => attachmentRevisions(document, lookups));
++  const counts = store.chunkCounts(groupsOf.flat(2));
++  const chunkCount = (row: { index_key: string }) => counts.get(row.index_key) ?? 0;
++  const wantedParameters = selectedEmbedding && JSON.stringify(embeddingIdentityParameters(selectedEmbedding));
++  const paused = store.preference('paused');
++  return { enabled: new DocumentaryCampaigns(store.db).policy(getActiveVault().id).futureAdditions, embeddingSpaces: [...embeddingSpaces.values()], documents: inventory.map((current, index) => {
++    const document = pinned[index];
+     const stale = document.indexedSource && document.indexedSource.revision !== document.revision;
+-    const groups = attachmentRevisions(document);
++    const groups = groupsOf[index];
+     const revisions = groups.flatMap(group => group.find(row => row.lexical_ready && !row.embedding_ready) ?? group.find(row => row.lexical_ready) ?? []);
+     const revision = revisions[0];
+-    const latest = store.db.prepare('SELECT state,error,revision FROM documentary_requests WHERE document_id=? OR source_id=? ORDER BY updated_at DESC LIMIT 1').get(document.id, document.id) as { state: string; error: string | null; revision: string } | undefined;
++    const latest = requests.get(document.id);
+     // A request for bytes that have since been replaced says nothing about the current file.
+     const request = latest && latest.revision === current.revision ? latest : undefined;
+-    const passages = revisions.reduce((sum, row) => sum + chunkCount(store, row), 0);
++    const passages = revisions.reduce((sum, row) => sum + chunkCount(row), 0);
+     const compatibleVectors = groups.flatMap(group => group.find(row => {
+       const identity = JSON.parse(row.identity_json) as DocumentaryIndexIdentity;
+       return row.embedding_ready && selectedEmbedding && identity.embedding?.provider === selectedEmbedding.provider
+         && identity.embedding.model === selectedEmbedding.modelId
+-        && JSON.stringify(identity.embedding.parameters) === JSON.stringify(embeddingIdentityParameters(selectedEmbedding));
++        && JSON.stringify(identity.embedding.parameters) === wantedParameters;
+     }) ?? []);
+-    const embedded = compatibleVectors.reduce((sum, row) => sum + chunkCount(store, row), 0);
++    const embedded = compatibleVectors.reduce((sum, row) => sum + chunkCount(row), 0);
+     const incompatible = groups.some(group => group.some(row => row.embedding_ready)) && compatibleVectors.length === 0;
+     const coverage = revision ? (JSON.parse(revision.identity_json) as DocumentaryIndexIdentity).coverage ?? document.coverage : document.coverage;
+     // An error on a request that is still queued or running is a retry in progress,
+@@ -391,7 +427,7 @@ export function getResearchPreparationInventory(): ResearchPreparationInventory
+     const textPublished = !!revision && !stale;
+     return { ...document, preparation: { documentId: document.id, revision: document.revision, text: coverage === 'abstract' ? 'abstract' : passages ? 'available' : 'missing',
+       lexical: revision ? stale ? 'stale' : 'ready' : 'missing', embeddings: embedded === passages && passages > 0 ? stale ? 'stale' : 'ready' : embedded > 0 ? 'partial' : incompatible ? 'stale' : request?.error ? retrying ? request.state as 'queued' | 'running' : 'failed' : 'missing',
+-      status: request?.state === 'blocked' ? 'blocked' : request?.state === 'cancelled' ? 'cancelled' : store.preference('paused') ? 'paused' : revision ? 'ready' : request?.state === 'running' ? 'running' : request?.state === 'queued' ? 'queued' : request?.error ? 'failed' : 'catalogued',
++      status: request?.state === 'blocked' ? 'blocked' : request?.state === 'cancelled' ? 'cancelled' : paused ? 'paused' : revision ? 'ready' : request?.state === 'running' ? 'running' : request?.state === 'queued' ? 'queued' : request?.error ? 'failed' : 'catalogued',
+       reason: request?.error?.startsWith('documentary_ocr_') ? 'ocr_required' : request?.error === 'documentary_embeddings_unavailable' ? 'no_model' : request?.error && (textPublished || request.error.includes('embedding')) ? 'provider_failed' : request?.error ? 'extraction_failed' : null, error: request?.error ?? null, passages, embedded,
+       unpreparedAttachmentIds: unpreparedResearchAttachmentIds(document, revisions.map(row => JSON.parse(row.identity_json) as DocumentaryIndexIdentity)) } };
+   }) };
+@@ -832,9 +868,10 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
+     return identity;
+   };
+   const wantedParameters = JSON.stringify(parameters);
++  const lookups = documentaryLookups(scope.documents);
+   const keys = scope.documents.flatMap(document => {
+     assertResearchDocumentPermission(scope, document.id, inventoryById.get(document.id));
+-    const groups = attachmentRevisions(document);
++    const groups = attachmentRevisions(document, lookups);
+     const identities = groups.flatMap(group => group.filter(row => row.lexical_ready).map(identityOf));
+     if (unpreparedResearchAttachmentIds(document, identities).length) incompleteAttachments.add(document.id);
+     return groups.flatMap(revisions => {
+@@ -889,11 +926,16 @@ export async function retrieveSharedDocumentaryEvidence(scope: ResolvedResearchS
+     worker.once('exit', (code: number | null) => { if (!settled) { console.warn(`[documentary] retrieval worker exited with code ${code} before replying`); finish(new Error('documentary_retrieval_worker_stopped')); } });
+     worker.postMessage({ filename: documentaryStore().db.name, query, lexicalKeys: keys, vectorKeys, vector, settings, threshold, read, activity: researchActivityEnabled() });
+   });
+-  const latest = researchCorpusInventory().documents;
+-  for (const document of scope.documents) assertResearchDocumentPermission(scope, document.id, latest.find(item => item.id === document.id));
++  const latest = documentsById(researchCorpusInventory().documents);
++  for (const document of scope.documents) assertResearchDocumentPermission(scope, document.id, latest.get(document.id));
++  // Indexed once: a linear search per scope document (and per passage) is quadratic in the library.
++  // The job's identity alone, read once per key: `getJob` also reads its payload, which can hold
++  // the whole extracted text, once per passage.
++  const scopeById = documentsById(scope.documents);
++  const identities = documentaryStore().jobIdentities(result.passages.map(passage => passage.index_key));
+   const evidence = result.passages.map(passage => {
+-    const document = scope.documents.find(document => document.id === passage.document_id)!;
+-    const identity = JSON.parse(documentaryStore().getJob(passage.index_key)!.identity_json) as DocumentaryIndexIdentity;
++    const document = scopeById.get(passage.document_id)!;
++    const identity = identities.get(passage.index_key)!;
+     const coverage = identity.coverage ?? document.coverage;
+     return { id: passage.id, documentId: document.id, workId: document.workId, attachmentId: identity.attachmentId, attachmentRevision: identity.attachmentRevision,
+       revision: identity.revision, text: passage.text, locator: JSON.parse(passage.locator_json),
+diff --git a/electron/ai/researchNotebookService.ts b/electron/ai/researchNotebookService.ts
+index 444ed725..0328f15c 100644
+--- a/electron/ai/researchNotebookService.ts
++++ b/electron/ai/researchNotebookService.ts
+@@ -8,7 +8,7 @@ import { researchCorpusInventory } from './researchCorpusInventory';
+ import { researchFingerprint, resolveNotebookScope, selectResearchDocuments } from './researchCorpusScope';
+ import { resolveResearchSourceScope } from './researchSourceScope';
+ import { notifyAuthoredResearchSourceChanged } from './researchCorpusEvents';
+-import { embeddingConfigurationUsable, getResearchPreparationInventory, pinPublishedResearchDocument, prepareResearchDocuments } from './documentaryPreparation';
++import { embeddingConfigurationUsable, getResearchPreparationInventory, pinPublishedResearchDocuments, prepareResearchDocuments } from './documentaryPreparation';
+ import { effectiveEmbeddingConfig } from './aiClient';
+ import { readResearchAttachmentSource } from './researchAttachmentSources';
+ 
+@@ -60,7 +60,7 @@ export function resolveResearchNotebook(id: string): ResolvedResearchScope {
+   const inventory = researchCorpusInventory();
+   const notebook = notebooks.getResearchNotebook(id);
+   if (!notebook) throw new Error('Notebook not found');
+-  const scope = resolveNotebookScope(getActiveVault().id, notebook, inventory.documents.map(pinPublishedResearchDocument), inventory.collections);
++  const scope = resolveNotebookScope(getActiveVault().id, notebook, pinPublishedResearchDocuments(inventory.documents), inventory.collections);
+   notebooks.recordResearchScope(scope);
+   return scope;
+ }
+@@ -85,7 +85,7 @@ export function resolveAcademicResearchScope(filter?: ResearchChatRequest['selec
+   if (attachments?.attachmentIds !== undefined && (!Array.isArray(attachments.attachmentIds) || attachments.attachmentIds.length > 20)) throw new Error('Invalid research attachments');
+   const vault = getActiveVault();
+   const allowed = filter?.enabled ? resolveResearchSourceScope(filter, true) : null;
+-  const documents = researchCorpusInventory().documents.filter(document => document.workId && (!allowed || allowed.workIds.has(document.workId))).map(pinPublishedResearchDocument).sort((a, b) => a.id.localeCompare(b.id));
++  const documents = pinPublishedResearchDocuments(researchCorpusInventory().documents.filter(document => document.workId && (!allowed || allowed.workIds.has(document.workId)))).sort((a, b) => a.id.localeCompare(b.id));
+   const permissionFingerprint = researchFingerprint(documents.map(document => [document.id, document.permissionRevision]));
+   const conversationAttachments = [...new Set(attachments?.attachmentIds ?? [])].map(attachmentId => {
+     const conversationId = attachments?.conversationId;
+diff --git a/electron/db/documentaryStore.ts b/electron/db/documentaryStore.ts
+index 7bc25ce2..e52420e3 100644
+--- a/electron/db/documentaryStore.ts
++++ b/electron/db/documentaryStore.ts
+@@ -243,6 +243,34 @@ export class DocumentaryStore {
+     const row = this.db.prepare('SELECT identity_json FROM documentary_jobs WHERE id=?').get(id) as { identity_json: string } | undefined;
+     return row ? JSON.parse(row.identity_json) as DocumentaryIndexIdentity : null;
+   }
++  /** `jobIdentity` for many jobs, in one statement. Absent ids are absent from the map. */
++  jobIdentities(ids: string[]): Map<string, DocumentaryIndexIdentity> {
++    const rows = this.db.prepare('SELECT id,identity_json FROM documentary_jobs WHERE id IN (SELECT value FROM json_each(?))').all(JSON.stringify([...new Set(ids)])) as Array<{ id: string; identity_json: string }>;
++    return new Map(rows.map(row => [row.id, JSON.parse(row.identity_json) as DocumentaryIndexIdentity]));
++  }
++  /** The revisions of many documents without their text, each document's in the order
++   *  `embedding_ready DESC, created_at DESC`, with the revision each was built from. */
++  revisionsOf(documentIds: string[]): Map<string, Array<{ index_key: string; identity_json: string; embedding_ready: number; lexical_ready: number; revision: string | null }>> {
++    const rows = this.db.prepare(`SELECT document_id,index_key,identity_json,embedding_ready,lexical_ready,json_extract(identity_json,'$.revision') revision
++      FROM documentary_revisions WHERE document_id IN (SELECT value FROM json_each(?)) ORDER BY document_id,embedding_ready DESC,created_at DESC`)
++      .all(JSON.stringify([...new Set(documentIds)])) as Array<{ document_id: string; index_key: string; identity_json: string; embedding_ready: number; lexical_ready: number; revision: string | null }>;
++    const byDocument = new Map<string, Array<Omit<typeof rows[number], 'document_id'>>>();
++    for (const { document_id: documentId, ...row } of rows) {
++      const list = byDocument.get(documentId);
++      if (list) list.push(row); else byDocument.set(documentId, [row]);
++    }
++    return byDocument;
++  }
++  /** Chunks per revision: passages counted on their index for a published revision, the chunk
++   *  JSON's length for one still being built. One statement for each kind. */
++  chunkCounts(rows: Array<{ index_key: string; lexical_ready: number }>): Map<string, number> {
++    const published = rows.filter(row => row.lexical_ready).map(row => row.index_key);
++    const building = rows.filter(row => !row.lexical_ready).map(row => row.index_key);
++    const counts = new Map<string, number>();
++    if (published.length) for (const row of this.db.prepare('SELECT index_key,COUNT(*) n FROM documentary_passages WHERE index_key IN (SELECT value FROM json_each(?)) GROUP BY index_key').all(JSON.stringify(published)) as Array<{ index_key: string; n: number }>) counts.set(row.index_key, row.n);
++    if (building.length) for (const row of this.db.prepare('SELECT index_key,json_array_length(chunks_json) n FROM documentary_revisions WHERE index_key IN (SELECT value FROM json_each(?))').all(JSON.stringify(building)) as Array<{ index_key: string; n: number | null }>) counts.set(row.index_key, row.n ?? 0);
++    return counts;
++  }
+   revision(id: string): { text: string | null; chunks_json: string | null; lexical_ready: number; embedding_ready: number } | null {
+     return this.db.prepare('SELECT text,chunks_json,lexical_ready,embedding_ready FROM documentary_revisions WHERE index_key=?').get(id) as ReturnType<DocumentaryStore['revision']> ?? null;
+   }
+@@ -262,7 +290,22 @@ export class DocumentaryStore {
+   }
+   publishedDocument(document: ResearchCorpusDocument): ResearchCorpusDocument | null {
+     const row = this.db.prepare('SELECT document_json,index_keys_json FROM documentary_publications WHERE document_id=?').get(document.id) as { document_json: string; index_keys_json: string } | undefined;
+-    if (!row) return null;
++    return row ? DocumentaryStore.fromPublication(document, row) : null;
++  }
++  /** `publishedDocument` for many documents, in one statement: an inventory asked once per source. */
++  publishedDocuments(documents: ResearchCorpusDocument[]): Map<string, ResearchCorpusDocument> {
++    const rows = this.db.prepare('SELECT document_id,document_json,index_keys_json FROM documentary_publications WHERE document_id IN (SELECT value FROM json_each(?))')
++      .all(JSON.stringify(documents.map(document => document.id))) as Array<{ document_id: string; document_json: string; index_keys_json: string }>;
++    const byId = new Map(rows.map(row => [row.document_id, row]));
++    const published = new Map<string, ResearchCorpusDocument>();
++    for (const document of documents) {
++      const row = byId.get(document.id);
++      const pinned = row && DocumentaryStore.fromPublication(document, row);
++      if (pinned) published.set(document.id, pinned);
++    }
++    return published;
++  }
++  private static fromPublication(document: ResearchCorpusDocument, row: { document_json: string; index_keys_json: string }): ResearchCorpusDocument | null {
+     const published: ResearchCorpusDocument = JSON.parse(row.document_json);
+     // An old revision may survive replacement, but never permission revocation
+     // or removal of any file contributing to that revision.
+diff --git a/scripts/test-documentary-inventory-batched.mjs b/scripts/test-documentary-inventory-batched.mjs
+new file mode 100644
+index 00000000..da3983ff
+--- /dev/null
++++ b/scripts/test-documentary-inventory-batched.mjs
+@@ -0,0 +1,68 @@
++// The preparation inventory reads each source's revisions, chunk counts, requests and publication
++// in a fixed number of statements, however many sources the library holds, with the same answer.
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
++import { createHash } from 'node:crypto';
++import { createRequire } from 'node:module';
++import { fileURLToPath } from 'node:url';
++import { installRuntimeHooks, requireElectronRuntime, repoRoot } from './lib/tsRuntimeHooks.mjs';
++if (!requireElectronRuntime(fileURLToPath(import.meta.url), '--documentary-inventory-batched')) process.exit(0);
++const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'nodus-inventory-batched-'));
++installRuntimeHooks(scratch);
++const require = createRequire(import.meta.url);
++const load = file => require(path.join(repoRoot, file));
++globalThis.fetch = () => { throw new Error('External network forbidden in inventory fixture'); };
++try {
++  const db = load('electron/db/database.ts').getDb();
++  const preparation = load('electron/ai/documentaryPreparation.ts');
++  const store = preparation.documentaryStore();
++  new (load('electron/db/documentaryRequests.ts').DocumentaryRequests)(store.db);
++  const { researchCorpusInventory } = load('electron/ai/researchCorpusInventory.ts');
++  const insertWork = db.prepare(`INSERT INTO works(nodus_id,zotero_key,title,authors_json,year,item_type,source_type,deep_hash) VALUES(?,?,?,'[]',2020,'book','text','h')`);
++  const key = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
++  // Every fourth source published with passages, every fourth a request in flight, the rest catalogued.
++  function seed(from, to) {
++    for (let index = from; index < to; index += 1) insertWork.run(`w${index}`, `k-${index}`, `Work ${index}`);
++    const documents = researchCorpusInventory().documents;
++    for (const document of documents.filter(item => Number(item.workId.slice(1)) >= from && Number(item.workId.slice(1)) < to)) {
++      const index = Number(document.workId.slice(1));
++      if (index % 4 === 0) {
++        const identity = { documentId: document.id, attachmentId: null, revision: document.revision, textFingerprint: `t${index}`, chunkerVersion: 'c', processingVersion: 'p', embedding: null };
++        const indexKey = key(identity);
++        store.db.prepare('INSERT INTO documentary_revisions(index_key,document_id,identity_json,chunks_json,lexical_ready,embedding_ready,created_at) VALUES (?,?,?,?,1,0,?)').run(indexKey, document.id, JSON.stringify(identity), '[]', index);
++        store.db.prepare("INSERT INTO documentary_jobs(id,document_id,identity_json,payload_json,state,available_at,created_at,updated_at) VALUES (?,?,?,'{}','complete',0,0,0)").run(indexKey, document.id, JSON.stringify(identity));
++        for (let ordinal = 0; ordinal < 1 + index % 3; ordinal += 1) store.db.prepare("INSERT INTO documentary_passages(id,index_key,document_id,ordinal,text,locator_json) VALUES (?,?,?,?,'text','{}')").run(`${indexKey}:${ordinal}`, indexKey, document.id, ordinal);
++        store.db.prepare('INSERT INTO documentary_publications VALUES (?,?,?)').run(document.id, JSON.stringify(document), JSON.stringify([indexKey]));
++      } else if (index % 4 === 1) {
++        store.db.prepare("INSERT INTO documentary_requests(document_id,revision,vault_id,state,error,updated_at,source_id) VALUES (?,?,'v','queued',NULL,?,?)").run(`request-${index}`, document.revision, index, document.id);
++      }
++    }
++  }
++  const counted = () => {
++    let statements = 0;
++    const prepare = store.db.prepare.bind(store.db);
++    store.db.prepare = sql => { statements += 1; return prepare(sql); };
++    const inventory = preparation.getResearchPreparationInventory();
++    store.db.prepare = prepare;
++    return { statements, inventory };
++  };
++  seed(0, 24);
++  const small = counted();
++  seed(24, 96);
++  const large = counted();
++  assert.equal(large.inventory.documents.length, 96);
++  assert.equal(large.statements, small.statements, `the statements do not grow with the library (${small.statements} for 24 sources, ${large.statements} for 96)`);
++  for (const document of large.inventory.documents) {
++    const index = Number(document.workId.slice(1));
++    const { preparation: state } = document;
++    if (index % 4 === 0) assert.deepEqual([state.lexical, state.text, state.passages], ['ready', 'available', 1 + index % 3], `w${index} is published with its passages`);
++    else if (index % 4 === 1) assert.deepEqual([state.status, state.lexical, document.indexedSource?.indexKeys], ['queued', 'missing', []], `w${index} is queued and exposes no partial revision`);
++    else assert.deepEqual([state.status, state.lexical, document.indexedSource], ['catalogued', 'missing', undefined], `w${index} is only catalogued`);
++  }
++  console.log(`Preparation inventory: ${large.statements} statements for 24 or 96 sources, each source's state unchanged.`);
++} finally {
++  await load('electron/ai/documentaryPreparation.ts').closeDocumentaryPreparation?.();
++  fs.rmSync(scratch, { recursive: true, force: true });
++}

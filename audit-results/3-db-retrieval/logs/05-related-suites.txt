@@ -1,0 +1,27 @@
+== documentary-campaigns
+exit 0
+Frozen This-vault consent, missing configuration, independent future policy, shared job interests, per-document controls and revoked previews passed.
+== documentary-inventory-indexes
+exit 0
+== documentary-store
+exit 0
+Shared documentary store: idempotency, transactional leases, restart recovery, fencing, lexical-first publication, vector compatibility, cancellation, bounded retries and pause passed.
+== research-corpus-run
+exit 0
+Corpus run: pre-ranking scope, mixed Ideas, lexical-only retrieval, shared section budget, no profile barrier and selection revocation passed.
+== documentary-vault-ownership
+exit 0
+Actual documentary queue: two owning vaults, UI switch across extraction await, text-only preparation and scoped DB isolation passed.
+== documentary-automatic-lifecycle
+exit 0
+Automatic academic-only discovery, opt-out, shared deletion and citation revocation passed.
+== documentary-requests
+exit 0
+Source jobs: exclusivity, restart fencing, idempotency, pause, changed revisions, vault boundaries, retry bound, cancellation and Unicode chunk bounds passed.
+== documentary-binary-vectors
+exit 0
+== hierarchical-retrieval
+exit 0
+ok 4 - routed retrieval remains pending while its asynchronous lane yields to the event loop
+# pass 4
+# fail 0
