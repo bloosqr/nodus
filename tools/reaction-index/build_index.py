@@ -58,7 +58,8 @@ RETRO_MIN_COUNT = 5
 # everything on its own — no --fresh, and no silently reused checkpoint from the old extractor.
 #   1: retro templates only (every index up to and including v5)
 #   2: forward templates alongside, spectator-stripped
-EXTRACTION_VERSION = 2
+#   3: --extra-mapped can supply a map for a reaction whose source has none
+EXTRACTION_VERSION = 3
 # Reactions kept per molecule for "recorded ways to make it".
 MOLECULE_SAMPLE_KEYS = 50
 REACTION_SMILES = 2
@@ -175,6 +176,16 @@ def _template(reactants, agents, products, rid):
 
 
 _MAPNO = re.compile(r':(\d+)\]')
+
+
+def _split(reaction):
+    """(reactants, agents, products) of a reaction SMILES with two or three parts."""
+    parts = reaction.split('>')
+    if len(parts) == 3:
+        return parts[0], parts[1], parts[2]
+    if len(parts) == 2:
+        return parts[0], '', parts[1]
+    return None, None, None
 
 
 def _template_centre(mol_l, mol_r):
@@ -386,11 +397,39 @@ def _iter_reactions(path, group):
         yield rid, (_reaction_level_smiles(rxn) or _from_components(rxn))
 
 
-def init_worker(parts_dir, threshold, digests=None, rsmi=None):
-    global _PARTS_DIR, _TEMPLATE_THRESHOLD
+_EXTRA_MAPPED = {}          # content key -> mapped reaction SMILES, from --extra-mapped
+_EXTRA_MAP_FLOOR = 0.0
+
+
+def _load_extra_mapped(path, floor):
+    """{key: mapped reaction} from map_unmapped.py, for reactions whose source data has no map.
+
+    Loaded per process from the path rather than passed through initargs: the table is tens of MB and
+    initargs would copy it into every worker."""
+    out = {}
+    if not path:
+        return out
+    with open(path) as fh:
+        for line in fh:
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if float(r.get('confidence', 0.0)) < floor:
+                continue
+            key, mapped = r.get('key'), r.get('mapped')
+            if key and mapped:
+                out[key] = mapped
+    return out
+
+
+def init_worker(parts_dir, threshold, digests=None, rsmi=None, extra_mapped=None, map_floor=0.0):
+    global _PARTS_DIR, _TEMPLATE_THRESHOLD, _EXTRA_MAPPED, _EXTRA_MAP_FLOOR
     _PARTS_DIR = parts_dir
     _TEMPLATE_THRESHOLD = threshold
     _FILE_DIGESTS.update(digests or {})
+    _EXTRA_MAP_FLOOR = map_floor
+    _EXTRA_MAPPED = _load_extra_mapped(extra_mapped, map_floor)
     _RSMI_OFFSETS.update(rsmi or {})
     # A worker the watchdog terminates mid-result prints a BrokenPipeError traceback; that is
     # expected, so send worker stderr to /dev/null to keep the run's log readable.
@@ -410,7 +449,7 @@ def process_row_group(args):
     templates_rdchiral, templates_fast = Counter(), Counter()
     templates_forward = Counter()
     exact_samples, template_samples = defaultdict(list), defaultdict(list)
-    fast_templates = rdchiral_templates = 0
+    fast_templates = rdchiral_templates = extra_used = 0
     # representative canonical reaction "r>>p" and product key per exact hash, for later fingerprints
     reaction_meta = {}          # key -> [reaction_smiles, product_key]
     products = {}               # product_key -> {n, s, k}
@@ -442,6 +481,18 @@ def process_row_group(args):
             entry['n'] += 1
             if len(entry['k']) < SAMPLE_KEYS_PER_PRODUCT and key not in entry['k']:
                 entry['k'].append(key)
+        # A reaction whose source data carries no map yields no template. When one was supplied
+        # for exactly this reaction (same content key), use it: the audit and the extractor then see
+        # a mapped reaction. The canonical sides above are NOT replaced — only what the template is
+        # cut from — so exact keys, products and citations are unaffected by whether a map exists.
+        supplied = None
+        if not mapped:
+            supplied = _EXTRA_MAPPED.get(key)
+            if supplied:
+                sr, sa, sp = _split(supplied) if '>' in supplied else (None, None, None)
+                if sr and sp:
+                    reactants, agents, products_s, mapped = sr, sa or agents, sp, True
+                    extra_used += 1
         if mapped:
             try:
                 hard = _map_audit(reactants, agents, products_s)
@@ -471,7 +522,7 @@ def process_row_group(args):
                'exactSamples': dict(exact_samples), 'templateSamples': dict(template_samples),
                'reactionMeta': reaction_meta, 'products': products,
                'fastTemplates': fast_templates, 'rdchiralTemplates': rdchiral_templates,
-               'forcedFast': 1 if force_fast else 0,
+               'forcedFast': 1 if force_fast else 0, 'extraMapped': extra_used,
                'family': source_family(path), 'mapAudit': map_audit, 'auditFlags': dict(audit_flags)}
     tmp = out + '.tmp'
     with open(tmp, 'w') as fh:
@@ -575,6 +626,14 @@ def main():
                     help="chemistry-studio plugin directory: audit every recorded reaction with the app's own "
                          'bond-edit gate (skeleton_audit.mjs); without it, citations fall back to the map audit')
     ap.add_argument('--gate-shards', type=int, default=max(1, (os.cpu_count() or 4) - 2))
+    ap.add_argument('--extra-mapped', metavar='JSONL',
+                    help='{key, mapped, confidence} per line from map_unmapped.py: atom maps for '
+                         'reactions whose source data has none, so a template can be cut from them. '
+                         'Keyed by the same content hash this builder uses. NOTE --extra-map-audit '
+                         'is a different thing: it supplies audit verdicts and yields no templates.')
+    ap.add_argument('--map-confidence', type=float, default=0.0,
+                    help='ignore a supplied map below this confidence (default 0: keep all and let '
+                         'the map audit decide, which is what judges whether a map is plausible)')
     ap.add_argument('--extra-map-audit', metavar='JSON',
                     help='{key: [flags]} from re-mapping reactions neither the gate nor their own atom map could '
                          'decide (an ambiguous or missing map): used as the map audit for exactly those')
@@ -673,7 +732,8 @@ def main():
     window = args.workers + 2
 
     def new_pool():
-        return mp.Pool(args.workers, initializer=init_worker, initargs=(parts_dir, args.template_threshold, dict(_FILE_DIGESTS), dict(_RSMI_OFFSETS)))
+        return mp.Pool(args.workers, initializer=init_worker, initargs=(parts_dir, args.template_threshold, dict(_FILE_DIGESTS), dict(_RSMI_OFFSETS),
+                                            args.extra_mapped, args.map_confidence))
 
     pool = new_pool()
     inflight = {}  # AsyncResult -> [task, submit_time]
@@ -746,7 +806,7 @@ def main():
     exact_samples, template_samples = {}, {}
     reaction_meta, products = {}, {}
     map_audit, audit_flags = {}, Counter()
-    fast_templates = rdchiral_templates = forced_fast_parts = 0
+    fast_templates = rdchiral_templates = forced_fast_parts = extra_mapped_used = 0
     # Merge exactly this scan's row groups: a checkpoint left by a dataset since removed or
     # retired upstream, or by a file since replaced, is not part of the index.
     stray = present - expected
@@ -769,6 +829,7 @@ def main():
         f['f'].update(p['templatesFast'])
         f['fwd'].update(p.get('templatesForward', {}))
         fast_templates += p.get('fastTemplates', 0)
+        extra_mapped_used += p.get('extraMapped', 0)
         rdchiral_templates += p.get('rdchiralTemplates', 0)
         audit_flags.update(p.get('auditFlags', {}))
         for k, flags in p['mapAudit'].items():
@@ -986,7 +1047,8 @@ def main():
         chunk = max(1, len(items) // (args.workers * 4))
         batches = [items[i:i + chunk] for i in range(0, len(items), chunk)]
         t1 = time.time()
-        with mp.Pool(args.workers, initializer=init_worker, initargs=(parts_dir, args.template_threshold, dict(_FILE_DIGESTS), dict(_RSMI_OFFSETS))) as pool:
+        with mp.Pool(args.workers, initializer=init_worker, initargs=(parts_dir, args.template_threshold, dict(_FILE_DIGESTS), dict(_RSMI_OFFSETS),
+                                            args.extra_mapped, args.map_confidence)) as pool:
             results = []
             for i, part in enumerate(pool.imap_unordered(compute_reaction_fps, batches)):
                 results.append(part)
@@ -1024,6 +1086,7 @@ def main():
         'version': 4,
         'templatesColumns': ['count', 'rdchiral', 'fast', 'sampleIds', 'smarts'],
         'extractionVersion': EXTRACTION_VERSION,
+        'extraMappedUsed': extra_mapped_used,
         'templateColumns': ['count', 'rdchiral', 'radius', 'smarts'],
         'queryMargin': 2,   # bonds added to a template's radius at query time; see DESIGN-REACTION-STORE.md
         'templatesRejectedUnwindowable': dict(rejected),
