@@ -1,19 +1,8 @@
 name: Research corpus disposable installer validation
+# Automatic validation is selected by CI; this entry point is explicitly manual.
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/agentic-corpus-notebooks]
-    paths:
-      - '.github/workflows/research-corpus-packaging.yml'
-      - 'scripts/verify-research-installer.mjs'
-      - 'scripts/download-research-upgrade-base.mjs'
-      - 'scripts/verify-research-pdf.mjs'
-      - 'electron/bootstrap.ts'
-      - 'electron/qa/isolatedProfile.ts'
-      - 'electron/workers/background*.ts'
-      - 'electron/workers/documentary*.ts'
-      - 'runtime/zotero-mcp/**'
-      - 'build/**'
+
 permissions:
   contents: read
 concurrency:
@@ -32,9 +21,6 @@ jobs:
           - os: macos-latest
             platform: '--mac --arm64'
             arch: arm64
-          - os: macos-15-intel
-            platform: '--mac --x64'
-            arch: x64
           - os: windows-latest
             platform: '--win --x64'
             arch: x64
@@ -47,14 +33,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npx electron-builder install-app-deps
       - run: node scripts/prepare-electron-tests.mjs
-      - name: Install pinned native crypto compiler on Intel macOS
-        if: matrix.os == 'macos-15-intel'
-        run: rustup toolchain install 1.93.0 --profile minimal
       - run: npm run research:runtime
       - run: npm run build
         env:
@@ -197,3 +180,4 @@ jobs:
             build/zotero-mcp/runtime.json
             build/zotero-mcp/legal/**
           if-no-files-found: warn
+          retention-days: 3

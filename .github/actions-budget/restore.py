@@ -39,14 +39,28 @@ def restore_files():
         assert digest((ROOT / filename).read_bytes()) in (digest(original), saved["restrictedSha256"]), \
             f"Changed since the restriction; review before restoring: {filename}"
         originals[filename] = original
+    added = []
+    for filename, expected in STATE.get("addedFiles", {}).items():
+        file = ROOT / filename
+        assert not file.exists() or digest(file.read_bytes()) == expected, \
+            f"Added file changed since the policy; review before restoring: {filename}"
+        if file.exists():
+            added.append(file)
     for filename, original in originals.items():
         (ROOT / filename).write_bytes(original)
+    for file in added:
+        file.unlink()
     print("Restored all changed files byte for byte. Commit first, regenerate the sitemap, then commit and merge before restore-github.")
 
 
 def restore_github():
     # Check everything before enabling any expensive workflow. Files must already
     # be restored on main, and branch rules must not have drifted in the meantime.
+    for filename in STATE.get("addedFiles", {}):
+        result = subprocess.run(["gh", "api", f"repos/{REPOSITORY}/contents/{filename}?ref=main"],
+                                text=True, capture_output=True)
+        assert result.returncode != 0 and "404" in result.stderr, \
+            f"Policy-only file remains on main or could not be checked: {filename}"
     for filename, expected in STATE["workflowSha256"].items():
         file = api(f"contents/{filename}?ref=main")
         assert digest(base64.b64decode(file["content"])) == expected, \
@@ -66,7 +80,8 @@ def restore_github():
     subprocess.run(["node", "--test", "scripts/test-site-sitemap.mjs"], cwd=ROOT, check=True)
     original_ruleset = next(rule for rule in STATE["rulesets"] if rule["id"] == 22341821)
     current = ruleset_payload(api("rulesets/22341821"))
-    assert current in (STATE["pausedRulesetPayload"], ruleset_payload(original_ruleset)), \
+    assert current in (STATE["pausedRulesetPayload"], ruleset_payload(original_ruleset),
+                       STATE.get("currentPolicyRulesetPayload")), \
         "Main ruleset changed since the restriction; review it before restoring."
     workflows = {item["id"]: item for item in api("actions/workflows")["workflows"]}
     for workflow in STATE["workflows"]:

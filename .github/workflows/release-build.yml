@@ -15,6 +15,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: nodus-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   quality-gate:
     needs: validate-release
@@ -24,6 +28,7 @@ jobs:
 
   validate-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
@@ -39,6 +44,7 @@ jobs:
   prepare-release:
     needs: [validate-release, quality-gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -87,7 +93,7 @@ jobs:
       matrix:
         include:
           # Release builds keep native checks on each supported platform.
-          # Intel macOS packaging is paused at the owner's request to save minutes.
+          # Supported macOS releases target Apple silicon; Intel stays historical.
           - os: macos-latest
             platform: '--mac --arm64'
             asset-platform: mac-arm64
@@ -106,6 +112,7 @@ jobs:
             platform: '--linux'
             asset-platform: linux
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
@@ -146,7 +153,7 @@ jobs:
 
       - name: Verify platform-specific macOS contracts
         if: runner.os == 'macOS'
-        run: node --test scripts/test-calendar-integrations.mjs scripts/test-mac-bundle-name.mjs scripts/test-research-isolation.mjs scripts/test-unsigned-mac-update.mjs scripts/test-presenter-multipeer.mjs
+        run: node scripts/ci-native-checks.mjs macos
 
       - name: Checkout the marketplace for native platform checks
         if: runner.os != 'Linux'
@@ -163,7 +170,7 @@ jobs:
 
       - name: Verify Windows and macOS Python credential boundary
         if: runner.os != 'Linux'
-        run: node --test scripts/test-capability-python-runtime.mjs
+        run: node scripts/ci-native-checks.mjs python
 
       # Electron 43 exposes its runtime downloader as a CLI instead of running
       # it during npm install. beforePack inventories LICENSES.chromium.html
@@ -344,6 +351,10 @@ jobs:
           security delete-keychain "$keychain_path" >/dev/null 2>&1
           rm -f "$certificate_path" "$api_key_path" "$keychain_path" "$signing_probe"
 
+      - name: Verify native Research runtime and real isolated notebooks
+        if: runner.os != 'Linux'
+        run: node scripts/ci-native-checks.mjs research
+
       - name: Upload platform assets to the single draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -370,6 +381,7 @@ jobs:
     # still waits for this gate and all three supported native builds.
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ inputs.tag }}
@@ -421,6 +433,7 @@ jobs:
     if: inputs.channel == 'latest'
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
@@ -484,6 +497,7 @@ jobs:
       - merge-mac-manifest
       - build-zotero-plugin
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       RELEASE_TAG: ${{ inputs.tag }}
       RELEASE_CHANNEL: ${{ inputs.channel }}

@@ -1,15 +1,7 @@
 name: AppImage update compatibility
 
+# Automatic validation is selected by CI; this entry point is explicitly manual.
 on:
-  pull_request:
-    paths:
-      - 'package.json'
-      - 'package-lock.json'
-      - 'build/electron-builder.release.cjs'
-      - 'scripts/*appimage*.mjs'
-      - 'scripts/upload-release-assets.mjs'
-      - '.github/workflows/*release*.yml'
-      - '.github/workflows/appimage-updates.yml'
   workflow_dispatch:
 
 permissions:
