@@ -24,9 +24,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx electron-builder install-app-deps
       - name: Materialize Electron before parallel tests
         run: node scripts/prepare-electron-tests.mjs
+      - name: Rebuild Electron native dependencies on Linux
+        if: runner.os == 'Linux'
+        env:
+          CC: clang-15
+          CXX: clang++-15
+        run: npx electron-builder install-app-deps
+      - name: Rebuild Electron native dependencies on macOS and Windows
+        if: runner.os != 'Linux'
+        run: npx electron-builder install-app-deps
       - name: Hash-locked private runtime and installed-byte license inventory
         run: npm run research:runtime
       - name: Native stdio against synthetic local API

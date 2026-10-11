@@ -26,5 +26,7 @@ jobs:
           cache: npm
       - name: Install controller test dependencies
         run: npm ci --ignore-scripts
+      - name: Materialize the verified Electron runtime
+        run: node scripts/prepare-electron-tests.mjs
       - name: Verify encrypted native controller and PDF previews in Electron
         run: node scripts/verify-presenter-lan.cjs

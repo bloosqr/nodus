@@ -364,7 +364,7 @@
     ".github/workflows/appimage-updates.yml": {
       "snapshot": "original-files/.github/workflows/appimage-updates.yml",
       "originalSha256": "5d7769024916a640bddb372d476e3af52ac51ed3b4d321e6da2ebccbe408a67a",
-      "restrictedSha256": "486358c5b403ce4467c8a99cd8c15a40f24279dfed318ce036c4fbc96b42f794"
+      "restrictedSha256": "49a671c17c07143059056fc206477e65207e0df1697cb83c6b5ae3af9747fe8b"
     },
     ".github/workflows/nodus-server-image.yml": {
       "snapshot": "original-files/.github/workflows/nodus-server-image.yml",
@@ -379,17 +379,17 @@
     ".github/workflows/presenter-lan.yml": {
       "snapshot": "original-files/.github/workflows/presenter-lan.yml",
       "originalSha256": "c3602571798ea0bff7497206ac41ef7e2228316711dfe3380f6426bb59d798e2",
-      "restrictedSha256": "756f6e0cf5358fec096aac6649c1e9e4d4f73b049c4b33e73efc284bc66bdea2"
+      "restrictedSha256": "e4d7ff93aea43d5b6cdd6f63e5a042a3ece9e0094535323b884aef13969f26ca"
     },
     ".github/workflows/research-corpus-native.yml": {
       "snapshot": "original-files/.github/workflows/research-corpus-native.yml",
       "originalSha256": "a31713afd6d4da402daec761eee5ee0f86586748fc6d27f976e1159217f5314c",
-      "restrictedSha256": "abbddd5dfcf5fa08d2af6607313ea29a403c439c5398f71f48232e0a5fbfccb1"
+      "restrictedSha256": "4664755ed8327753cb1a0f9be22b02fbb3ce310213b532abf514ae37e8911db9"
     },
     ".github/workflows/research-corpus-packaging.yml": {
       "snapshot": "original-files/.github/workflows/research-corpus-packaging.yml",
       "originalSha256": "fbb7702f0f582bf883bb2fc4edc709452d8b08c84e9cea0756190135ed1b09d6",
-      "restrictedSha256": "28b4d99c90a30221a59583f3e66195860d399f67c53cc7442daf4d08e2964df8"
+      "restrictedSha256": "095bb25338d7c4388b8d1cdb6b593f398ac14714dfce0de2b66288f3c5d9527a"
     },
     ".github/workflows/scheme-scan.yml": {
       "snapshot": "original-files/.github/workflows/scheme-scan.yml",

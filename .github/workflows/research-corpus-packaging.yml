@@ -15,7 +15,7 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             platform: '--linux deb --x64'
             arch: x64
           - os: macos-latest
@@ -36,8 +36,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx electron-builder install-app-deps
       - run: node scripts/prepare-electron-tests.mjs
+      - name: Install Linux display and installer tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y xvfb libgtk-3-0 libnss3 libasound2 libfuse2 zsync
+      - name: Rebuild Electron native dependencies on Linux
+        if: runner.os == 'Linux'
+        env:
+          CC: clang-15
+          CXX: clang++-15
+        run: npx electron-builder install-app-deps
+      - name: Rebuild Electron native dependencies on macOS and Windows
+        if: runner.os != 'Linux'
+        run: npx electron-builder install-app-deps
       - run: npm run research:runtime
       - run: npm run build
         env:
@@ -146,6 +159,9 @@ jobs:
         run: node scripts/verify-macos-release.cjs release ${{ matrix.arch }}
       - name: Package native Windows or Linux installer without publishing
         if: runner.os != 'macOS'
+        env:
+          CC: ${{ runner.os == 'Linux' && 'clang-15' || 'cl' }}
+          CXX: ${{ runner.os == 'Linux' && 'clang++-15' || 'cl' }}
         run: npx electron-builder ${{ matrix.platform }} --publish never --config build/electron-builder.research.cjs
       - name: Remove temporary macOS credentials
         if: always() && startsWith(matrix.os, 'macos')
