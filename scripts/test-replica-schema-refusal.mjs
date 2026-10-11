@@ -16,13 +16,16 @@ import path from 'node:path';
 import test from 'node:test';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { replicaUtilityHarness } from './lib/replicaUtilityHarness.mjs';
 import { installRuntimeHooks, requireElectronRuntime } from './lib/tsRuntimeHooks.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (!requireElectronRuntime(fileURLToPath(import.meta.url), '--electron-replica-schema-refusal')) process.exit(0);
 
 const userData = await mkdtemp(path.join(os.tmpdir(), 'nodus-replica-schema-refusal-'));
-installRuntimeHooks(userData);
+const harness = await replicaUtilityHarness(userData);
+process.env.NODUS_SERVER_REPLICA_WORKER_FILE = harness.worker;
+installRuntimeHooks(userData, { utilityProcess: harness.utilityProcess });
 const require = createRequire(import.meta.url);
 const { SCHEMA_VERSION } = require(path.join(repoRoot, 'electron/db/migrations.ts'));
 const { createVault } = require(path.join(repoRoot, 'electron/vaults/vaultRegistry.ts'));
@@ -31,6 +34,7 @@ const replica = require(path.join(repoRoot, 'electron/serverSync/replicaService.
 
 test.after(async () => {
   replica.stopReplicaSync();
+  harness.cleanup();
   await rm(userData, { recursive: true, force: true });
 });
 
@@ -55,7 +59,7 @@ test('a newer-schema snapshot is downloaded once, refused, and then answered by 
       const tag = `W/"${published.revision}"`;
       if (init.headers?.['if-none-match'] === tag) return new Response(null, { status: 304, headers: { etag: tag } });
       fullDownloads += 1;
-      const body = zlib.gzipSync(Buffer.from(JSON.stringify({ schemaVersion: published.schemaVersion, revision: published.revision, tables: {} })));
+      const body = zlib.gzipSync(Buffer.from(JSON.stringify({ format: 'nodus.server-snapshot', version: 2, schemaVersion: published.schemaVersion, revision: published.revision, tables: {}, assets: [] })));
       return new Response(body, { status: 200, headers: { etag: tag, 'x-nodus-revision': published.revision } });
     }
     if (target.includes('/mutations')) relayCalls += 1;

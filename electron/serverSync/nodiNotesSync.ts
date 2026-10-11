@@ -1,5 +1,6 @@
 import { applyRemoteNodiNotes } from '../nodiNotes';
-import { readMeta, selectNotesChangedSince, writeMeta, type StoredNodiNote } from '../nodiNotesDb';
+import { readMeta, selectNote, selectNotesChangedSince, writeMeta, type StoredNodiNote } from '../nodiNotesDb';
+import { createHash } from 'node:crypto';
 
 /**
  * Nodi's quick notes, kept level between a person's devices.
@@ -27,15 +28,7 @@ import { readMeta, selectNotesChangedSince, writeMeta, type StoredNodiNote } fro
 
 const LAST_SYNC_KEY = 'lastSyncedAt';
 const LAST_SERVER_KEY = 'lastSyncedServer';
-/**
- * How far this machine's own changes have been sent, on THIS machine's clock.
- *
- * Kept apart from LAST_SYNC_KEY on purpose. That one is the server's clock and answers
- * "what has the server got that I have not seen"; comparing a local `updated_at` against it
- * meant a desktop running behind the server never sent an edit made within its lag after a
- * sync, and that jumping it to the server's "now" skipped every change past the first batch.
- */
-const LAST_SENT_KEY = 'lastSentUpdatedAt';
+const SENT_NOTES_KEY = 'sentNoteFingerprints';
 const REQUEST_TIMEOUT_MS = 20_000;
 /** Ample for text, and a hard stop on a runaway note. */
 const MAX_BATCH = 200;
@@ -50,6 +43,7 @@ export interface NodiNotesSyncResult {
   applied: number;
   serverTime: number | null;
   error: string | null;
+  status?: number;
 }
 
 interface WireNote {
@@ -105,19 +99,23 @@ function since(url: string): number {
   return Number.isFinite(stored) ? stored : 0;
 }
 
-/** The local `updated_at` up to which this machine's changes have reached `url`. */
-function sentUpTo(url: string): number {
-  if (readMeta(LAST_SERVER_KEY) !== url) return 0;
-  const stored = Number(readMeta(LAST_SENT_KEY));
-  return Number.isFinite(stored) ? stored : 0;
+function fingerprint(note: StoredNodiNote): string {
+  return createHash('sha256').update(JSON.stringify(toWire(note))).digest('hex');
+}
+
+function sentNotes(url: string): Record<string, string> {
+  try {
+    const state = JSON.parse(readMeta(SENT_NOTES_KEY) || '{}') as { url?: string; notes?: Record<string, string> };
+    return state.url === url && state.notes ? state.notes : {};
+  } catch { return {}; }
 }
 
 export async function syncNodiNotes(target: NodiNotesSyncTarget): Promise<NodiNotesSyncResult> {
   const from = since(target.url);
-  const sentFrom = sentUpTo(target.url);
-  const changed = selectNotesChangedSince(sentFrom);
-  const outgoing = changed.slice(0, MAX_BATCH);
-  const truncated = changed.length > outgoing.length;
+  // The server's clock is a read cursor, not an acknowledgement for unsent local notes.
+  // Remember actual content sent so batches >200 and clocks in the future both converge.
+  const sent = sentNotes(target.url);
+  const outgoing = selectNotesChangedSince(0).filter((note) => sent[note.id] !== fingerprint(note)).slice(0, MAX_BATCH);
 
   try {
     const response = await fetch(`${target.url}/api/v1/nodi/notes?since=${from}`, {
@@ -127,25 +125,28 @@ export async function syncNodiNotes(target: NodiNotesSyncTarget): Promise<NodiNo
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
-      return { sent: 0, applied: 0, serverTime: null, error: `HTTP ${response.status}` };
+      return { sent: 0, applied: 0, serverTime: null, error: `HTTP ${response.status}`, status: response.status };
     }
-    const body = (await response.json()) as { notes?: unknown[]; serverTime?: number };
+    const body = (await response.json()) as { notes?: unknown[]; serverTime?: number; rejected?: Array<{ id: string }> };
     const incoming = Array.isArray(body.notes)
       ? body.notes.map(fromWire).filter((note): note is StoredNodiNote => note !== null)
       : [];
     const applied = applyRemoteNodiNotes(incoming);
+    const rejected = new Set((body.rejected || []).map((note) => note.id));
+    for (const note of outgoing) if (!rejected.has(note.id)) sent[note.id] = fingerprint(note);
+    for (const note of incoming) {
+      const local = selectNote(note.id);
+      if (local && fingerprint(local) === fingerprint(note)) sent[note.id] = fingerprint(local);
+    }
+    writeMeta(SENT_NOTES_KEY, JSON.stringify({ url: target.url, notes: sent }));
 
     const serverTime = Number(body.serverTime);
     if (Number.isFinite(serverTime)) {
       writeMeta(LAST_SERVER_KEY, target.url);
       writeMeta(LAST_SYNC_KEY, String(serverTime));
-      // Advance only over what was actually sent. A cut batch stops one millisecond short of
-      // its last note, so a note sharing that timestamp beyond the cut goes in the next one.
-      const last = outgoing.at(-1)?.updatedAt;
-      const sent = last === undefined ? sentFrom : truncated ? Math.max(sentFrom, last - 1) : Math.max(sentFrom, last);
-      writeMeta(LAST_SENT_KEY, String(sent));
     }
-    return { sent: outgoing.length, applied, serverTime: Number.isFinite(serverTime) ? serverTime : null, error: null };
+    return { sent: outgoing.length - rejected.size, applied, serverTime: Number.isFinite(serverTime) ? serverTime : null,
+      error: rejected.size ? 'El servidor rechazó una o más notas pendientes.' : null };
   } catch (error) {
     // Offline is the ordinary case. Nothing was acknowledged, so the next tick sends the
     // same batch again — which is safe, because the merge is idempotent.
@@ -155,5 +156,6 @@ export async function syncNodiNotes(target: NodiNotesSyncTarget): Promise<NodiNo
 
 /** Whether anything is waiting to go out, so a tick can skip the request entirely. */
 export function nodiNotesPending(url: string): boolean {
-  return selectNotesChangedSince(sentUpTo(url)).length > 0;
+  const sent = sentNotes(url);
+  return selectNotesChangedSince(0).some((note) => sent[note.id] !== fingerprint(note));
 }

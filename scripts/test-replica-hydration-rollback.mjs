@@ -15,13 +15,16 @@ import path from 'node:path';
 import test from 'node:test';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { replicaUtilityHarness } from './lib/replicaUtilityHarness.mjs';
 import { installRuntimeHooks, requireElectronRuntime } from './lib/tsRuntimeHooks.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (!requireElectronRuntime(fileURLToPath(import.meta.url), '--electron-replica-hydration-rollback')) process.exit(0);
 
 const userData = await mkdtemp(path.join(os.tmpdir(), 'nodus-replica-hydration-rollback-'));
-installRuntimeHooks(userData);
+const harness = await replicaUtilityHarness(userData);
+process.env.NODUS_SERVER_REPLICA_WORKER_FILE = harness.worker;
+installRuntimeHooks(userData, { utilityProcess: harness.utilityProcess });
 const require = createRequire(import.meta.url);
 const { SCHEMA_VERSION } = require(path.join(repoRoot, 'electron/db/migrations.ts'));
 const { listVaults } = require(path.join(repoRoot, 'electron/vaults/vaultRegistry.ts'));
@@ -29,6 +32,7 @@ const replica = require(path.join(repoRoot, 'electron/serverSync/replicaService.
 
 test.after(async () => {
   replica.stopReplicaSync();
+  harness.cleanup();
   await rm(userData, { recursive: true, force: true });
 });
 
@@ -40,7 +44,7 @@ test('a first pull that fails rolls the new connected vault back and says why', 
       return Response.json({ deviceToken: 'device-token', role: 'reader', space: { id: 'space-1', name: 'Espacio', vault: { type: 'academic' } } });
     }
     if (target.endsWith('/snapshot')) {
-      const body = zlib.gzipSync(Buffer.from(JSON.stringify({ schemaVersion: SCHEMA_VERSION + 1, revision: 'rev-new', tables: {} })));
+      const body = zlib.gzipSync(Buffer.from(JSON.stringify({ format: 'nodus.server-snapshot', version: 2, schemaVersion: SCHEMA_VERSION + 1, revision: 'rev-new', tables: {} })));
       return new Response(body, { status: 200, headers: { 'x-nodus-revision': 'rev-new' } });
     }
     return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });

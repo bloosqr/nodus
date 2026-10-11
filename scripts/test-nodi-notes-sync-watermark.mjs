@@ -48,7 +48,12 @@ test.after(async () => {
 const target = { url: 'https://sync.invalid', token: 'device-token' };
 
 test('a first sync of more than one batch eventually sends every note', async () => {
-  for (let index = 0; index < 250; index += 1) notesModule.saveNodiNote({ title: `Nota ${index}`, content: `Cuerpo ${index}` });
+  const originalNow = Date.now;
+  const timestamp = originalNow();
+  Date.now = () => timestamp;
+  try {
+    for (let index = 0; index < 250; index += 1) notesModule.saveNodiNote({ title: `Nota ${index}`, content: `Cuerpo ${index}` });
+  } finally { Date.now = originalNow; }
   for (let round = 0; round < 3 && syncModule.nodiNotesPending(target.url); round += 1) {
     const result = await syncModule.syncNodiNotes(target);
     assert.equal(result.error, null, result.error ?? '');
@@ -70,4 +75,29 @@ test('an edit made on a desktop whose clock runs behind the server is still sent
   assert.equal(syncModule.nodiNotesPending(target.url), true, 'the edit is not seen as pending');
   await syncModule.syncNodiNotes(target);
   assert.equal(received.get(note.id)?.content, 'después', 'the edit never reached the server');
+});
+
+ test('a local clock rollback does not hide a pending note', async () => {
+  const originalNow = Date.now;
+  Date.now = () => originalNow() - 60 * 60_000;
+  let note;
+  try { note = notesModule.saveNodiNote({ title: 'Rollback', content: 'behind the last sent timestamp' }); }
+  finally { Date.now = originalNow; }
+  assert.equal(syncModule.nodiNotesPending(target.url), true);
+  await syncModule.syncNodiNotes(target);
+  assert.equal(received.get(note.id)?.content, note.content);
+});
+
+ test('a server-rejected note remains pending and is retried', async () => {
+  const note = notesModule.saveNodiNote({ title: 'Rejected', content: 'retry me' });
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ notes: [], rejected: [{ id: note.id }], serverTime: Date.now() }), { status: 200 });
+  try {
+    const result = await syncModule.syncNodiNotes(target);
+    assert.match(result.error, /rechaz/);
+    assert.equal(syncModule.nodiNotesPending(target.url), true);
+  } finally { globalThis.fetch = original; }
+  await syncModule.syncNodiNotes(target);
+  assert.equal(received.get(note.id)?.content, note.content);
+  assert.equal(syncModule.nodiNotesPending(target.url), false);
 });

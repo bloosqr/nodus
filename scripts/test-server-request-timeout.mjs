@@ -49,3 +49,23 @@ test('a snapshot-sized upload gets a budget a 2 Mbit/s uplink can meet', async (
     globalThis.fetch = originalFetch;
   }
 });
+
+test('a scaled upload timeout preserves the caller cancellation signal', async () => {
+  const originalFetch = globalThis.fetch;
+  let receivedSignal;
+  globalThis.fetch = async (_url, init) => {
+    receivedSignal = init.signal;
+    return new Response('{}');
+  };
+  try {
+    for (const send of [fetchWithTimeout, serverFetchWithTimeout]) {
+      const controller = new AbortController();
+      await send('https://sync.invalid/', { method: 'PUT', body: Buffer.alloc(1024), signal: controller.signal });
+      assert.equal(receivedSignal.aborted, false);
+      const reason = new Error('cancelled by the user');
+      controller.abort(reason);
+      assert.equal(receivedSignal.aborted, true);
+      assert.equal(receivedSignal.reason, reason);
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});
