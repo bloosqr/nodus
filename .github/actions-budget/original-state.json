@@ -268,12 +268,12 @@
       }
     ]
   },
-  "budgetCiSha256": "fbc6b5f2f43382d430388f8cbf31d2efe8cb8551a71f367f8f7acdde700d3a59",
+  "budgetCiSha256": "add3fad496bb2da63be0c4ba3841699cdef758a84b8a0ec8c9768a101e3f849a",
   "changedFiles": {
     ".github/workflows/ci.yml": {
       "snapshot": "original-ci.yml",
       "originalSha256": "33555a41d46015c8ba92d7069740027c4ca00a98e71bf234829c4538ec206359",
-      "restrictedSha256": "fbc6b5f2f43382d430388f8cbf31d2efe8cb8551a71f367f8f7acdde700d3a59"
+      "restrictedSha256": "add3fad496bb2da63be0c4ba3841699cdef758a84b8a0ec8c9768a101e3f849a"
     },
     ".github/workflows/release-build.yml": {
       "snapshot": "original-files/.github/workflows/release-build.yml",
