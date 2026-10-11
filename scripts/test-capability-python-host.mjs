@@ -107,6 +107,16 @@ test('an interpreter that exits without reading its input is reported by its exi
 });
 
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+async function assertStopped(pids) {
+  try {
+    const deadline = Date.now() + 2_000;
+    while (pids.some(alive) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.ok(pids.every(pid => !alive(pid)), 'shutdown left a persistent interpreter alive');
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  }
+}
 const waitFor = async (check, ms = 5_000) => { const end = Date.now() + ms; while (!check() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 25)); return check(); };
 
 test('cancelling a call also stops what the interpreter started', async (t) => {
@@ -185,6 +195,7 @@ test('a persistent script is started once and answers call after call', async (t
   installRuntime();
   const file = script(SERVED);
   const ask = (request, extra = {}, signal = new AbortController().signal) => lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', file], stdin: JSON.stringify(request), timeoutMs: 30_000, persistent: true, ...extra }, signal);
+  const parkedPids = [];
   try {
     const first = JSON.parse((await ask({ echo: 'é€' })).stdout);
     const second = JSON.parse((await ask({ echo: 2 })).stdout);
@@ -210,7 +221,50 @@ test('a persistent script is started once and answers call after call', async (t
     // Calls at the same time are answered by different interpreters.
     const both = await Promise.all([ask({ sleep: 0.3 }), ask({ sleep: 0.3 })]);
     assert.notEqual(JSON.parse(both[0].stdout).pid, JSON.parse(both[1].stdout).pid);
-  } finally { lib.stopServedInterpreters(); }
+    parkedPids.push(...both.map(result => JSON.parse(result.stdout).pid));
+  } finally { lib.stopServedInterpreters(); await assertStopped(parkedPids); }
+});
+
+const SERVED_WITH_PID = SERVED.replace('if request.get("sleep"):', 'if request.get("pidFile"): open(request["pidFile"], "w").write(str(os.getpid()))\n    if request.get("sleep"):');
+
+test('shutdown stops an active persistent interpreter and settles its call', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  installRuntime();
+  const pidFile = path.join(scratch, 'served-active.pid');
+  const pending = lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', script(SERVED_WITH_PID)], stdin: JSON.stringify({ pidFile, sleep: 5 }), timeoutMs: 30_000, persistent: true }, new AbortController().signal);
+  let pid;
+  try {
+    const started = Date.now();
+    while (!fs.existsSync(pidFile) && Date.now() - started < 3_000) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.ok(fs.existsSync(pidFile), 'the interpreter started its request');
+    pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    lib.stopServedInterpreters();
+    const result = await Promise.race([pending, new Promise((_resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('shutdown left the call pending')), 2_000);
+      timer.unref();
+    })]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /terminated|exited before/);
+  } finally {
+    lib.stopServedInterpreters();
+    if (pid) await assertStopped([pid]);
+    await pending.catch(() => undefined);
+  }
+});
+
+test('cancellation immediately after admission never starts either kind of interpreter', async (t) => {
+  if (!interpreter) { t.skip('no Python interpreter on this machine'); return; }
+  installRuntime();
+  for (const persistent of [false, true]) {
+    const marker = path.join(scratch, `cancelled-before-start-${persistent}.pid`);
+    const controller = new AbortController();
+    const pending = lib.runInPythonRuntime(runtime, { runtimeId: 'probe', args: ['-I', script(SERVED_WITH_PID)], stdin: JSON.stringify({ pidFile: marker }), timeoutMs: 30_000, persistent }, controller.signal);
+    controller.abort();
+    try {
+      await assert.rejects(pending, { name: 'AbortError' });
+      assert.equal(fs.existsSync(marker), false);
+    } finally { lib.stopServedInterpreters(); }
+  }
 });
 
 test('a call that carries a secret is never given a persistent interpreter', async (t) => {
