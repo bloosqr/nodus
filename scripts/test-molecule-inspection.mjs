@@ -305,7 +305,7 @@ test('the template asks for names and roles only, and forbids the model from wri
   assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('You never choose coefficients'), 'the equation is the application\'s job');
   // The format example follows its own rules: a released species is a Byproduct, not a Product.
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /Products: sodium ethanoate\n\s+Byproducts: water/);
-  assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('chemistry-plan'), 'the target plan is still requested');
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /Draw nothing: emit no chemistry-plan/, 'a route answer asks for no drawing block: the turn strips them all');
   assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('true catalyst'), 'the agents field is for true catalysts only');
   assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('racemic'), 'a racemate can be stated in the prose');
   // It must not invite a reaction line or a per-species SMILES example any more.
@@ -1016,11 +1016,12 @@ test('the backwards correction names the requested target with its structure', (
   const bare = normalizeRouteAudit({ continuous: false, blocked: ['Step 1 is not balanced.'], steps: [{ index: 0, reaction: 'a>>b', ok: true, balanced: false, chargeBalanced: true, differences: ['x'], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [] }], links: [] });
   const plain = routeFixChips(formatNamedRouteFixPrompts(labels, bare)).find((chip) => chip.label === 'Fix from the target backwards');
   assert.match(plain.prompt, /name the requested target as a Product\./);
-  // The target drawing quotes the request's own target, so the drawing tool accepts it; with no
-  // target the correction asks for no drawing rather than one that would be refused.
+  // The correction quotes the request's own target so the model knows what to reach, and asks for
+  // no drawing either way: the route turn strips every chemistry-plan fence.
   assert.ok(back.prompt.includes(`The requested target, exactly as the original request gave it: \`${smiles}\`.`));
-  assert.ok(back.prompt.includes(`"input":{"kind":"smiles","value":"${smiles}"}`));
-  assert.match(plain.prompt, /Do not emit a chemistry-plan block in this correction/);
+  assert.ok(!back.prompt.includes(`"input":{"kind":"smiles","value":"${smiles}"}`), 'no drawing plan is requested');
+  assert.match(back.prompt, /Do not emit a chemistry-plan block/);
+  assert.match(plain.prompt, /Do not emit a chemistry-plan block/);
 });
 
 test('the first request and every correction carry the same species rules, once', () => {
@@ -1119,9 +1120,9 @@ test('the route review blocks a workup folded into another transformation', () =
   assert.match(ROUTE_REVIEW_SYSTEM, /one-pot cascade such as the Robinson tropinone synthesis is one step/, 'true cascades stay allowed');
 });
 
-test('the first request draws the target from its SMILES when the request gives one', () => {
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /If my request gives the\s+target's SMILES, use it \(kind "smiles"\)/);
-  assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('"input":{"kind":"smiles","value":"EXACT TARGET SMILES FROM MY REQUEST"}'));
+test('the first request asks for no target drawing, which the route turn would strip', () => {
+  assert.ok(!SYNTHESIS_TEMPLATE_ADDENDUM.includes('EXACT TARGET SMILES FROM MY REQUEST'));
+  assert.doesNotMatch(SYNTHESIS_TEMPLATE_ADDENDUM, /exactly one fenced code block tagged chemistry-plan/);
 });
 
 test('an unbuildable step keeps every later step on its own number', () => {
@@ -1145,7 +1146,7 @@ test('the report, the drawings and the corrections share one step verdict', () =
 
 test('the shared rules keep a workup as its own step, as the review requires', () => {
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A workup — an acidification, basification or quench .* is always its own step/);
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below and the one target chemistry-plan/);
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below: the application derives/);
   assert.match(ROUTE_CONTINUITY_SYSTEM_RULE, /In a route, do not write a reaction SMILES/, 'single-reaction drawings stay allowed');
 });
 
@@ -1209,11 +1210,26 @@ test('a named new route never inherits a different target, including Spanish req
   }
 });
 
-test('correction drawing plans preserve backslashes in stereochemical SMILES', () => {
+test('a correction quotes a stereochemical target with its backslashes intact', () => {
   const target = 'C/C=C\\C';
   const prompt = fixPayload(formatMissingSpeciesPrompt(target)).prompt;
-  const json = prompt.match(/chemistry-plan with (\{.*\}), copying/)[1];
-  assert.equal(JSON.parse(json).species[0].input.value, target);
+  assert.ok(prompt.includes(`exactly as the original request gave it: \`${target}\`.`));
+});
+
+// Every turn that is sent the route contract or a correction is a route turn, and a route turn
+// strips every chemistry-plan fence before anything runs it. A prompt that still asks for one makes
+// the model announce a drawing ("the target is drawn below") that the reader sees replaced by the
+// "Not drawn here" placeholder — measured in 96 harness answers before this change.
+test('no route prompt asks for a drawing block the route turn strips', () => {
+  const target = 'CC(=O)Oc1ccccc1C(=O)O';
+  const prompts = [SYNTHESIS_TEMPLATE_ADDENDUM, fixPayload(formatMissingSpeciesPrompt(target)).prompt, fixPayload(formatMissingSpeciesPrompt(null)).prompt];
+  for (const prompt of prompts) {
+    assert.doesNotMatch(prompt, /emit exactly one fenced code block tagged chemistry-plan/);
+    assert.doesNotMatch(prompt, /Draw (?:ONLY|only) (?:the final|that) target/);
+    // What a compliant answer to the old wording produced, to show the turn removes it.
+    const compliant = `Step 1 …\n\n\`\`\`chemistry-plan\n{"version":2,"kind":"structure","depiction":"skeletal","species":[{"id":"target","input":{"kind":"smiles","value":"${target}"}}]}\n\`\`\`\n`;
+    assert.equal(stripDrawingRequests(compliant).removed, 1, 'a route turn strips a target plan');
+  }
 });
 
 const ORD_A = 'ord-72c311ce8dea41689de4d74d72468e40';
@@ -1389,9 +1405,9 @@ test('the route review blocks a workup folded into another transformation', () =
   assert.match(ROUTE_REVIEW_SYSTEM, /one-pot cascade such as the Robinson tropinone synthesis is one step/, 'true cascades stay allowed');
 });
 
-test('the first request draws the target from its SMILES when the request gives one', () => {
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /If my request gives the\s+target's SMILES, use it \(kind "smiles"\)/);
-  assert.ok(SYNTHESIS_TEMPLATE_ADDENDUM.includes('"input":{"kind":"smiles","value":"EXACT TARGET SMILES FROM MY REQUEST"}'));
+test('the first request asks for no target drawing, which the route turn would strip', () => {
+  assert.ok(!SYNTHESIS_TEMPLATE_ADDENDUM.includes('EXACT TARGET SMILES FROM MY REQUEST'));
+  assert.doesNotMatch(SYNTHESIS_TEMPLATE_ADDENDUM, /exactly one fenced code block tagged chemistry-plan/);
 });
 
 test('an unbuildable step keeps every later step on its own number', () => {
@@ -1415,7 +1431,7 @@ test('the report, the drawings and the corrections share one step verdict', () =
 
 test('the shared rules keep a workup as its own step, as the review requires', () => {
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A workup — an acidification, basification or quench .* is always its own step/);
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below and the one target chemistry-plan/);
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /except in the single structure fallback below: the application derives/);
   assert.match(ROUTE_CONTINUITY_SYSTEM_RULE, /In a route, do not write a reaction SMILES/, 'single-reaction drawings stay allowed');
 });
 
@@ -1499,8 +1515,9 @@ test('the route rules agree with each other and with what the checker does', () 
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /goes under Agents as the solvent and under Byproducts as the amount formed, never under Reactants/);
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /Name each salt whole \(sodium sulfate, chromium\(III\) sulfate\) even when two salts share an ion/);
   assert.doesNotMatch(SYNTHESIS_TEMPLATE_ADDENDUM, /do not repeat an ion that two salts share/);
-  // The checker files an idle reagent under Agents, so only an unformed product is removed.
-  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A reagent listed under Reactants that takes no part is treated as an Agent by the checker/);
+  // A declared reactant that takes no part fails the step (routeStepFailure, `refiledReactant`),
+  // so the rules say so instead of promising it is harmless.
+  assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /A species listed under Reactants that takes no part fails the step/);
   // One definition of a folded workup, in the author's rules and the reviewer's, and the
   // product's isolated form is a naming choice in both.
   assert.match(SYNTHESIS_TEMPLATE_ADDENDUM, /folds a workup when it lists the workup's acid or base together with the transformation's reagents/);
@@ -2024,6 +2041,21 @@ test('one fault repeated across steps is stated once, as a pattern', () => {
   if (single) assert.doesNotMatch(single.prompt, /One fault repeats below/);
 });
 
+test('a repeated fault that already ends in a full stop is not given a second one', () => {
+  // Measured: "— RDKit rejected the molecular graph.." reached the model. The pattern line keeps
+  // the first sentence and adds its own full stop, and a message with no ". " inside it IS its
+  // first sentence, full stop included.
+  const step = (index) => ({
+    index, reaction: 'a>>b', ok: false, error: '"COc1ccc2c(c1)CC" — RDKit rejected the molecular graph.',
+    balanced: false, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0, reactants: [], agents: [], products: [],
+  });
+  const audit = normalizeRouteAudit({ continuous: true, blocked: [], steps: [step(3), step(4)], links: [] });
+  const chips = routeFixChips(formatNamedRouteFixPrompts([[], [], [], [], []], audit));
+  const backwards = chips.find((chip) => chip.label === 'Fix from the target backwards');
+  assert.match(backwards.prompt, /step 4, step 5 all fail the same way: "COc1ccc2c\(c1\)CC" — RDKit rejected the molecular graph\.\n/);
+  assert.doesNotMatch(backwards.prompt, /graph\.\./);
+});
+
 test('distinct faults are not collapsed into a false pattern', () => {
   const audit = normalizeRouteAudit({
     continuous: true, blocked: [],
@@ -2250,14 +2282,31 @@ test('a step that balanced only by refiling a declared reactant is a failing ste
     index: 0, reaction: 'a>>b', ok: true, reactants: [], agents: [], products: [],
     balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
   };
-  // The step balances — that is not in dispute and is not what is reported.
-  assert.equal(routeStepFailure({ ...base, refiledReactant: refiled }), refiled);
+  // The step balances only after the checker's own edit, and the failure says so before the reason.
+  assert.equal(routeStepFailure({ ...base, refiledReactant: refiled }), `balanced only after the checker refiled a declared reactant: ${refiled}`);
   // Which path it takes turns on how far the rescue search reaches, not on the chemistry, so a
   // step with nothing refiled is still clean.
   assert.equal(routeStepFailure(base), null);
   // The ordering matters: a step that does not balance at all reports that first, because the
   // refiled note presumes a balance was reached.
   assert.match(routeStepFailure({ ...base, balanced: false, differences: ['O: reactants 2, products 1'], refiledReactant: refiled }), /not balanced/);
+});
+
+test('a step whose coefficient search gave up reads as unchecked, not as unbalanced', () => {
+  // The package refuses such a step (balanced: false) with a separate balanceUnchecked reason. The
+  // reason was dropped on the way in and the line said "NOT balanced (… was not checked …)".
+  const unchecked = 'This step leaves 5 species free to vary independently, more than the 4 the checker'
+    + ' determines coefficients for, so its balance was not checked: it has been shown neither balanced'
+    + ' nor unbalanced. Split it into consecutive steps, each naming fewer species.';
+  const audit = normalizeRouteAudit({ continuous: false, blocked: [], links: [], steps: [{
+    index: 0, reaction: 'a>>b', ok: true, reactants: [], agents: [], products: [],
+    balanced: false, chargeBalanced: true, differences: [unchecked], unspecifiedStereocentres: 0, balanceUnchecked: unchecked,
+  }] });
+  assert.equal(audit.steps[0].balanceUnchecked, unchecked, 'the reason survives normalisation');
+  const line = formatRouteAudit(audit).split('\n').find((entry) => entry.startsWith('- Step 1'));
+  assert.match(line, /^- Step 1 FAIL — balance NOT checked \(This step leaves 5 species/);
+  assert.doesNotMatch(line, /NOT balanced/);
+  assert.match(routeStepFailure(audit.steps[0]), /^balance not checked \(.*Split it/);
 });
 
 test('a route answer draws only through the final report', () => {
@@ -2323,5 +2372,37 @@ test('the step line and the route verdict cannot disagree about which step faile
     // while naming no fault, which is the half of the bug the model could not work around.
     assert.ok(line.includes(cause === 'monatomicSpecies' ? 'diatomic' : 'listed under Reactants'),
       `${cause}: the step line names the fault it failed on — got: ${line}`);
+    // Nor may a failing line call the step plainly "balanced": a refiled step balanced only after
+    // the checker changed the author's declaration.
+    if (cause === 'refiledReactant') {
+      assert.match(line, /^- Step 1 FAIL — balanced only after the checker refiled a declared reactant\./);
+    }
   }
+});
+
+test('a correction chip is never taken as the conversation route request', () => {
+  const request = 'Propose a laboratory synthesis of benzocaine (SMILES: CCOC(=O)c1ccc(N)cc1) starting from toluene.';
+  const chip = fixPayload(formatMissingSpeciesPrompt('CCOC(=O)c1ccc(N)cc1')).prompt;
+  const turns = [{ role: 'user', content: request }, { role: 'assistant', content: '### Step 1\nNitrate toluene.\n\n### Step 2\nOxidise.' }, { role: 'user', content: chip }];
+  assert.equal(routeConversationState(turns).request, request, 'the chip is not the request');
+  const followUp = [...turns, { role: 'assistant', content: 'prose' }, { role: 'user', content: 'Can you use a milder oxidant?' }];
+  assert.equal(routeConversationState(followUp).request, request, 'nor after a human follow-up');
+});
+
+test('the application note that nothing was checked is not a delivered route', () => {
+  const request = 'Propose a laboratory synthesis of benzocaine (SMILES: CCOC(=O)c1ccc(N)cc1).';
+  const answer = `Nitrate toluene, oxidise, reduce and esterify.\n\n${uncheckedRouteNote('no steps here', { correction: false })}\n`;
+  const turns = [{ role: 'user', content: request }, { role: 'assistant', content: answer }, { role: 'user', content: 'Please give me the full route.' }];
+  assert.deepEqual(routeConversationState(turns), { request, delivered: false });
+  assert.equal(asksForRoute(turns), true, 'the follow-up stays in the route lane');
+});
+
+test('superseded answers do not replay their textbook-scheme or compatibility sections', () => {
+  const answer = ['## Route', 'Step 1 prose.', '', '### Route check (RDKit)', '- Step 1 FAIL', '',
+    '### Known reactions (textbook schemes)', 'This block is generated by the application.', '**Step 1** — in 2 textbook scheme(s)', '',
+    '### Functional-group compatibility', 'This block is generated by the application.', '**Step 1**: hazard'].join('\n');
+  const earlier = routeReportsForHistory(answer, false);
+  assert.doesNotMatch(earlier, /textbook schemes|Functional-group compatibility|hazard/);
+  assert.match(earlier, /Step 1 prose\./);
+  assert.match(routeReportsForHistory(answer, true), /textbook schemes[\s\S]*Functional-group compatibility/, 'the latest answer keeps them');
 });

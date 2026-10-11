@@ -1,3 +1,5 @@
+import { eachBounded } from '../util/async';
+import { dumpToolInput } from './routeInputDump';
 import type { ModelRef } from '@shared/types';
 import { findRequestedTarget } from '@shared/moleculeInspection';
 import {
@@ -79,6 +81,15 @@ interface EvidenceOptions {
   locale?: string;
   signal?: AbortSignal;
   owner?: string;
+  /** The conversation's capability scope (see moleculeInspection's InspectOptions). */
+  scope?: string;
+  /** The phases of this gather that failed rather than found nothing. Set by the gather, so a
+   *  degraded result is used for this turn but not remembered as the whole evidence. */
+  failures?: string[];
+  /** Called once ORD's disconnections are known, with the evidence so far (target, starting
+   *  materials and disconnections): the retrieval query reads nothing else, and the gather's slower
+   *  phases — the route search's budget, the textbook schemes' second level — are still running. */
+  onDisconnections?: (evidence: SynthesisEvidence) => void;
 }
 
 function disconnectProvider() {
@@ -106,13 +117,25 @@ export async function invokeDisconnections(runner: Runner, targets: string[], st
   const indexDir = await reactionIndexService().localDirectory();
   options.signal?.throwIfAborted();
   if (!indexDir) return null;
-  const result = await runner.invoke({
-    provider,
-    toolId: DISCONNECT_TOOL,
-    input: { indexDir, targets: targets.slice(0, 16), limit, ...(starting.length ? { startingMaterials: starting.slice(0, 16) } : {}), ...stockInput() },
-  });
+  const input = { indexDir, targets: targets.slice(0, 16), limit, ...(starting.length ? { startingMaterials: starting.slice(0, 16) } : {}), ...stockInput() };
+  dumpToolInput(DISCONNECT_TOOL, input);
+  const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input });
   const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections');
   return artifact ? normalizeDisconnections(artifact.data, limit) : [];
+}
+
+/** Python processes the evidence gather may run at once. Each disconnection call is one process
+ *  working through its molecules ONE AFTER ANOTHER on one core; one call per molecule spreads them
+ *  across cores. Bounded, because each process holds its own template screen and RDKit. */
+const DISCONNECTION_PROCESSES = 4;
+
+/** `invokeDisconnections` with one call per molecule, run side by side, concatenated in order.
+ *  The same proposals per molecule — each target is searched independently either way — in a
+ *  fraction of the wall time when there are several. */
+export async function invokeDisconnectionsEach(runner: Runner, targets: string[], starting: string[], limit: number, options: EvidenceOptions): Promise<TargetDisconnections[]> {
+  const parts = await eachBounded(targets.slice(0, 16), DISCONNECTION_PROCESSES, (molecule) => invokeDisconnections(runner, [molecule], starting, limit, options));
+  options.signal?.throwIfAborted();
+  return parts.flatMap((part) => part ?? []);
 }
 
 /** One-step disconnections of the target, then of the most promising precursors, level by level
@@ -131,11 +154,12 @@ async function ordDisconnections(target: string, starting: string[], options: Ev
       options.signal?.throwIfAborted();
       const next = secondLevelTargets(level, starting, 3).filter((molecule) => !briefs.some((brief) => brief.input === molecule || brief.target === molecule));
       if (!next.length) break;
-      level = ((await invokeDisconnections(runner, next, starting, PROPOSALS_PER_TARGET, options)) ?? []).map((brief) => ({ ...brief, proposals: brief.proposals.slice(0, 3) }));
+      level = (await invokeDisconnectionsEach(runner, next, starting, PROPOSALS_PER_TARGET, options)).map((brief) => ({ ...brief, proposals: brief.proposals.slice(0, 3) }));
       briefs.push(...level);
     }
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('ORD disconnections');
     console.warn('[synthesisEvidence] ORD disconnections unavailable:', error instanceof Error ? error.message : String(error));
   } finally {
     await dispose();
@@ -147,18 +171,31 @@ async function ordDisconnections(target: string, starting: string[], options: Ev
  *  precursors, and one-step disconnections proposed by retro templates extracted from those
  *  schemes, with book-and-page citations. Best-effort: no textbook index, an older package or a
  *  tool failure returns []. */
-async function textbookSchemePreparations(target: string, disconnections: TargetDisconnections[], starting: string[], options: EvidenceOptions): Promise<TextbookPreparation[]> {
+async function textbookSchemePreparations(target: string, disconnectionsReady: Promise<TargetDisconnections[]>, starting: string[], options: EvidenceOptions): Promise<TextbookPreparation[]> {
   const provider = disconnectProvider();
   const indexDir = provider ? textbookSchemeDirectory(options.evidenceScope) : null;
   if (!provider || !indexDir) return [];
-  const molecules = [...new Set([target, ...secondLevelTargets(disconnections, starting, 5)])].slice(0, 6);
   const { runner, dispose } = chemistryRunner(options);
+  // The target needs nothing from the ORD search, so its call starts now, beside it; only the
+  // second-level molecules (chosen from ORD's proposals) wait for it. Each molecule is its own
+  // process: one call used to work through all six one after another — 205 s on a long target.
+  const one = async (molecule: string): Promise<unknown[]> => {
+    dumpToolInput(DISCONNECT_TOOL, { indexDir, targets: [molecule], limit: 6, source: 'textbook' });
+    const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input: { indexDir, targets: [molecule], limit: 6 } });
+    const data = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections')?.data as { disconnections?: unknown[] } | undefined;
+    return Array.isArray(data?.disconnections) ? data.disconnections : [];
+  };
   try {
-    const result = await runner.invoke({ provider, toolId: DISCONNECT_TOOL, input: { indexDir, targets: molecules, limit: 6 } });
-    const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'reaction-disconnections');
-    return artifact ? textbookPreparations(artifact.data, (ids) => textbookCitations(ids, indexDir, options.evidenceScope), (templates) => textbookTemplateCitations(templates, indexDir, 2, options.evidenceScope)) : [];
+    const first = one(target);
+    first.catch(() => undefined); // awaited below
+    const disconnections = await disconnectionsReady.catch(() => [] as TargetDisconnections[]);
+    const second = secondLevelTargets(disconnections, starting, 5).filter((molecule) => molecule !== target).slice(0, 5);
+    const rest = await eachBounded(second, DISCONNECTION_PROCESSES - 1, one);
+    const entries = [...await first.catch(() => [] as unknown[]), ...rest.flatMap((part) => part ?? [])];
+    return textbookPreparations({ disconnections: entries }, (ids) => textbookCitations(ids, indexDir, options.evidenceScope), (templates) => textbookTemplateCitations(templates, indexDir, 2, options.evidenceScope));
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('textbook preparations');
     console.warn('[synthesisEvidence] textbook schemes unavailable:', error instanceof Error ? error.message : String(error));
     return [];
   } finally {
@@ -206,6 +243,7 @@ async function searchedRoutes(target: string, starting: string[], options: Evide
     );
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('route search');
     console.warn('[synthesisEvidence] route search unavailable:', error instanceof Error ? error.message : String(error));
     return [];
   } finally {
@@ -228,6 +266,7 @@ async function targetAvailability(target: string, name: string, options: Evidenc
     return (data && formatTargetAvailability(name, compoundAvailability(target, data))) || undefined;
   } catch (error) {
     if (options.signal?.aborted) throw error;
+    options.failures?.push('availability');
     return undefined;
   } finally {
     await dispose();
@@ -341,8 +380,8 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
  *
  *  KEYED ON THE GATHER'S REAL INPUTS, not on the question string. The question is not the input:
  *  the gather reads the target, the starting materials, the target's name, the reaction classes the
- *  request implies, the work ids in scope, the stock directory and the model out of it, and nothing
- *  else. Keying on those means two requests that imply the same evidence share an entry while two
+ *  request implies, the work ids in scope and the stock directory out of it, and nothing else — not
+ *  the chat model, which no gather tool reads, so a correction answered by another model reuses it. Keying on those means two requests that imply the same evidence share an entry while two
  *  that imply different evidence cannot collide — and it does not depend on the question being
  *  byte-identical across turns, which is a property of the caller that has already changed once.
  *
@@ -367,7 +406,6 @@ function evidenceCacheKey(question: string, target: string, startingMaterials: s
     [...requestMethodClasses(question)].sort(),
     scope ? [scope.workIds ? [...scope.workIds].sort() : null, scope.external, scope.web] : null,
     chemistryStockDirectory() ?? '',
-    options.model ? `${options.model.provider}/${options.model.model}` : '',
     // The vault, because every passage and work id below is read from ITS database, and two
     // vaults can hold the same target with no work in scope in either — the one case the scope
     // above cannot tell apart. Passed in rather than read here: reaching for the vault registry
@@ -420,6 +458,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
   const key = evidenceCacheKey(question, target, startingMaterials, options);
   const remembered = cachedEvidence(key);
   if (remembered) {
+    options.onDisconnections?.(remembered);
     console.info(`${new Date().toISOString()} [synthesisEvidence] reused the evidence gathered for this target · target ${target} · ORD disconnections ${remembered.disconnections.reduce((n, d) => n + d.proposals.length, 0)} · passages ${remembered.passages.length}`);
     return remembered;
   }
@@ -429,19 +468,22 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
   // of vendor data. The reuse path already existed (`chemistryRunner` returns a supplied runner
   // with a no-op dispose) but EvidenceOptions never declared the field, so it was unreachable.
   const { runner, dispose } = chemistryRunner(options);
-  const scoped: EvidenceOptions = { ...options, runner };
+  const failures: string[] = [];
+  const scoped: EvidenceOptions = { ...options, runner, failures };
   try {
     // The route search runs beside the rest of the evidence (it has its own time budget).
     const routes = phases.track('route search', searchedRoutes(target, startingMaterials, scoped));
     routes.catch(() => undefined); // awaited below; a cancelled request must not leave it unhandled
     const availability = phases.track('availability', targetAvailability(target, findTargetName(question) || target, scoped));
     availability.catch(() => undefined);
-    const disconnections = await phases.track('ORD disconnections', ordDisconnections(target, startingMaterials, scoped));
-    // The passages and the scheme preparations both need the disconnections and neither needs the
-    // other, so they run together rather than one after the other. Started here and awaited below,
-    // the same shape the route search and the availability lookup already use above.
-    const prepared = phases.track('textbook preparations', textbookSchemePreparations(target, disconnections, startingMaterials, scoped));
+    const disconnectionsReady = phases.track('ORD disconnections', ordDisconnections(target, startingMaterials, scoped));
+    disconnectionsReady.catch(() => undefined); // awaited just below
+    // The scheme preparations start now: the target's own search runs beside ORD's, and only the
+    // second-level molecules wait for ORD's proposals. The passages also need the disconnections.
+    const prepared = phases.track('textbook preparations', textbookSchemePreparations(target, disconnectionsReady, startingMaterials, scoped));
+    const disconnections = await disconnectionsReady;
     prepared.catch(() => undefined); // awaited below; a cancelled request must not leave it unhandled
+    options.onDisconnections?.({ target, startingMaterials, disconnections, passages: [] });
     let passages: EvidencePassage[] = [];
     try {
       // The methods the request's own starting materials imply come first: ORD need not propose them.
@@ -450,6 +492,7 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
       passages = await phases.track('passages', textbookPassages(queries, synthesisEvidenceWorkIds(options.evidenceScope), options.signal));
     } catch (error) {
       if (options.signal?.aborted) throw error;
+      failures.push('passages');
       console.warn('[synthesisEvidence] textbook passages unavailable:', error instanceof Error ? error.message : String(error));
     }
     const preparations = await prepared;
@@ -465,8 +508,11 @@ export async function gatherSynthesisEvidence(question: string, options: Evidenc
       ...(candidates.length ? { candidateRoutes: candidates } : {}),
     };
     // Only a completed gather is kept. The throwIfAborted above means a cancelled one never
-    // reaches here, so a half-gathered result cannot be served to the next turn as a whole one.
-    rememberEvidence(key, gathered);
+    // reaches here, and a phase that failed (a runtime deadline, a worker that died) is not a
+    // completed gather either: kept, it was served to every correction for the cache's lifetime
+    // as if the search had found nothing. Used for this turn, gathered again for the next.
+    if (failures.length) console.info(`${new Date().toISOString()} [synthesisEvidence] not remembered: ${failures.join(', ')} failed`);
+    else rememberEvidence(key, gathered);
     return gathered;
   } finally {
     // Ours to close, and only ours: when the caller supplied the runner, dispose is a no-op.

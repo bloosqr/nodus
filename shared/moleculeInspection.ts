@@ -55,7 +55,7 @@ export const MOLECULE_DOSSIER_SYSTEM_RULE = [
  *  intermediate that leaves one step has to be the exact molecule that enters the next. */
 export const ROUTE_CONTINUITY_SYSTEM_RULE = [
   'Synthesis route continuity: when you plan more than one reaction step, the intermediate carried from one step into the next must be written with the exact same systematic IUPAC name, including its stereodescriptors, in both places, so the application can confirm it is the same molecule.',
-  'Do not rename, re-protonate or otherwise rewrite a carried intermediate. If a structure genuinely changes between steps, say so explicitly and justify it; otherwise the route is rejected as discontinuous.',
+  'Do not rename, re-protonate or otherwise rewrite a carried intermediate. If a structure genuinely changes between steps (a protonation, a salt formation, a different stereoisomer), that change is a step of its own with its four labelled lines: the application compares structures, not explanations, and rejects a carried intermediate that differs however the prose justifies it.',
   'In a route, do not write a reaction SMILES or a reaction line: the application derives every structure and every balanced equation from the species names you list.',
 ].join(' ');
 
@@ -126,6 +126,10 @@ export interface RouteStepAudit {
   /** Why the per-molecule packing search gave up. Absent when the step's shape is simply outside
    *  what packing models (a convergent coupling), which is not a gap in coverage. */
   assemblyUnchecked?: string;
+  /** Set when the coefficient search gave up: more species free to vary than it determines
+   *  coefficients for. `balanced` is false, so the step fails, but it is unchecked, not unbalanced,
+   *  and its one action is to split the step. */
+  balanceUnchecked?: string;
   /** The bonds at carbon this balanced step forms and breaks, read as a graph edit by the
    *  capability. Facts for the report and the reviewer, whether or not the step was refused. */
   skeleton?: RouteSkeletonFacts;
@@ -571,7 +575,7 @@ export function findStepConditions(text: string, count: number): string[] {
 /** A step's title and the first paragraph under its heading, stopping at its species lines. */
 function stepProseText(title: string, block: string): string {
   const body = block.replace(/^[^\n]*\n?/, '');
-  const cut = body.search(/(?:`{1,2}|\*\*|__)?[ \t]*\b(?:reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：]/i);
+  const cut = body.search(/(?:(?:`{1,2}|\*\*|__)[ \t]*|(?<![ \t])[ \t]+)?\b(?:reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：]/i);
   const paragraph = (cut >= 0 ? body.slice(0, cut) : body).split(/\n{2,}/)[0] ?? '';
   const prose = paragraph.replace(/[*_`>#]/g, '').replace(/\s+/g, ' ').trim().slice(0, 360);
   return prose ? `${title} — ${prose}` : title;
@@ -583,6 +587,12 @@ function stepProseText(title: string, block: string): string {
  *  ("**Target structure**"): those belong to the answer, not to the last step. The first
  *  section for each number wins. The evidence summary reads its citations from here. */
 export function findStepBlocks(text: string, count: number): string[] {
+  // The same sections the species, prose and conditions are read from, when the answer has them.
+  // Matched on its own, a "Step 1: …" line in an overview above the route claimed step 1 (the first
+  // section for each number wins), and every citation in the real step was counted as cited
+  // outside the steps — the step read "model knowledge only" beside its own textbook citation.
+  const sections = stepSections(text);
+  if (sections) return Array.from({ length: count }, (_, index) => sections[index] ? text.slice(sections[index].start, sections[index].end) : '');
   const lines = text.split('\n');
   let starts: Array<{ step: number; line: number }> = [];
   lines.forEach((line, at) => {
@@ -793,12 +803,17 @@ export function findStepProse(text: string, count: number): string[] {
 /** A role marker wherever it appears: line-leading, bulleted, inline in a paragraph, and
  *  wrapped in the backticks or bold a model likes to use (`` `Reactants:` ``, `**Products:**`).
  *  The colon is required so ordinary prose ("each reactant") is never mistaken for a label. */
-const ROLE_MARKER = /(?:`{1,2}|\*\*|__)?[ \t]*\b(reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
+/** Blanks before a label are taken only from the start of their run (`(?<![ \t])`). A bare
+ *  `[ \t]*` ahead of `\b` is retried from every position of a run of blanks, which is quadratic
+ *  in the run — and `maskDrawnRegions` turns every drawing into exactly such a run: a 100 KB
+ *  picture took 13 s to scan, per call. The match still starts where it did, so every offset into
+ *  the answer is unchanged. */
+const ROLE_MARKER = /(?:(?:`{1,2}|\*\*|__)[ \t]*|(?<![ \t])[ \t]+)?\b(reactants?|products?|by[-\s]?products?|agents?)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
 /** The name-first path reads only the four plural labels the contract asks for. A model's
  *  prose sentence that begins with a singular "Product:" (its own summary, beside the real
  *  `Products:` list) is therefore not mistaken for a species label. The legacy path keeps the
  *  singular-tolerant `ROLE_MARKER` so older answers still parse. */
-const NAME_ROLE_MARKER = /(?:`{1,2}|\*\*|__)?[ \t]*\b(reactants|products|by[-\s]?products|agents)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
+const NAME_ROLE_MARKER = /(?:(?:`{1,2}|\*\*|__)[ \t]*|(?<![ \t])[ \t]+)?\b(reactants|products|by[-\s]?products|agents)[ \t]*[:：][ \t]*(?:`{1,2}|\*\*|__)?/gi;
 /** A markdown heading (`## …`) or a wholly bold line (`**…**`). The route's step headings are
  *  the subset whose title begins with "Step N"; a heading like "Alternative for Step 3" is a
  *  section of the answer, not a step, and its labels are not part of the sequential route. */
@@ -827,8 +842,16 @@ function roleOf(label: string): { role: RouteLabelRole; byproduct: boolean } | n
  *  than twice and matches the 4000 already used for a declared structure in this file. */
 export const MAX_SPECIES_NAME = 4000;
 
+/** The typographic hyphens and primes a model writes into a name (`4‑nitrophenol` with U+2011,
+ *  `N,N′-dicyclohexylurea`, `2−methylpropan−2−ol`), as the ASCII the references hold. The local
+ *  PubChem mirror matches a synonym exactly, so each of these missed it and went to the network
+ *  service, through the pacer, for a name the mirror had. */
+function asciiNamePunctuation(name: string): string {
+  return name.replace(/[\u2010-\u2013\u2212\uFE63\uFF0D]/g, '-').replace(/[\u2032\u2019]/g, "'").replace(/\u2033/g, "''").replace(/\u2034/g, "'''");
+}
+
 function cleanSpeciesName(raw: string): string {
-  return raw.replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
+  return asciiNamePunctuation(raw).replace(/^[\s>*_`:：-]+/, '').replace(/[\s*_`]+$/, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SPECIES_NAME);
 }
 
 /** Whether a parsed species name can be a chemical name at all. A model that draws its route
@@ -987,20 +1010,22 @@ interface RoleEntry { name: string; declaredSmiles?: string; start: number; end:
 /** Entry spans split on `;`/newlines, but not inside parentheses — so "none (H₂SO₄ is consumed…;
   * the product is obtained after neutralization)" stays one entry. When the parentheses do not
   * balance (a name like "ε-caprolactam (azepan-2-one" with no closing), fall back to a plain
-  * split so an unclosed bracket cannot swallow the rest of the list. */
+  * split so an unclosed bracket cannot swallow the rest of the list. The full-width `；` of an
+  * answer written in Chinese or Japanese separates entries too, as the role markers already accept
+  * its full-width colon; read as one name, two species resolved to nothing. */
 function splitEntrySpans(list: string): Array<{ start: number; end: number }> {
   let balance = 0;
   for (const character of list) { if (character === '(') balance += 1; else if (character === ')') balance = Math.max(0, balance - 1); }
   const spans: Array<{ start: number; end: number }> = [];
   if (balance !== 0) {
-    for (const match of list.matchAll(/[^;\n]+/g)) spans.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
+    for (const match of list.matchAll(/[^;；\n]+/g)) spans.push({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
     return spans;
   }
   let depth = 0;
   let start = 0;
   for (let index = 0; index <= list.length; index += 1) {
     const character = list[index];
-    if (index === list.length || (depth === 0 && (character === ';' || character === '\n'))) {
+    if (index === list.length || (depth === 0 && (character === ';' || character === '；' || character === '\n'))) {
       if (index > start) spans.push({ start, end: index });
       start = index + 1;
     } else if (character === '(') depth += 1;
@@ -1015,10 +1040,13 @@ function splitEntrySpans(list: string): Array<{ start: number; end: number }> {
 function parseRoleEntries(fragment: string): RoleEntry[] {
   const out: RoleEntry[] = [];
   const list = fragment.slice(0, speciesListEnd(fragment, 0, fragment.length));
+  let first = true;
   for (const span of splitEntrySpans(list)) {
     const raw = list.slice(span.start, span.end);
     const entry = raw.replace(/^[\s>*_`]+/, '').trim();
     if (!entry) continue;
+    const leading = first;
+    first = false;
     const pair = /^(.+?)\s*[—–]\s*`([^`]+)`/.exec(entry);
     if (pair) {
       const name = cleanSpeciesName(pair[1]);
@@ -1026,6 +1054,11 @@ function parseRoleEntries(fragment: string): RoleEntry[] {
       continue;
     }
     const name = cleanSpeciesName(entry.replace(/[—–]?\s*`[^`]*`/g, '').replace(/[*_`]/g, '').replace(/[.,;:\s]+$/, ''));
+    // A side that opens with "none" is empty, and whatever follows on it is the author explaining
+    // why ("Byproducts: none; the rearrangement loses no atoms"). Read as a species, that sentence
+    // became a byproduct no reference resolves: a name-correction call, then an unbuilt step.
+    // A bare "NO" stays a formula the step may need, so only "no <word>" opens an empty side.
+    if (leading && (/^(?:none|n\/a|nil)\b|^no\s/i.test(name) || /^[—–-]+$/.test(name))) break;
     if (!name || !isNameLikeSpecies(name) || /^(?:none|no|n\/a|nil)\b/i.test(name) || /^[—–-]+$/.test(name)) continue;
     out.push({ name, start: span.start, end: span.end });
   }
@@ -1090,6 +1123,20 @@ export function countRouteSteps(answer: string): number {
   return count;
 }
 
+/** A note the author put after a name, in parentheses after a space: "sodium borohydride (1.2
+ *  equiv)", "sulfuric acid (cat.)", "ethanal (distilled off as it forms)", a trivial name after the
+ *  systematic one. The contract asks for names only, a model adds these anyway, and no reference
+ *  holds the name with its note: a reactant or product so written cost a name-correction call to the
+ *  model, an agent was simply never resolved. Only a note with a lowercase word goes, so an oxidation
+ *  state, a charge or a descriptor written apart ("palladium (0)", "copper (II)", "(2R)") stays. */
+function withoutTrailingNote(name: string): string {
+  let out = name;
+  for (let match = /\s+\(([^()]*)\)$/.exec(out); match && /[a-z]{2}/.test(match[1]) && match.index > 0; match = /\s+\(([^()]*)\)$/.exec(out)) {
+    out = out.slice(0, match.index).trimEnd();
+  }
+  return out;
+}
+
 /** The names the answer assigns to each step, in document order per step. */
 export function findStepNamedSpecies(text: string, count: number): NamedSpecies[][] {
   if (count < 1) return [];
@@ -1097,7 +1144,7 @@ export function findStepNamedSpecies(text: string, count: number): NamedSpecies[
   for (const segment of namedSegments(text, count)) {
     for (const entry of segment.entries) {
       if (steps[segment.step].length >= 48) break;
-      steps[segment.step].push({ role: segment.role, byproduct: segment.byproduct, name: entry.name, ...(entry.declaredSmiles ? { declaredSmiles: entry.declaredSmiles } : {}) });
+      steps[segment.step].push({ role: segment.role, byproduct: segment.byproduct, name: withoutTrailingNote(entry.name), ...(entry.declaredSmiles ? { declaredSmiles: entry.declaredSmiles } : {}) });
     }
   }
   return steps;
@@ -1217,11 +1264,24 @@ export function isPlaceholderSpecies(name: string): boolean {
     || /^(?:unchanged|same as|ditto|various|etc\.?|multiple|several)\b/i.test(name.trim());
 }
 
+/** A condition the Agents line names in place of a substance: a temperature, a time, a pressure,
+ *  light or heat ("110 °C", "12 h", "reflux", "hν"). The contract invites them there ("or other
+ *  condition the step does not consume"), and no reference holds one, so looking one up only spends
+ *  a turn of the PubChem pacer (0.2 s, 1 s or 5 s each, one at a time) to learn that. Whole entries
+ *  only: "10% palladium on carbon" or "2 M hydrochloric acid" is a substance and is still resolved. */
+const CONDITION_QUANTITY = /^(?:[-−~≈<>≤≥]?\s*\d[\d.,]*\s*(?:[-–−]\s*\d[\d.,]*\s*)?(?:°\s*[CF]|K|h|hrs?|hours?|min|minutes?|days?|atm|bar|mbar|psi|torr|kPa|MPa|nm)(?![\p{L}\d])[\s,;]*)+$/iu;
+const CONDITION_WORD = /^(?:rt|r\.t\.|room temperature|ambient temperature|reflux(?:ing)?|at reflux|heat(?:ing)?|Δ|hν|h\s*ν|light|uv light|visible light|uv irradiation|irradiation|microwave(?: irradiation| heating)?|overnight|sonication|ultrasound|inert atmosphere)$/i;
+
+export function isConditionPhrase(name: string): boolean {
+  const value = name.trim();
+  return CONDITION_QUANTITY.test(value) || CONDITION_WORD.test(value);
+}
+
 /** A species name as the resolver feedback may return it: a short label with letters, and no
  *  markup or escaped syntax. A reply that smuggled an SVG, a JSON fragment or a newline into a
  *  name is not shown to the user as a "correction". */
 function isPlausibleSpeciesName(value: string): boolean {
-  return value.length >= 2 && value.length <= 200
+  return value.length >= 2 && value.length <= MAX_SPECIES_NAME
     && /[A-Za-z]/.test(value)
     && !/[<>{}\\\n\r\t`|"]/.test(value)
     && !value.includes('→');
@@ -1267,6 +1327,7 @@ const HISTORY_LATEST_ONLY = [
   '### Structure check (RDKit)', '### Route check (RDKit)',
   '### Route review (model)', '### Route review (model, advisory)',
   '### Known reactions (Open Reaction Database)',
+  '### Known reactions (textbook schemes)', '### Functional-group compatibility',
 ];
 /** App notes that follow the reports without a heading of their own; a dropped section ends there. */
 const HISTORY_NOTE = /^(?:Name corrections:|Author-supplied structures)/;
@@ -1409,8 +1470,12 @@ export function uncheckedRouteNote(answer: string, options: { correction: boolea
   if (countRouteSteps(typeof answer === 'string' ? answer : '') > 0) return '';
   return options.correction
     ? '_This reply re-stated no route, so nothing in it could be checked or drawn. The last checked route is the one above it._'
-    : '_Nothing in this reply was checked. A route is read from numbered `Step N` headings with `Reactants:`, `Products:`, `Byproducts:` and `Agents:` lines under each step, and this reply has neither, so no name was resolved, no equation was balanced and no step was drawn. Whatever steps it describes stand as unverified prose._';
+    : UNCHECKED_ROUTE_NOTE;
 }
+
+/** The first-answer note names the four labels itself, so `countRouteSteps` reads it as a route;
+ *  `routeConversationState` removes it before counting. */
+const UNCHECKED_ROUTE_NOTE = '_Nothing in this reply was checked. A route is read from numbered `Step N` headings with `Reactants:`, `Products:`, `Byproducts:` and `Agents:` lines under each step, and this reply has neither, so no name was resolved, no equation was balanced and no step was drawn. Whatever steps it describes stand as unverified prose._';
 
 /** Whether the application asked this turn for a route: a fresh request, one of its own fix
  *  chips, or a turn in a conversation whose route request no answer has met yet.
@@ -1450,10 +1515,13 @@ export function routeConversationState(turns: ReadonlyArray<{ role: string; cont
   let asked = -1;
   for (let index = 0; index < list.length; index += 1) {
     const turn = list[index];
-    if (turn?.role === 'user' && typeof turn.content === 'string' && looksLikeSynthesisRequest(turn.content)) asked = index;
+    // A correction chip names the synthesis and its rules name reagents, so a short one reads as a
+    // request; it is never the conversation's request.
+    if (turn?.role === 'user' && typeof turn.content === 'string' && !isRouteFixPrompt(turn.content) && looksLikeSynthesisRequest(turn.content)) asked = index;
   }
   if (asked < 0) return { request: null, delivered: false };
-  const delivered = list.slice(asked + 1).some((turn) => turn?.role === 'assistant' && countRouteSteps(typeof turn.content === 'string' ? turn.content : '') > 0);
+  const delivered = list.slice(asked + 1).some((turn) => turn?.role === 'assistant'
+    && countRouteSteps(typeof turn.content === 'string' ? turn.content.split(UNCHECKED_ROUTE_NOTE).join('') : '') > 0);
   return { request: list[asked].content, delivered };
 }
 
@@ -1622,6 +1690,7 @@ function normalizeRouteStep(entry: unknown, index: number): RouteStepAudit | nul
     ...(value.stereoNotRequired === true ? { stereoNotRequired: true } : {}),
     ...(typeof value.assemblyProblem === 'string' && value.assemblyProblem ? { assemblyProblem: value.assemblyProblem.slice(0, 400) } : {}),
     ...(typeof value.assemblyUnchecked === 'string' && value.assemblyUnchecked ? { assemblyUnchecked: value.assemblyUnchecked.slice(0, 300) } : {}),
+    ...(typeof value.balanceUnchecked === 'string' && value.balanceUnchecked ? { balanceUnchecked: value.balanceUnchecked.slice(0, 1000) } : {}),
     ...(normalizeSkeleton(value.skeleton) ? { skeleton: normalizeSkeleton(value.skeleton)! } : {}),
     ...(normalizeBonds(value.bonds) ? { bonds: normalizeBonds(value.bonds)! } : {}),
     ...(value.rearrangement === true ? { rearrangement: true } : {}),
@@ -2309,7 +2378,9 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
           ? `, ${step.unspecifiedStereocentres} open stereocentre(s) not required (lost before the target)`
           : `, ${step.unspecifiedStereocentres} unspecified stereocentre(s) or double bond(s)`
       : '';
-    const balance = step.balanced ? 'balanced' : `NOT balanced (${step.differences.join('; ')})`;
+    const balance = step.balanced
+      ? 'balanced'
+      : step.balanceUnchecked ? `balance NOT checked (${step.balanceUnchecked})` : `NOT balanced (${step.differences.join('; ')})`;
     const nameNote = nameFailure ? ` name check failed: ${step.nameProblems!.join('; ')}.` : '';
     // A step can balance only by solving an odd stoichiometry (8 citric acid → 9 …); the numbers
     // are shown, and a large one is called out, because that usually means a byproduct is wrong.
@@ -2320,20 +2391,23 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const largeNote = step.balanced && !assemblyFailure && largest > LARGE_COEFFICIENT
       ? ` Note: the carbon compounds balance only with large coefficients (up to ${largest}); the step passes, but check that its products and byproducts are the intended ones.`
       : '';
-    const assemblyNote = assemblyFailure ? ` ${step.assemblyProblem}.` : '';
+    const assemblyNote = assemblyFailure ? ` ${sentence(step.assemblyProblem ?? '')}` : '';
     // A balanced step that only balanced because something moved off the reactant side. The
     // sentence is what makes the assumption reviewable; the verdict above now counts it as a
     // failure too, which it already did in the route header and in the per-step fix chip.
     const refiledNote = step.refiledReactant ? ` ${step.refiledReactant}` : '';
+    // Not plain "balanced" beside FAIL: the equation closed only after the checker moved a species
+    // the author declared consumed.
+    const balanceNote = step.balanced && step.refiledReactant ? REFILED_BALANCE : balance;
     // Printed for the same reason, and it is the more urgent of the two: a lone atom of a diatomic
     // element said nothing at all in this line, so the step named no fault while failing.
     const monatomicNote = step.monatomicSpecies ? ` ${step.monatomicSpecies}` : '';
-    const skeletonNote = skeletonFailure ? ` ${step.skeletonProblem}.` : skeletonFacts(step);
+    const skeletonNote = skeletonFailure ? ` ${sentence(step.skeletonProblem ?? '')}` : skeletonFacts(step);
     const agents = step.agents.length ? ` [agents: ${sideTrace(step.agents, names)}]` : '';
     const stepLabels = labels[step.index] ?? [];
     const reactantSide = groupedSideTrace(step.reactants, stepLabels.filter((entry) => entry.role === 'reactant'), names, step.balanced === true, step.products);
     const productSide = groupedSideTrace(step.products, stepLabels.filter((entry) => entry.role === 'product'), names, step.balanced === true, step.reactants);
-    lines.push(`- ${label} ${verdict} — ${balance}${stereo}.${nameNote}${largeNote}${refiledNote}${monatomicNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
+    lines.push(`- ${label} ${verdict} — ${balanceNote}${stereo}.${nameNote}${largeNote}${refiledNote}${monatomicNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
     const alpha = alphaConfigurationLine(step, stepLabels);
     if (alpha) lines.push(alpha);
   }
@@ -2538,10 +2612,19 @@ export function routeStepSummaries(audit: RouteAudit, labels: RouteSpeciesLabel[
   });
 }
 
+/** A message that is already a sentence keeps its own full stop. The checker ends most of its
+ *  messages with one, and appending another put ".." in front of the model on most routes. */
+function sentence(text: string): string {
+  return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
+}
+
+/** How a step that balanced only after the checker refiled a declared reactant is described. */
+const REFILED_BALANCE = 'balanced only after the checker refiled a declared reactant';
+
 export function routeStepFailure(step: RouteStepAudit): string | null {
   if (step.nameProblems?.length) return step.nameProblems.join('; ');
   if (!step.ok) return step.error ?? 'could not be parsed';
-  if (step.balanced !== true) return `not balanced (${step.differences.join('; ')})`;
+  if (step.balanced !== true) return step.balanceUnchecked ? `balance not checked (${step.balanceUnchecked})` : `not balanced (${step.differences.join('; ')})`;
   // A balanced step can still be impossible: the packing check refuses an equation that
   // assembles a product from more than one substrate. The report already shows this, so the
   // one-click prompts must name it too, or they point at a different step than the checker did.
@@ -2562,7 +2645,7 @@ export function routeStepFailure(step: RouteStepAudit): string | null {
   // silent; two that cannot both be moved are reported and fixed. That is an artifact of how far
   // the rescue search reaches, not a judgement about the chemistry, so the two cases are now
   // reported alike.
-  if (step.refiledReactant) return step.refiledReactant;
+  if (step.refiledReactant) return `${REFILED_BALANCE}: ${step.refiledReactant}`;
   // And a species written as a lone atom of a diatomic element. Reported here rather than as a
   // balance failure because it usually sits under Agents, which take no part in the balance: the
   // equation is right and the structure is not, so calling it unbalanced would name the wrong
@@ -2724,7 +2807,7 @@ function repeatedFaultSummary(flagged: Array<{ step: RouteStepAudit; reasons: st
   if (!repeated.length) return [];
   return [
     'One fault repeats below, so this is one mistake made several times, not several mistakes. Fix the pattern rather than each step on its own:',
-    ...repeated.map((group) => `- step ${group.steps.join(', step ')} all fail the same way: ${group.sample.split('. ')[0]}.`),
+    ...repeated.map((group) => `- step ${group.steps.join(', step ')} all fail the same way: ${sentence(group.sample.split('. ')[0])}`),
     '',
   ];
 }
@@ -2890,14 +2973,17 @@ export function parseNameFeedback(raw: string): NameFeedbackEntry[] {
   return list.map((entry) => {
     const item = asRecord(entry);
     if (!item || typeof item.from !== 'string') return null;
-    const from = item.from.trim().slice(0, 200);
+    // As long as the parser lets a name be (MAX_SPECIES_NAME). At 200, a longer name came back as
+    // its first 200 characters: `from` then matched no species, so the rename was never applied,
+    // and a `to` that long was cut short, so it could never resolve.
+    const from = item.from.trim().slice(0, MAX_SPECIES_NAME);
     if (!from || !isPlausibleSpeciesName(from)) return null;
     if (typeof item.smiles === 'string' && item.smiles.trim()) {
       const smiles = item.smiles.trim().slice(0, 2000);
       if (isPlausibleStructure(smiles)) return { from, to: smiles, kind: 'structure' as const };
     }
     if (typeof item.to === 'string' && item.to.trim()) {
-      const to = item.to.trim().slice(0, 200);
+      const to = item.to.trim().slice(0, MAX_SPECIES_NAME);
       if (to && isPlausibleSpeciesName(to)) return { from, to, kind: 'name' as const };
     }
     return null;

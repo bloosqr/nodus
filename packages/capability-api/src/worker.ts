@@ -182,7 +182,10 @@ export interface CapabilityHostV2 {
   };
   python: {
     ensureRuntime(runtimeId: string): Promise<{ ready: boolean; detail?: string }>;
-    run(request: { runtimeId: string; args: string[]; stdin?: string; secretId?: string; timeoutMs: number }): Promise<{ code: number; stdout: string; stderr: string }>;
+    /** `persistent`: the script answers one request per line while NODUS_PYTHON_SERVE=1 is set,
+     *  so the host may keep the interpreter for later calls. A host that predates it runs the
+     *  script once per call, as before. */
+    run(request: { runtimeId: string; args: string[]; stdin?: string; secretId?: string; timeoutMs: number; persistent?: boolean }): Promise<{ code: number; stdout: string; stderr: string }>;
   };
   attachments: {
     /** Stores bytes and returns the id a `download` view node refers to. */
