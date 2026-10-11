@@ -44,9 +44,10 @@ await build({
         const { fork } = require('node:child_process');
         exports.app = { getPath: () => ${JSON.stringify(scratch)} };
         exports.utilityProcess = { fork(entry) {
+          if (globalThis.__failSubworkerSpawn) { globalThis.__failSubworkerSpawn = false; throw Error('synthetic spawn failure'); }
           const child = fork(entry, [], { execArgv: ['--require', ${JSON.stringify(preload)}], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
           globalThis.__subworkerForks?.push(child.pid);
-          return { on: (event, listener) => child.on(event, listener), once: (event, listener) => child.once(event, listener),
+          return { on: (event, listener) => { if (globalThis.__failSubworkerInit) { globalThis.__failSubworkerInit = false; throw Error('synthetic initialization failure'); } return child.on(event, listener); }, once: (event, listener) => child.once(event, listener),
             postMessage: message => child.send(message), kill: () => child.kill('SIGKILL') };
         } };
       ` : 'module.exports = new Proxy({}, { get: (_target, name) => name === "__esModule" ? false : () => { throw new Error(`stand-in: ${String(name)}`); } });' }));
@@ -125,4 +126,33 @@ test('a request cancelled while it waits for a slot never starts', async () => {
   await assert.rejects(queued, { name: 'AbortError' });
   await busy;
   assert.equal(forks.length, before, 'nothing was forked for the cancelled request');
+});
+
+test('a synchronous spawn failure releases the only slot for the next call', async () => {
+  const runtime = runtimeWith(1);
+  globalThis.__failSubworkerSpawn = true;
+  await assert.rejects(ask(runtime, {}), /synthetic spawn failure/);
+  const signal = AbortSignal.timeout(2000);
+  const next = await ask(runtime, {}, 1000, signal);
+  assert.ok(next.pid);
+});
+
+test('a failed initialization kills its child and releases the slot', async () => {
+  const runtime = runtimeWith(1);
+  globalThis.__failSubworkerInit = true;
+  await assert.rejects(ask(runtime, {}), /synthetic initialization failure/);
+  const failedPid = forks.at(-1);
+  const next = await ask(runtime, {}, 1000, AbortSignal.timeout(2000));
+  assert.notEqual(next.pid, failedPid);
+});
+
+test('a cancellation delivered just after acquire does not spawn a subworker', async () => {
+  const runtime = runtimeWith(1);
+  const controller = new AbortController();
+  const before = forks.length;
+  const pending = ask(runtime, {}, 1000, controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(forks.length, before);
+  assert.ok((await ask(runtime, {}, 1000, AbortSignal.timeout(2000))).pid);
 });

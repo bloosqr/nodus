@@ -1,3 +1,4 @@
+import { protectReplicaImportWait } from './replicaImportWait';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -118,6 +119,7 @@ export function ensureWorkspaceDevice(database: Database.Database): void {
 
 function openDatabase(file: string): Database.Database {
   let next = new Database(file);
+  protectReplicaImportWait(next);
   try {
     auditQaDatabaseOpen(file, 'read-write');
   } catch (error) {
@@ -150,6 +152,7 @@ function openDatabase(file: string): Database.Database {
     console.warn('[db] chat history repair skipped:', error instanceof Error ? error.message : error);
   }
   next.pragma('busy_timeout = 5000');
+  protectReplicaImportWait(next);
   next.pragma('synchronous = NORMAL');
   next.pragma('temp_store = MEMORY');
   next.pragma('cache_size = -32768');
@@ -203,13 +206,14 @@ function openDatabase(file: string): Database.Database {
 
 export function getDb(): Database.Database {
   const scoped = jobDatabase.getStore();
-  if (scoped) return scoped;
+  if (scoped) { protectReplicaImportWait(scoped); return scoped; }
   if (!db) {
     const target = dbPath();
     const dir = path.dirname(target);
     fs.mkdirSync(dir, { recursive: true });
     db = openDatabase(target);
   }
+  protectReplicaImportWait(db);
   return db;
 }
 

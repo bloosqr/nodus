@@ -66,9 +66,14 @@ function park(pooled: PooledSubworker, limit: number): void {
 function fork(runtime: TrustedWorkerRuntime, entry: string, key: string): PooledSubworker {
   const child = utilityProcess.fork(entry, [], { serviceName: `Nodus capability subworker ${runtime.capabilityId}`, stdio: 'ignore' });
   const pooled: PooledSubworker = { key, child, uses: 0 };
-  child.on('message', (message: { error?: string; result?: unknown }) => pooled.onMessage?.(message));
-  child.once('error', () => { const onExit = pooled.onExit; retire(pooled); onExit?.(); });
-  child.once('exit', () => { const onExit = pooled.onExit; retire(pooled); onExit?.(); });
+  try {
+    child.on('message', (message: { error?: string; result?: unknown }) => pooled.onMessage?.(message));
+    child.once('error', () => { const onExit = pooled.onExit; retire(pooled); onExit?.(); });
+    child.once('exit', () => { const onExit = pooled.onExit; retire(pooled); onExit?.(); });
+  } catch (error) {
+    retire(pooled);
+    throw error;
+  }
   return pooled;
 }
 
@@ -86,13 +91,21 @@ export async function runCapabilitySubworker(runtime: TrustedWorkerRuntime, requ
   const queued = performance.now() - queuedAt;
   const key = `${capability}:${entry}`;
   let pooled: PooledSubworker | undefined;
-  for (const candidate of idle.get(key) ?? []) { pooled = candidate; break; }
-  const reused = Boolean(pooled);
-  if (pooled) {
-    if (pooled.idle) clearTimeout(pooled.idle);
-    idle.get(key)!.splice(idle.get(key)!.indexOf(pooled), 1);
-  } else {
-    pooled = fork(runtime, entry, key);
+  let reused = false;
+  try {
+    // acquire may resolve just before cancellation is delivered. Do not start work in that gap.
+    signal.throwIfAborted();
+    for (const candidate of idle.get(key) ?? []) { pooled = candidate; break; }
+    reused = Boolean(pooled);
+    if (pooled) {
+      if (pooled.idle) clearTimeout(pooled.idle);
+      idle.get(key)!.splice(idle.get(key)!.indexOf(pooled), 1);
+    } else {
+      pooled = fork(runtime, entry, key);
+    }
+  } catch (error) {
+    release();
+    throw error;
   }
   const target = pooled;
   // Same reason as the tool budget: "the capability subworker exceeded its time limit" named no
@@ -138,6 +151,7 @@ export async function runCapabilitySubworker(runtime: TrustedWorkerRuntime, requ
       else finish(undefined, message?.result, true);
     };
     target.onExit = () => finish(new Error('The capability subworker exited without a result.'));
+    if (signal.aborted) { abort(); return; }
     try { target.child.postMessage(request.input); }
     catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
   });
