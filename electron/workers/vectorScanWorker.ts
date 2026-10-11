@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
 import path from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import type { VectorScanWorkerInput } from '../db/vectorScanHost';
@@ -17,7 +18,7 @@ const ALLOWED_TABLES = new Set([
   'work_summaries',
 ]);
 const WINDOW_ROWIDS = 1_500;
-const databases = new Map<string, Database.Database>();
+const databases = new Map<string, { database: Database.Database; identity: string }>();
 
 function unitVector(values: number[]): Float32Array | null {
   const vector = Float32Array.from(values);
@@ -29,17 +30,36 @@ function unitVector(values: number[]): Float32Array | null {
   return vector;
 }
 
+/** Which file is at `file` now. A restore renames another file over the vault and a reset deletes
+ *  and recreates it; a connection opened before either keeps reading the file it opened. */
+function fileIdentity(file: string): string {
+  const stat = fs.statSync(file);
+  return `${stat.dev}:${stat.ino}`;
+}
+
 function databaseFor(file: string): Database.Database {
   const resolved = path.resolve(file);
+  const identity = fileIdentity(resolved);
   const existing = databases.get(resolved);
-  if (existing?.open) return existing;
+  if (existing?.database.open && existing.identity === identity) return existing.database;
+  if (existing) {
+    // The vault was replaced under this connection. Drop it and everything cached from it, or a
+    // scan would keep answering from the file the user restored over or wiped.
+    try { existing.database.close(); } catch { /* already closed */ }
+    databases.delete(resolved);
+    for (const [key, cache] of vectorCaches) {
+      if (!key.startsWith(`${resolved}|`)) continue;
+      if (cache.timer) clearTimeout(cache.timer);
+      vectorCaches.delete(key);
+    }
+  }
   const database = new Database(resolved, { readonly: true, fileMustExist: true });
   database.pragma('query_only = ON');
   database.pragma('busy_timeout = 5000');
   database.pragma('temp_store = MEMORY');
   database.pragma('cache_size = -32768');
   database.pragma('mmap_size = 268435456');
-  databases.set(resolved, database);
+  databases.set(resolved, { database, identity });
   return database;
 }
 
@@ -52,24 +72,46 @@ function databaseFor(file: string): Database.Database {
  *  the same way, so a similarity here is the same double the callback returned. A row whose vector
  *  is missing or the wrong length is absent from the cache and scores 0, exactly as `vec_scan` does.
  *
- *  Freshness: `PRAGMA data_version` changes whenever another connection commits to the file, and
- *  this worker's connection is read-only, so ANY write since the cache was built rebuilds it. It is
- *  never trusted across a write, in-place re-embeddings included. Every rebuild is logged, so a
- *  trace shows how often that happens. Idle caches are dropped after a few minutes. */
+ *  Freshness: the vault's triggers count writes per table (db/vectorScanGenerations.ts). The vectors
+ *  are keyed on the scanned table's counter and each statement's filtered rows on the counters of
+ *  every table that statement reads, so any write to one of them, in-place re-embeddings included,
+ *  rebuilds what depends on it, and a write anywhere else (a setting, a citation receipt, a chat
+ *  message) rebuilds nothing. A vault without the counters, or a statement reading a table they do
+ *  not cover, falls back to `PRAGMA data_version`, which changes on ANY commit by another
+ *  connection. Every rebuild is logged, so a trace shows how often that happens. Idle caches are
+ *  dropped after a few minutes. */
 interface VectorCache {
-  version: number; dim: number; slots: Map<number, number>; vectors: Float32Array; norms: Float64Array; timer?: NodeJS.Timeout;
-  /** The rows the caller's own statement keeps, per statement + parameters, window by window. The
-   *  same database version gives the same rows, so the filter (a JOIN and a text-hash test on every
-   *  row, ~10 µs a row) runs once per version rather than once per query. Bounded per table. */
+  version: string; dim: number; slots: Map<number, number>; vectors: Float32Array; norms: Float64Array; timer?: NodeJS.Timeout;
+  /** The rows the caller's own statement keeps, per statement + parameters + the versions of the
+   *  tables it reads, window by window. The same versions give the same rows, so the filter (a JOIN
+   *  and a text-hash test on every row, ~10 µs a row) runs once per version rather than once per
+   *  query. Bounded per table. */
   eligible: Map<string, Array<Array<Record<string, unknown> & { rid: number }>>>;
 }
 const ELIGIBLE_SETS = 8;
 const vectorCaches = new Map<string, VectorCache>();
 const CACHE_IDLE_MS = 5 * 60_000;
 
+/** The tables a statement reads: every name after FROM or JOIN, table-valued functions aside. */
+function tablesRead(sql: string): string[] {
+  return [...new Set([...sql.matchAll(/\b(?:FROM|JOIN)\s+([A-Za-z_]\w*)/gi)].map((match) => match[1].toLowerCase()))]
+    .filter((name) => name !== 'json_each')
+    .sort();
+}
+
+/** The write counters of `tables`, or the connection's data_version when any is not counted. */
+function versionOf(database: Database.Database, tables: string[]): string {
+  try {
+    const rows = database.prepare('SELECT name, generation FROM vector_scan_generations WHERE name IN (SELECT value FROM json_each(?)) ORDER BY name')
+      .all(JSON.stringify(tables)) as Array<{ name: string; generation: number }>;
+    if (rows.length === tables.length) return rows.map((row) => `${row.name}:${row.generation}`).join(',');
+  } catch { /* A vault opened before the counters existed. */ }
+  return `data_version:${database.pragma('data_version', { simple: true }) as number}`;
+}
+
 function vectorCacheFor(database: Database.Database, file: string, table: string, dim: number): VectorCache {
   const key = `${path.resolve(file)}|${table}`;
-  const version = database.pragma('data_version', { simple: true }) as number;
+  const version = versionOf(database, [table]);
   let cache = vectorCaches.get(key);
   if (!cache || cache.version !== version || cache.dim !== dim) {
     const started = performance.now();
@@ -92,7 +134,7 @@ function vectorCacheFor(database: Database.Database, file: string, table: string
     if (cache?.timer) clearTimeout(cache.timer);
     cache = { version, dim, slots, vectors, norms, eligible: new Map() };
     vectorCaches.set(key, cache);
-    console.info(`${new Date().toISOString()} [vectorScanWorker] ${table} cache built in ${((performance.now() - started) / 1000).toFixed(2)}s · ${slot} vectors · data_version ${version}`);
+    console.info(`${new Date().toISOString()} [vectorScanWorker] ${table} cache built in ${((performance.now() - started) / 1000).toFixed(2)}s · ${slot} vectors · ${version}`);
   }
   if (cache.timer) clearTimeout(cache.timer);
   cache.timer = setTimeout(() => vectorCaches.delete(key), CACHE_IDLE_MS);
@@ -159,14 +201,19 @@ function scan(request: WorkerRequest, trace?: SweepTrace): unknown[] {
   const filterSql = input.sql.replace(/vec_scan\(\s*[\w.]+\s*\)/, '0');
   if (process.env.NODUS_VECTOR_SCAN_CACHE !== '0' && filterSql !== input.sql) {
     const cache = vectorCacheFor(database, databasePath, input.table, query.length);
-    const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}`;
+    const key = `${filterSql}\u0000${JSON.stringify(input.params)}\u0000${highest}\u0000${versionOf(database, tablesRead(filterSql))}`;
     let windows = cache.eligible.get(key);
     if (!windows) {
+      // One execution over every rowid, its rows split into the windows by rowid: each window then
+      // holds what the statement returns for that window alone, in the same order. Run once per
+      // window it repeated the whole plan per window, the caller's IN list of one parameter per work
+      // included: 1.5 s for the passages statement on a real 14,055-work vault, against 0.27 s
+      // once, each time the vault's tables change.
       const filter = database.prepare(filterSql);
       windows = [];
-      for (let from = 0; from < highest; from += WINDOW_ROWIDS) {
-        const to = Math.min(from + WINDOW_ROWIDS, highest);
-        windows.push(filter.all(from, to, ...input.params) as Array<Record<string, unknown> & { rid: number }>);
+      for (let from = 0; from < highest; from += WINDOW_ROWIDS) windows.push([]);
+      for (const row of filter.all(0, highest, ...input.params) as Array<Record<string, unknown> & { rid: number }>) {
+        windows[Math.min(windows.length - 1, Math.max(0, Math.ceil(row.rid / WINDOW_ROWIDS) - 1))].push(row);
       }
       cache.eligible.set(key, windows);
       if (cache.eligible.size > ELIGIBLE_SETS) cache.eligible.delete(cache.eligible.keys().next().value!);

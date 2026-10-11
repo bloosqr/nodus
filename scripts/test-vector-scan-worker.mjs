@@ -117,3 +117,68 @@ test('a write from another connection is never answered from the old vectors', a
   await scan(cached, { limit: 3 });
   assert.equal(builds, before + 1, 'and not again without a write');
 });
+
+// The vault's per-table write counters (electron/db/vectorScanGenerations.ts), installed here as
+// openDatabase installs them: a write the scan cannot see must not throw the cache away, and a
+// write to any table the statement reads must still reach the answer.
+const countersFile = path.join(outDir, 'counters.cjs');
+await build({ entryPoints: [path.join(repoRoot, 'electron/db/vectorScanGenerations.ts')], outfile: countersFile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' });
+const { ensureVectorScanGenerationTriggers } = require(countersFile);
+
+test('a write to a table no scan reads keeps the cached vectors and rows', async () => {
+  const writer = new Database(dbFile);
+  writer.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE IF NOT EXISTS works (nodus_id TEXT PRIMARY KEY, archived INTEGER NOT NULL DEFAULT 0); INSERT OR IGNORE INTO works VALUES ('a', 0), ('b', 0)");
+  ensureVectorScanGenerationTriggers(writer);
+  await scan(cached, {});
+  const before = builds;
+  for (let i = 0; i < 3; i += 1) writer.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('unrelated', String(i));
+  const rows = await scan(cached, {});
+  assert.deepEqual(rows, await scan(callback, {}));
+  assert.equal(builds, before, 'no rebuild for a write the scan cannot see');
+  writer.close();
+});
+
+test("a write to a table the statement's filter reads is never answered from the old rows", async () => {
+  const input = { sql: sql(' AND kind IN (SELECT nodus_id FROM works WHERE archived = 0)'), limit: 5000 };
+  const both = await scan(cached, input);
+  assert.ok(both.some((row) => Number(row.passage_id.slice(1)) % 3 === 0) && both.some((row) => Number(row.passage_id.slice(1)) % 3 !== 0));
+  const before = builds;
+  const writer = new Database(dbFile);
+  writer.prepare("UPDATE works SET archived = 1 WHERE nodus_id = 'b'").run();
+  const rows = await scan(cached, input);
+  assert.deepEqual(rows, await scan(callback, input));
+  assert.ok(rows.length > 0 && rows.every((row) => Number(row.passage_id.slice(1)) % 3 === 0), 'the archived kind is gone at once');
+  assert.equal(builds, before, 'the vectors themselves were not rebuilt: only the filtered rows');
+  writer.prepare('UPDATE passages SET embedding = ? WHERE passage_id = ?').run(vector(), 'p1');
+  await scan(cached, input);
+  assert.equal(builds, before + 1, 'a write to the vector table rebuilds the vectors');
+  writer.close();
+});
+
+// The rows a statement's filter keeps are computed once per table version. Over a sparse table
+// with a long parameter list (the vault's passages statement carries one parameter per work) that
+// must be one execution, not one per 1,500-rowid window: on a real 14,055-work vault the windowed
+// form took 1.5 s each time the vault's tables changed, against 0.27 s.
+test('a sparse table with a long IN list is filtered in one pass, exactly as window by window', async () => {
+  const sparseFile = path.join(outDir, 'sparse.sqlite');
+  const db = new Database(sparseFile);
+  db.exec('CREATE TABLE passages (passage_id TEXT PRIMARY KEY, kind TEXT, embedding BLOB)');
+  const insert = db.prepare('INSERT INTO passages (rowid, passage_id, kind, embedding) VALUES (?, ?, ?, ?)');
+  db.transaction(() => { for (let i = 0; i < 800; i += 1) insert.run(1 + i * 1000, `s${i}`, `k${i % 40}`, i % 90 === 0 ? null : vector()); })();
+  db.close();
+  const kinds = Array.from({ length: 20_000 }, (_, i) => `k${i}`);
+  const input = { sql: `${sql()} AND kind IN (${kinds.map(() => '?').join(',')})`, params: kinds, limit: 5000 };
+  const ask = (worker) => new Promise((resolve, reject) => {
+    const id = Math.floor(Math.random() * 1e9);
+    const onMessage = (reply) => { if (reply.id !== id) return; worker.off('message', onMessage); reply.ok ? resolve(reply.rows) : reject(new Error(reply.error)); };
+    worker.on('message', onMessage);
+    worker.postMessage({ id, databasePath: sparseFile, scan: { table: 'passages', query, threshold: -1, params: [], ...input } });
+  });
+  const started = performance.now();
+  const rows = await ask(cached);
+  const elapsed = performance.now() - started;
+  console.log(`sparse filter: ${elapsed.toFixed(0)} ms`);
+  assert.deepEqual(rows, await ask(callback), 'the same rows, in the same order, as the statement run window by window');
+  assert.ok(rows.length > 700, 'the fixture keeps most rows');
+  assert.ok(elapsed < 1500, `filtering ${Math.ceil(799_001 / 1500)} windows took ${elapsed.toFixed(0)} ms: the statement must run once, not once per window`);
+});

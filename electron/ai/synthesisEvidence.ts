@@ -26,7 +26,7 @@ import { evidenceText } from '@shared/passageQuality';
 import { isScannedWork, parseTextNotes } from '@shared/textProvenance';
 import { capabilityRegistry } from '../capabilities/registry';
 import { getDb } from '../db/database';
-import { findSimilarPassages, lexicalPassageSearch, type SimilarPassage } from '../db/passagesRepo';
+import { findSimilarPassagesPaged, lexicalPassageSearch, type SimilarPassage } from '../db/passagesRepo';
 import { reactionIndexService } from '../reactionIndex';
 import { chemistryStockDirectory } from './chemistryStock';
 import { textbookCitations, textbookSchemeDirectory, textbookTemplateCitations } from './textbookSchemes';
@@ -314,7 +314,11 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
   if (!queries.length || !workIds.length) return [];
   const chosen = new Map<string, EvidencePassage>();
   const scannedWork = scannedWorkLookup();
-  for (const query of queries) {
+  // Every query's embedding is requested at once: they were awaited one query after another,
+  // a provider round trip each. A failed one is that query's dense lane only, as before.
+  const vectors = queries.map((query) => embed(query, signal));
+  for (const vector of vectors) vector.catch(() => undefined); // awaited in the loop
+  for (const [index, query] of queries.entries()) {
     signal?.throwIfAborted();
     // With the local reranker each lane offers more candidates, and the reranker orders the
     // fused top RERANK_POOL by reading query and passage together (localReranker.ts).
@@ -323,9 +327,12 @@ export async function textbookPassages(queries: string[], workIds: string[], sig
     const lanes: SimilarPassage[][] = [];
     try { lanes.push(lexicalPassageSearch(query, laneSize, { nodusIds: workIds })); } catch { /* FTS is optional */ }
     try {
-      const vector = await embed(query, signal);
+      const vector = await vectors[index];
       signal?.throwIfAborted();
-      if (vector) lanes.push(findSimilarPassages(vector, PASSAGE_SIMILARITY, laneSize, { nodusIds: workIds }));
+      // The paged scan runs on the vector-scan worker against its cached vectors. The synchronous
+      // `findSimilarPassages` scored every passage in the main process: 1.2 s per query on
+      // 100,000 passages, seven queries a gather, with the window and every IPC reply held.
+      if (vector) lanes.push(await findSimilarPassagesPaged(vector, PASSAGE_SIMILARITY, laneSize, { nodusIds: workIds }));
     } catch (error) {
       if (signal?.aborted) throw error;
       /* no embedding provider: the lexical lane alone */
