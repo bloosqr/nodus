@@ -20,7 +20,7 @@ await build({ entryPoints: [path.join(root, 'electron/ai/moleculeInspection.ts')
       './aiClient': `export async function completeText(){return globalThis.__routeReview ?? '{"status":"ok"}'}`,
       // The reaction index and the route evidence are optional; with no index they add nothing.
       '../reactionIndex': `export const reactionIndexService=()=>({localDirectory:async()=>null})`,
-      './synthesisEvidence': `export async function invokeDisconnectionsEach(){return []} export function synthesisEvidenceWorkIds(){return []} export async function textbookPassages(){return []}`,
+      './synthesisEvidence': `export async function invokeDisconnections(){return []} export async function invokeDisconnectionsEach(){return []} export function synthesisEvidenceWorkIds(){return []} export async function textbookPassages(){return []}`,
       // No PubChem mirror: the name and structure lookups go to the package as before.
       './pubchemMirror': `export const pubchemMirrorDirectory=()=>null; export const opsinDirectory=()=>null`,
       './chemistryStock': `export const chemistryStockDirectory=()=>null`,
@@ -46,7 +46,7 @@ const runner = {
     if (toolId === 'verify-route') {
       return { artifacts: [{ artifactType: 'route-audit', data: {
         steps: [passing(0, steps[0], [species('CCO', 'ethanol')], [species('CC=O', 'ethanal')]), passing(1, steps[1], [species('CC=O', 'ethanal')], [species('CC(=O)O', 'acetic acid')])],
-        links: [{ from: 0, to: 1, ok: true, reason: 'carried', carried: [{ canonicalSmiles: 'CC=O', formula: 'C2H4O', heavyAtoms: 3 }] }],
+        links: [{ from: 0, to: 1, ok: !globalThis.__brokenLink, reason: globalThis.__brokenLink ? 'constitution-only' : 'carried', carried: [{ canonicalSmiles: 'CC=O', formula: 'C2H4O', heavyAtoms: 3 }] }],
         continuous: true, blocked: [], isolated: [],
       } }] };
     }
@@ -70,4 +70,14 @@ test('a route the review accepts keeps its final report as it was', async () => 
   const answer = await appendRouteReportAndDrawings('Route prose', '', { runner, question: 'synthesis of acetic acid' }, { steps, labels });
   assert.match(answer, /Route checked: balanced and connected/);
   assert.match(answer, /Every step of this route passed the check, so the route is drawn\. 2 step\(s\)/);
+});
+
+ test('a broken intermediate link prevents the final drawings even when each step passes', async () => {
+  globalThis.__routeReview = JSON.stringify({ status: 'ok' });
+  globalThis.__brokenLink = true;
+  try {
+    const answer = await appendRouteReportAndDrawings('Route prose', '', { runner }, { steps, labels });
+    assert.match(answer, /Route check failed/);
+    assert.doesNotMatch(answer, /### Final report|<figure>/);
+  } finally { globalThis.__brokenLink = false; }
 });
