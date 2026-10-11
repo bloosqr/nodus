@@ -31,6 +31,10 @@ test('a file that would run when opened is recognised; a document is not', async
   const { launchesOnOpen } = createRequire(import.meta.url)(bundle);
   for (const name of ['transcription.command', 'x.TERMINAL', 'notes.fileloc', 'site.webloc', 'tool.jar', 'Setup.pkg', 'a.scpt', 'run.sh', 'x.py'])
     assert.equal(launchesOnOpen(path.join(scratch, name)), true, name);
+  for (const extension of ['EXE', 'com', 'msi', 'msp', 'mst', 'bat', 'cmd', 'ps1', 'psm1', 'psd1', 'lnk', 'pif',
+    'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'scr', 'hta', 'cpl', 'dll', 'reg', 'application', 'appref-ms',
+    'appinstaller', 'msix', 'msixbundle', 'appx', 'appxbundle', 'gadget', 'desktop', 'AppImage', 'run', 'bin', 'elf', 'so', 'deb', 'rpm'])
+    assert.equal(launchesOnOpen(path.join(scratch, `attachment.${extension}`)), true, extension);
   for (const name of ['paper.pdf', 'scan.tiff', 'letter.docx', 'book.epub', 'notes.txt', 'page.html'])
     assert.equal(launchesOnOpen(path.join(scratch, name)), false, name);
 
@@ -45,4 +49,28 @@ test('a file that would run when opened is recognised; a document is not', async
   const pdf = path.join(scratch, 'copied-from-usb.pdf');
   fs.writeFileSync(pdf, '%PDF', { mode: 0o777 });
   assert.equal(launchesOnOpen(pdf), false, 'an execute bit on a document does not make it a program');
+});
+
+test('opening an executable or launcher reveals it without calling the operating system opener', async () => {
+  const bundle = path.join(scratch, 'opener.cjs');
+  await build({ entryPoints: [path.join(root, 'electron/util/openDocument.ts')], outfile: bundle, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent',
+    plugins: [{ name: 'shell', setup(api) {
+      api.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'stub' }));
+      api.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const shell = { showItemInFolder: path => globalThis.__revealed.push(path), openPath: async path => { globalThis.__opened.push(path); return ""; } };' }));
+    } }],
+  });
+  const { openDocumentPath } = createRequire(import.meta.url)(bundle);
+  globalThis.__revealed = [];
+  globalThis.__opened = [];
+  for (const extension of ['command', 'exe', 'msi', 'cmd', 'lnk', 'vbs', 'desktop', 'AppImage']) {
+    const file = path.join(scratch, `source.${extension}`);
+    await openDocumentPath(file);
+    assert.equal(globalThis.__revealed.at(-1), file);
+  }
+  assert.deepEqual(globalThis.__opened, []);
+  const document = path.join(scratch, 'paper.pdf');
+  await openDocumentPath(document);
+  assert.deepEqual(globalThis.__opened, [document]);
+  delete globalThis.__opened;
+  delete globalThis.__revealed;
 });
