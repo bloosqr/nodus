@@ -10,6 +10,7 @@
 // table's columns, and checks both the declared SYNC_SCHEMA_VERSION and the stamps the
 // senders actually write against it.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -80,4 +81,31 @@ test('senders stamp the last migration that changed a table, not every migration
   const { SYNC_SCHEMA_VERSION } = require(path.join(repoRoot, 'electron/db/syncSchemaVersion.ts'));
   assert.equal(SYNC_SCHEMA_VERSION, expected,
     `migration v${expected} is the last that changed a table: set SYNC_SCHEMA_VERSION to ${expected}`);
+});
+
+test('migration 201 publications remain importable by a schema-200 peer', () => {
+  const sender = new Database(path.join(userData, 'sender-201.sqlite'));
+  const receiverFile = path.join(userData, 'receiver-200.sqlite');
+  const receiver = new Database(receiverFile);
+  try {
+    runMigrations(sender);
+    assert.ok(sender.pragma('user_version', { simple: true }) >= 201);
+    for (const migration of migrations.filter(entry => entry.version <= 200)) {
+      receiver.transaction(() => {
+        receiver.exec(migration.up);
+        migration.after?.(receiver);
+        receiver.pragma(`user_version = ${migration.version}`);
+      })();
+    }
+    sender.prepare('INSERT INTO notes (id, folder_id, title, kind, content, source_json, order_idx, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, NULL, 0, ?, ?)')
+      .run('wire-note', 'Compatible', 'markdown', 'from a newer index', '2026-10-01', '2026-10-01');
+    const snapshot = buildServerSnapshot({ id: 'v', name: 'Vault', type: 'academic' }, { nodusServerIncludeUserContent: true, nodusServerIncludePassages: false }, sender);
+    assert.equal(snapshot.schemaVersion, 200);
+    const file = path.join(userData, 'compatible-snapshot.json');
+    fs.writeFileSync(file, snapshot.buffer);
+    const { importReplicaSnapshot } = require(path.join(repoRoot, 'electron/serverSync/serverReplicaWorker.ts'));
+    importReplicaSnapshot({ file, database: receiverFile, schemaVersion: 200 });
+    assert.equal(receiver.pragma('user_version', { simple: true }), 200);
+    assert.equal(receiver.prepare('SELECT content FROM notes WHERE id = ?').get('wire-note')?.content, 'from a newer index');
+  } finally { sender.close(); receiver.close(); }
 });
