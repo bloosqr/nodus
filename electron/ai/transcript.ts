@@ -71,7 +71,7 @@ export function recordRetrieval(fields: Record<string, unknown>): void {
 // Provider authentication headers must never reach the debugging file. Normalising through
 // Headers covers all three RequestInit representations and makes names case-insensitive.
 const SAFE_HEADERS = new Set(['accept', 'content-type', 'anthropic-version', 'openai-beta']);
-function transcriptHeaders(headers?: HeadersInit): Record<string, string> {
+function transcriptHeaders(headers?: RequestInit['headers']): Record<string, string> {
   const safe: Record<string, string> = {};
   new Headers(headers).forEach((value, name) => { if (SAFE_HEADERS.has(name)) safe[name] = value; });
   return safe;
