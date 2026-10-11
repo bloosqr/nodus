@@ -4,6 +4,8 @@ import {
   buildNameFeedbackRequest,
   buildRouteReviewRequest,
   buildPrecedentQueries,
+  blockingReviewProblems,
+  brokenRouteLinks,
   buildRouteSteps,
   classifyCoProducts,
   countRouteSteps,
@@ -772,6 +774,9 @@ function targetName(labels: RouteSpeciesLabel[][], audit: RouteAudit, target: st
   return target ? labels.flat().find((entry) => entry.role === 'product' && entry.smiles === target && entry.name)?.name : undefined;
 }
 
+const FINAL_REPORT_PASSED = 'Every step of this route passed the check, so the route is drawn.';
+const FINAL_REPORT_REVIEW_HELD = 'Every step passed the deterministic balance and continuity checks, so the route is drawn; the model review above found a named structure wrong for its step or another blocking plan problem, so the route remains unverified.';
+
 /** Does the whole synthesis pass? Every step passes, nothing is disconnected, and the target is
  *  formed with the stereochemistry that was asked for.
  *
@@ -782,6 +787,7 @@ function routePasses(audit: RouteAudit): boolean {
   return audit.steps.length > 0
     && audit.steps.every((step) => !routeStepFailure(step))
     && !isolatedSteps(audit).length
+    && !brokenRouteLinks(audit).length
     && audit.target?.reason !== 'not-formed'
     && audit.target?.reason !== 'stereo-mismatch';
 }
@@ -863,7 +869,7 @@ async function printFinalReport(
   const lines = [
     '### Final report',
     '',
-    `Every step of this route passed the check, so the route is drawn. ${ordered.length} step(s), one diagram each. This is still bookkeeping: conditions, selectivity, yields and safety are not checked.`,
+    `${FINAL_REPORT_PASSED} ${ordered.length} step(s), one diagram each. This is still bookkeeping: conditions, selectivity, yields and safety are not checked.`,
     '',
     ...ordered.flatMap((figure) => [
       `**Step ${figure.index + 1}** — ${summaries.get(figure.index) ?? ''}`,
@@ -1021,6 +1027,7 @@ export async function appendRouteReportAndDrawings(
     const stockPromise = timed('stock', options.evidenceScope?.external === false ? Promise.resolve('') : startingMaterialStockLine(runner, labels).catch(() => ''));
     const review = await reviewPromise;
     const report = formatRouteAudit(audit, labels, review, false, overrides.unresolved ?? []);
+    const finalReport = blockingReviewProblems(review).length ? drawings.replace(FINAL_REPORT_PASSED, FINAL_REPORT_REVIEW_HELD) : drawings;
     const precedentText = await precedentSection;
     const support = await supportPromise;
     // A step's high-severity clashes ride along in its fix prompt, as evidence.
@@ -1038,7 +1045,7 @@ export async function appendRouteReportAndDrawings(
     const stockLine = await stockPromise;
     const textbookText = await textbookSection;
     console.info(`${new Date().toISOString()} [routeReport] ${((Date.now() - started) / 1000).toFixed(1)}s · ${timings.join(' · ')}`);
-    return `${finalAnswer.trimEnd()}\n\n${report}\n${stockLine ? `${stockLine}\n\n` : ''}${drawings}${precedentText}${textbookText}${compatibilityText}${sources}${fix ? `\n${fix}\n` : ''}`;
+    return `${finalAnswer.trimEnd()}\n\n${report}\n${stockLine ? `${stockLine}\n\n` : ''}${finalReport}${precedentText}${textbookText}${compatibilityText}${sources}${fix ? `\n${fix}\n` : ''}`;
   } catch (error) {
     if (options.signal?.aborted) return finalAnswer;
     return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable(error instanceof Error ? error.message : 'the route check failed')}\n`;
