@@ -268,17 +268,17 @@
       }
     ]
   },
-  "budgetCiSha256": "32dc059797fe489ebcbf564e66f58850cf4bd9d55922802e17609477ab89c3f4",
+  "budgetCiSha256": "add3fad496bb2da63be0c4ba3841699cdef758a84b8a0ec8c9768a101e3f849a",
   "changedFiles": {
     ".github/workflows/ci.yml": {
       "snapshot": "original-ci.yml",
       "originalSha256": "33555a41d46015c8ba92d7069740027c4ca00a98e71bf234829c4538ec206359",
-      "restrictedSha256": "32dc059797fe489ebcbf564e66f58850cf4bd9d55922802e17609477ab89c3f4"
+      "restrictedSha256": "add3fad496bb2da63be0c4ba3841699cdef758a84b8a0ec8c9768a101e3f849a"
     },
     ".github/workflows/release-build.yml": {
       "snapshot": "original-files/.github/workflows/release-build.yml",
       "originalSha256": "3cca54040718fbef65b48fde8f9ea698ccc058304aa8ee99c5620190551000bf",
-      "restrictedSha256": "5d391e7c7917acd76023a75166554c67a45b5b32baf2291ad4a786b365f2dc20"
+      "restrictedSha256": "94d95fc64cb1fca292b34ed22fab6a38cb291c402409c09964ad06ad62d71d70"
     },
     "scripts/ci-test-shards.mjs": {
       "snapshot": "original-files/scripts/ci-test-shards.mjs",
@@ -313,7 +313,7 @@
     "scripts/test-e2e-stability.mjs": {
       "snapshot": "original-files/scripts/test-e2e-stability.mjs",
       "originalSha256": "69bd62985365e3016c4c9a4bd75a26bb700a6c5ea28c5924f26ead8592547c96",
-      "restrictedSha256": "aadb3fd1582400a4fe476cc5e04aa2323d83206d84a8f32b6f3921afe415b4dc"
+      "restrictedSha256": "8746e1632b79e5c5a70134a328de7b5b166c187955225c7be5d12351b16b9bdb"
     },
     "scripts/test-unsigned-mac-update.mjs": {
       "snapshot": "original-files/scripts/test-unsigned-mac-update.mjs",
@@ -360,6 +360,119 @@
       "snapshot": "original-files/scripts/e2e-argument-map-canvas.mjs",
       "originalSha256": "6ed75d17c107c838b8d7514d14cfcec5e5adb59b0ed8e703a54f8c5cbb4d9cd3",
       "restrictedSha256": "95257f7578d19213e0b5739d54ea3749eef8972adb5d6f7c7459169b7f8920cd"
+    },
+    ".github/workflows/appimage-updates.yml": {
+      "snapshot": "original-files/.github/workflows/appimage-updates.yml",
+      "originalSha256": "5d7769024916a640bddb372d476e3af52ac51ed3b4d321e6da2ebccbe408a67a",
+      "restrictedSha256": "49a671c17c07143059056fc206477e65207e0df1697cb83c6b5ae3af9747fe8b"
+    },
+    ".github/workflows/nodus-server-image.yml": {
+      "snapshot": "original-files/.github/workflows/nodus-server-image.yml",
+      "originalSha256": "6f1dd8b1294dc413c062498d6738109c93370306fb65bbed4e182d7f532070c9",
+      "restrictedSha256": "415a82b9c53bafb4635657ad8a75271d4484a76be5e1b97317a7ade69b59eae2"
+    },
+    ".github/workflows/pages.yml": {
+      "snapshot": "original-files/.github/workflows/pages.yml",
+      "originalSha256": "9b36b965f6e2850be4591d45a25c967ed39e23bd71aa3cf169250bf55886ba5b",
+      "restrictedSha256": "f018c585b8774dcc7b103e29c6be9a0a584a702540ebd14931f71a2c075bf7f6"
+    },
+    ".github/workflows/presenter-lan.yml": {
+      "snapshot": "original-files/.github/workflows/presenter-lan.yml",
+      "originalSha256": "c3602571798ea0bff7497206ac41ef7e2228316711dfe3380f6426bb59d798e2",
+      "restrictedSha256": "e4d7ff93aea43d5b6cdd6f63e5a042a3ece9e0094535323b884aef13969f26ca"
+    },
+    ".github/workflows/research-corpus-native.yml": {
+      "snapshot": "original-files/.github/workflows/research-corpus-native.yml",
+      "originalSha256": "a31713afd6d4da402daec761eee5ee0f86586748fc6d27f976e1159217f5314c",
+      "restrictedSha256": "4664755ed8327753cb1a0f9be22b02fbb3ce310213b532abf514ae37e8911db9"
+    },
+    ".github/workflows/research-corpus-packaging.yml": {
+      "snapshot": "original-files/.github/workflows/research-corpus-packaging.yml",
+      "originalSha256": "fbb7702f0f582bf883bb2fc4edc709452d8b08c84e9cea0756190135ed1b09d6",
+      "restrictedSha256": "095bb25338d7c4388b8d1cdb6b593f398ac14714dfce0de2b66288f3c5d9527a"
+    },
+    ".github/workflows/scheme-scan.yml": {
+      "snapshot": "original-files/.github/workflows/scheme-scan.yml",
+      "originalSha256": "2ee0a05d85dac0fae8c534b9550ccda07a8e9bb14b6ca9c36e2a20ca3390f4bc",
+      "restrictedSha256": "56ac55c24f3649df06e48cb561c50185609ab6bc2268d0b966c58858ac33f0ff"
+    },
+    ".github/workflows/searxng-health.yml": {
+      "snapshot": "original-files/.github/workflows/searxng-health.yml",
+      "originalSha256": "e76625bffd0872e502d804c96f865439df04720fca7c16d172fb03d655f91b24",
+      "restrictedSha256": "de79a45e045a3f977f996319c7446944a2411336f7ea6d68c2a1a6781f80093d"
+    },
+    "scripts/test-nodus-server-deployment.mjs": {
+      "snapshot": "original-files/scripts/test-nodus-server-deployment.mjs",
+      "originalSha256": "17ae320ce0ec6ba546aa554ced4e8e0d1c0eec934ffa6f3cd40facd8bb8cf351",
+      "restrictedSha256": "bec9b29c5177db131844ddafb79c09872577d285d2e1effed179eba4cc76fcb7"
+    },
+    "scripts/test-research-corpus-run.mjs": {
+      "snapshot": "original-files/scripts/test-research-corpus-run.mjs",
+      "originalSha256": "98712fb6f835e403f23e21b86544030c0a5ae14ea3310919e384433b6399a512",
+      "restrictedSha256": "3370e50eec38cc6ada881b6c734a89d73a83d907b103099f2e322807457df54a"
     }
+  },
+  "addedFiles": {
+    "scripts/ci-routing.mjs": "b4f93db88c1fd5d9e01023bab1b3daa968583500ec1f117cc2636496da331130",
+    "scripts/ci-native-checks.mjs": "c3ddb954a0d025883817044ae1fa376425b2a26467654599ffcb7a9e9741ee6f",
+    "scripts/test-ci-routing.mjs": "f0147947a4329350d270844ce4e197e483170591047e473ff50dd89eb0e371a6",
+    "scripts/test-ci-native-checks.mjs": "454c0fe726767e7f9f4988542a1efc5892365557c3cfca0a6ee07eff670e2430",
+    "tools/scheme-scan/requirements-ci.txt": "0f1a52175d900ebfc674129bcefa14c494f3005eac7f7918b6abf37d352dd37a"
+  },
+  "currentPolicyRulesetPayload": {
+    "name": "Require CLA before merging into main",
+    "target": "branch",
+    "enforcement": "active",
+    "bypass_actors": [],
+    "conditions": {
+      "ref_name": {
+        "exclude": [],
+        "include": [
+          "~DEFAULT_BRANCH"
+        ]
+      }
+    },
+    "rules": [
+      {
+        "type": "deletion"
+      },
+      {
+        "type": "non_fast_forward"
+      },
+      {
+        "type": "pull_request",
+        "parameters": {
+          "required_approving_review_count": 0,
+          "dismiss_stale_reviews_on_push": false,
+          "required_reviewers": [],
+          "require_code_owner_review": false,
+          "require_last_push_approval": false,
+          "required_review_thread_resolution": false,
+          "require_extra_approval_for_unattributed_changes": true,
+          "allowed_merge_methods": [
+            "merge",
+            "squash",
+            "rebase"
+          ]
+        }
+      },
+      {
+        "type": "required_status_checks",
+        "parameters": {
+          "strict_required_status_checks_policy": false,
+          "do_not_enforce_on_create": false,
+          "required_status_checks": [
+            {
+              "context": "CLA / signature",
+              "integration_id": 15368
+            },
+            {
+              "context": "test",
+              "integration_id": 15368
+            }
+          ]
+        }
+      }
+    ]
   }
 }

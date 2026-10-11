@@ -1,68 +1,96 @@
-# Restricción temporal de GitHub Actions
+# Política de GitHub Actions y restauración
 
 Solicitada por el propietario el 11 de octubre de 2026 para ahorrar minutos,
 conservando la calidad de la validación de PR y releases.
 **Restaurar únicamente cuando el propietario lo indique expresamente.** No hay
 reactivación programada al comenzar otro mes.
 
-## PR: suite completa, un único runner Linux
+## Política duradera de validación con consumo reducido
 
-`CI / test` instala y compila una vez en Ubuntu 22.04, comprueba lint y TypeScript,
-construye también Server Web y ejecuta todos los archivos descubiertos por el
-runner original, los cuatro E2E y los contratos reales del marketplace, incluidos
-los procesos nativos y las migraciones. El inventario comprueba que cada archivo
-se ejecuta exactamente una vez. Se mantienen cachés, concurrencia limitada de
-los tests, fallo ante omisiones y cancelación de PR obsoletos. No se repite el CI
-al fusionar en `main` ni se transfieren builds entre varios runners.
+Los PR de código conservan la suite Linux completa: una sola instalación y
+compilación, lint/TypeScript, todos los archivos descubiertos, cuatro E2E, contratos
+del marketplace, procesos nativos y migraciones. No se cachean resultados de tests
+ni se seleccionan pruebas individuales por los archivos modificados.
 
-Los E2E de Linux usan Xvfb y OpenGL de Mesa por CPU, con ANGLE y el sandbox
-normal de Electron. El compositor de la interfaz permanece por software; los
-grafos conservan WebGL real. El arranque, los cuatro E2E y las migraciones se
-comprueban antes de la suite larga para fallar pronto; un fallo conserva el
-estado de los frames en el log para diagnosticarlo.
+Los PR que solo cambian `README.md`, Markdown de `docs/`, documentación de esta
+restricción o el sitio (excepto `site/data/`, que también consume el desktop) usan
+una vía rápida: citas, todos los contratos del sitio y
+CLA. Cualquier archivo desconocido requiere Linux completo. El selector usa el
+diff Git completo, incluye borrados y ambos extremos de renombrados y falla si
+no puede comparar commits inmutables; no depende del límite de 300 archivos de
+los filtros de GitHub. Los cambios en el propio selector fuerzan todas las vías.
 
-Solo los nueve casos que dependen de APIs nativas de macOS se aplazan en Linux,
-con una lista explícita por archivo, nombre y razón; pasan a ser comprobaciones
-obligatorias en la release de Apple silicon. Ninguna omisión nueva es aceptada.
-Todas las pruebas siguen conservadas. El workflow tiene `workflow_call` para
-validar también el tag exacto de cada release antes de preparar un borrador.
+Electron, dependencias, configuración de build, código nativo y contratos
+compartidos añaden macOS Apple silicon y Windows antes de fusionar. Esos runners
+compilan y ejecutan las APIs nativas de macOS, credenciales Python, contratos y
+migraciones de capacidades y Presenter de Windows. Los nueve casos que requieren
+macOS siguen aplazados en Linux, pero son obligatorios y no admiten omisiones en
+su host nativo. Un nuevo skip, cancelación o test pendiente falla la puerta nativa.
+
+Research añade el runtime privado real, MCP/SearXNG locales, coexistencia y ciclo
+de vida en los tres sistemas, las 17 regresiones especializadas en los hosts
+nativos y el E2E de notebooks/PDF/actividad aislado en macOS. Linux ejecuta esas 17
+regresiones dentro de su inventario completo, sin repetirlas. Scheme scan y la
+imagen del servidor se validan en Linux cuando cambia su código; el contenedor
+real arranca y comprueba salud y protección de acceso sin publicarse. AppImage y
+Presenter Linux se comprueban en el mismo runner principal cuando corresponde.
+
+`CI / test` se ejecuta siempre y exige éxito de cada job seleccionado y omisión
+solo de los jobs no necesarios. Es obligatorio para fusionar, junto a
+`CLA / signature`, que conserva el workflow y los triggers originales. La vía
+rápida también produce el check obligatorio; ningún filtro de workflow lo deja
+pendiente indefinidamente. Los PR obsoletos se cancelan; las releases no. Se admite
+`merge_group` sin activar ninguna cola de fusión. No se repite CI al fusionar en
+`main`. Una ejecución manual de CI ejercita todas las vías sin publicar.
+
+Los E2E de Linux conservan Xvfb, Mesa por CPU, ANGLE y el sandbox normal de
+Electron. El compositor sigue por software y los grafos usan WebGL real. Se
+comprueba el runtime antes de la suite larga para fallar pronto. Los artefactos
+diagnósticos tienen retención de tres días; npm, Electron y compilación incremental
+conservan sus cachés, pero ninguna caché sustituye una comprobación.
 
 ## Releases: tres plataformas y publicación condicionada
 
-Stable release, Beta release y Release build permanecen habilitados. Sus tags y
-entradas manuales originales se conservan. La suite Linux completa valida el tag
-antes del empaquetado. Cada release conserva las verificaciones nativas de macOS
-Apple silicon, Windows y Linux, firma/notarización, integridad, artefactos y el
-gate final: cualquier fallo impide publicar. Los contratos del marketplace y sus
-migraciones en Windows/macOS se comprueban aquí en vez de repetir esas plataformas
-en todos los PR.
+Stable release y Beta release conservan sus tags y entradas manuales originales.
+La suite Linux completa y sus controles especializados validan el tag exacto
+antes de preparar un borrador. Las ejecuciones del mismo tag se serializan y
+ninguna release se cancela al empezar otra. Los jobs tienen límites explícitos de
+tiempo para evitar consumos por procesos colgados. Cada release conserva macOS Apple silicon, Windows
+y Linux, firma/notarización, procesos nativos, migraciones, runtime Research,
+integridad y el gate final: cualquier fallo impide publicar. Los controles nativos
+rechazan skips y se ejecutan aunque ese código no haya cambiado.
 
-El propietario también pidió dejar de producir releases macOS Intel. Se retira
-esa fila de la matriz, se normaliza el manifiesto de Apple silicon con el merger
-original y dejan de exigirse los assets Intel. Se conservan el backfill y todos
-los verificadores históricos, pausados; las descargas Intel públicas apuntan a
-la última release existente con Intel, `v5.8.1`, para no romper sus enlaces.
+El propietario pidió dejar de producir releases macOS Intel. Se conserva el
+merger auditado para normalizar el manifiesto arm64 y dejan de exigirse assets
+Intel. El backfill histórico sigue conservado y deshabilitado; las descargas Intel
+públicas apuntan a la última release existente con Intel, `v5.8.1`.
 
-GitHub anunció en 2025 el fin de `macos-15-intel` para agosto de 2027, pero su
-[anuncio del 26 de febrero de 2026](https://github.blog/changelog/2026-02-26-macos-26-is-now-generally-available-for-github-hosted-runners/)
-introdujo `macos-26-intel`. No se considera confirmada una retirada inmediata de
-todos los runners Intel; retirar nuestra compilación es la decisión de ahorro
-solicitada por el propietario.
+GitHub introdujo `macos-26-intel` en su
+[anuncio del 26 de febrero de 2026](https://github.blog/changelog/2026-02-26-macos-26-is-now-generally-available-for-github-hosted-runners/).
+No se considera confirmada una retirada general de los runners Intel: retirar
+nuestra compilación es la decisión de ahorro solicitada por el propietario.
 
 ## Workflows secundarios y reglas
 
-Se deshabilitan desde GitHub AppImage, Backfill macOS Intel, Local AI runtime,
-imagen del servidor, Website, Presenter, Research corpus native, Research corpus
-packaging, Scheme scan y SearXNG. Sus YAML y triggers siguen intactos. El workflow
-interno `pages-build-deployment` no admite deshabilitación por API. Pages usa
-`build_type=workflow`; al pausar Website no se generan publicaciones automáticas.
-El sitio ya publicado se conserva.
+AppImage, Presenter, Research native, Research packaging y Scheme scan permanecen
+habilitados con entrada manual; su cobertura automática necesaria se selecciona
+desde CI. Website y la publicación de la imagen del servidor son manuales. La
+imagen del servidor requiere `publish=true` y `main` para publicar; por defecto
+solo comprueba un contenedor sin publicar. Website publica siempre el `main`
+canónico. Sus despliegues y las comprobaciones de instaladores no se lanzan para
+probar esta política. SearXNG conserva su alerta de versión/salud y pasa de semanal
+a mensual, además de su entrada manual.
 
-Contributor License Agreement permanece activo por indicación expresa del
-propietario, con todos sus triggers originales. El requisito `CLA / signature`
-del ruleset de `main` también se mantiene: solo pueden fusionarse contribuciones
-con la aceptación verificada. Todas las reglas originales de `main` y el
-ruleset de `cla-signatures` se conservan; no se inventan firmas ni estados de éxito.
+La entrada histórica Local AI runtime ya no tiene YAML en `main` y permanece
+deshabilitada. Pages usa `build_type=workflow`; su workflow interno no dispara
+publicaciones sin el productor Website. Todas las pruebas y todos los workflows
+originales están conservados. La matriz manual Research usa los tres sistemas
+soportados y Node 22, como CI y las releases.
+
+Se conservan todas las reglas originales de `main` y `cla-signatures`, añadiendo
+únicamente el check agregado `test` como requisito de calidad. Las firmas CLA no
+se inventan ni se modifican. La instantánea original permite deshacer también
+este requisito añadido cuando se solicite la restauración completa.
 
 ## Restauración exacta
 
