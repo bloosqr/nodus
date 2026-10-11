@@ -1,6 +1,7 @@
 import type { AppLanguage } from './types';
 import { SCRIPTOR_RUNTIME_ERRORS, SCRIPTOR_RUNTIME_ERROR_PATTERNS } from './scriptorErrors';
 import { CLOUDFLARE_SYNC_ERRORS, CLOUDFLARE_SYNC_ERROR_PATTERNS } from './cloudflareSyncErrors';
+import { STT_RUNTIME_ERRORS, STT_RUNTIME_ERROR_PATTERNS } from './sttErrors';
 
 /**
  * Main-process error sentences that reached non-Spanish readers in Spanish.
@@ -54,6 +55,7 @@ export const MAIN_PROCESS_ERRORS: Record<string, MainErrorTranslations> = {
   ja: "ボールトは別の接続で使用中のため、移行前にコピーできません。何も変更されていません。数秒後にもう一度開いてください。", },
   ...SCRIPTOR_RUNTIME_ERRORS,
   ...CLOUDFLARE_SYNC_ERRORS,
+  ...STT_RUNTIME_ERRORS,
   'La copia de Focus está dañada.': {
     en: 'The Focus backup is corrupted.',
     fr: 'La sauvegarde de Focus est endommagée.',
@@ -4726,6 +4728,7 @@ function localProviderDetail(detail: string): MainErrorTranslations | null {
 /** Messages that carry runtime values, matched by shape. Order matters: the more
  *  specific pattern of a family must come first. */
 export const MAIN_PROCESS_ERROR_PATTERNS: { pattern: RegExp; translate: (...groups: string[]) => MainErrorTranslations }[] = [
+  ...STT_RUNTIME_ERROR_PATTERNS,
   ...SCRIPTOR_RUNTIME_ERROR_PATTERNS,
   ...CLOUDFLARE_SYNC_ERROR_PATTERNS,
   // ── Local providers: the failure this whole table was opened for ─────────────

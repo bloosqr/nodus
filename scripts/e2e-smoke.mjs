@@ -94,6 +94,24 @@ setTimeout(() => {
 }, 30);
 `, 'utf8');
   await chmod(fakeWhisperPath, 0o755);
+  // Live dictation uses a resident loopback server rather than the recording
+  // CLI. Keep recognition synthetic while exercising real IPC and capture.
+  const fakeWhisperServer = path.join(userData, 'whisper-server');
+  await writeFile(fakeWhisperServer, `#!/usr/bin/env node
+import { createServer } from 'node:http';
+const option = name => process.argv[process.argv.indexOf(name) + 1];
+const route = option('--request-path');
+createServer((request, response) => {
+  request.resume();
+  request.on('end', () => {
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url === route + '/health') response.end('{"status":"ok"}');
+    else if (request.method === 'POST' && request.url === route + '/inference') response.end('{"text":"Hola mundo."}');
+    else { response.statusCode = 404; response.end('{}'); }
+  });
+}).listen(Number(option('--port')), option('--host'));
+`, 'utf8');
+  await chmod(fakeWhisperServer, 0o755);
   const modelDir = path.join(userData, 'whisper.cpp', 'models');
   await mkdir(modelDir, { recursive: true });
   await writeFile(path.join(modelDir, 'ggml-base.bin'), 'e2e-placeholder');
@@ -2098,28 +2116,69 @@ try {
   await page.locator('.nodus-blocknote .bn-editor').first().waitFor({ timeout: 30_000 });
   await clickEditorAction(page.getByTestId('study-dictation-toggle'));
   await page.getByTestId('study-dictation').waitFor({ timeout: 30_000 });
-  assert.match(await page.getByTestId('study-dictation').innerText(), /ONNX|Local|offline/i, 'dictation panel defaults to the offline ONNX backend');
-  await page.getByTestId('study-dictation').getByRole('button', { name: 'Dictado', exact: true }).click();
-  const dictationLanguage = page.getByTestId('study-dictation-language');
-  await dictationLanguage.waitFor();
-  assert.equal(await dictationLanguage.locator('option').first().getAttribute('value'), 'auto', 'dictation supports automatic language detection');
-  assert.ok(await dictationLanguage.locator('option').count() >= 100, 'dictation exposes every language supported by multilingual Whisper');
-  await dictationLanguage.selectOption('es');
-  await page.getByTestId('study-dictation').getByRole('button', { name: 'Dictado', exact: true }).click();
-  await page.getByTestId('study-dictation-start').click();
+  const dictationPanel = page.getByTestId('study-dictation');
+  assert.match(await dictationPanel.innerText(), /Local/i, 'live dictation stays local');
   const microphonePrivacyDialog = page.getByRole('dialog', { name: 'Antes de activar el micrófono' });
   await microphonePrivacyDialog.waitFor({ timeout: 30_000 });
   assert.match(
     await microphonePrivacyDialog.innerText(),
     /localmente|base jurídica|no sustituye el consentimiento/i,
-    'the recording privacy notice blocks microphone access and explains the local/controller boundary',
+    'opening dictation automatically requests microphone consent',
   );
+  await microphonePrivacyDialog.getByRole('button', { name: 'Rechazar', exact: true }).click();
+  await page.getByTestId('study-dictation-start').waitFor();
+  await page.evaluate(() => {
+    window.__e2eDictationStreams = [];
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      const stream = await getUserMedia(constraints);
+      window.__e2eDictationStreams.push(stream);
+      return stream;
+    };
+  });
+  await dictationPanel.getByRole('button', { name: 'Opciones de dictado', exact: true }).click();
+  const dictationSettings = page.getByTestId('study-dictation-settings');
+  await dictationSettings.waitFor();
+  assert.equal(await dictationSettings.evaluate(element => !!element.closest('[data-testid="study-dictation"]')), false, 'settings render in an independent popover outside the dictation bar');
+  assert.equal(await page.getByTestId('study-dictation-model').inputValue(), 'whisper_cpp:base', 'dictation falls back to an installed local model when the preferred ONNX model is unavailable');
+  const dictationLanguage = page.getByTestId('study-dictation-language');
+  await dictationLanguage.waitFor();
+  assert.equal(await dictationLanguage.locator('option').first().getAttribute('value'), 'auto', 'dictation supports automatic language detection');
+  assert.ok(await dictationLanguage.locator('option').count() >= 100, 'dictation exposes every language supported by multilingual Whisper');
+  await dictationLanguage.selectOption('es');
+  await page.keyboard.press('Escape');
+  await dictationSettings.waitFor({ state: 'hidden' });
+  await page.getByTestId('study-dictation-start').click();
+  await microphonePrivacyDialog.waitFor({ timeout: 30_000 });
+  assert.equal(await page.evaluate(() => window.__e2eDictationStreams.length), 0, 'the privacy notice blocks microphone access');
   await microphonePrivacyDialog.getByRole('button', { name: 'Aceptar', exact: true }).click();
-  await page.getByTestId('study-dictation-discard').waitFor({ timeout: 30_000 });
+  const dictationStatus = page.getByTestId('study-dictation-status');
+  await dictationStatus.filter({ hasText: 'Escuchando' }).waitFor();
+  assert.equal(await page.evaluate(() => window.__e2eDictationStreams.length), 1, 'consent starts real fake-device microphone capture');
+  await waitForCondition('live dictation inserts recognized text before stopping', async () =>
+    (await page.locator('.nodus-blocknote .bn-editor').first().innerText()).includes('Hola mundo'));
+  await page.getByTestId('study-dictation-pause').click();
+  await dictationStatus.filter({ hasText: 'Pausado' }).waitFor();
+  await dictationPanel.getByRole('button', { name: 'Opciones de dictado', exact: true }).click();
+  await dictationSettings.waitFor();
+  assert.equal(await dictationLanguage.isDisabled(), true, 'the language is fixed while capture is active');
+  await page.keyboard.press('Escape');
+  await dictationSettings.waitFor({ state: 'hidden' });
+  await page.getByTestId('study-dictation-pause').click();
+  await dictationStatus.filter({ hasText: 'Escuchando' }).waitFor();
   await page.getByTestId('study-dictation-discard').click();
   await page.getByTestId('study-dictation-start').waitFor({ timeout: 30_000 });
-  await clickEditorAction(page.getByTestId('study-dictation-toggle'));
-  console.log('[e2e] study dictation panel + fake microphone capture ok');
+  assert.equal(await page.evaluate(() => window.__e2eDictationStreams.every(stream => stream.getTracks().every(track => track.readyState === 'ended'))), true, 'cancel releases the microphone');
+  await page.getByTestId('study-dictation-start').click();
+  await microphonePrivacyDialog.getByRole('button', { name: 'Aceptar', exact: true }).click();
+  await dictationStatus.filter({ hasText: 'Escuchando' }).waitFor();
+  await page.getByTestId('study-dictation-stop').click();
+  await page.getByTestId('study-dictation-start').waitFor();
+  assert.equal(await page.evaluate(() => window.__e2eDictationStreams.length), 2, 'dictation can restart after cancellation');
+  assert.equal(await page.evaluate(() => window.__e2eDictationStreams.every(stream => stream.getTracks().every(track => track.readyState === 'ended'))), true, 'stop releases the restarted microphone');
+  await dictationPanel.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await dictationPanel.waitFor({ state: 'hidden' });
+  console.log('[e2e] live dictation consent, independent settings, pause/resume, cancel/stop and fake microphone capture ok');
   if (process.env.NODUS_E2E_STT_UI_ONLY === '1') {
     const recordingId = await page.evaluate(async () => (await window.nodus.createStudyRecording({
       fileName: 'idioma-smoke.wav', mimeType: 'audio/wav', bytes: new Uint8Array([82, 73, 70, 70]), language: 'auto',

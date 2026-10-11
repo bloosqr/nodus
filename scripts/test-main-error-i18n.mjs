@@ -249,6 +249,25 @@ test('Scriptor errors preserve recovery codes and unsupported formula elements t
   }
 });
 
+test('live dictation errors preserve installation guidance and failure codes through IPC', () => {
+  const messages = [
+    ['El dictado en directo necesita whisper-server, incluido en whisper.cpp. Actualiza la instalación desde Ajustes → Modelos IA.', 'whisper-server'],
+    ['Whisper no pudo transcribir el audio (503).', '503'],
+    ['whisper-server terminó (null).', 'null'],
+    ['Whisper no terminó de preparar el modelo local.', 'Whisper'],
+  ];
+  for (const language of [...LANGUAGES, 'zh-TW', 'ja', 'ko']) {
+    for (const [message, detail] of messages) {
+      const localized = localizeIpcPayload({ ok: false, error: message }, language);
+      assert.equal(localized.ok, false);
+      assert.notEqual(localized.error, message, `${language} translates ${message}`);
+      assert.ok(localized.error.includes(detail), `${language} preserves ${detail}`);
+      assert.ok(!GENERIC.has(localized.error), `${language} preserves the dictation failure's cause`);
+      assert.equal(localizeIpcPayload({ ok: false, error: message }, 'es').error, message);
+    }
+  }
+});
+
 test('catalogue and server-address errors keep their specific cause through IPC in every UI language', () => {
   const messages = [
     ['El proveedor no devolvió un catálogo de modelos válido.', 'The provider did not return a valid model catalogue.'],

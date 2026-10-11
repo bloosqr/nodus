@@ -283,6 +283,7 @@ export async function runInPythonRuntime(runtime: TrustedWorkerRuntime, request:
   // calls is not time this one spent running, and must not be reported as it.
   const release = await pythonSlots.acquire(signal);
   try {
+    signal.throwIfAborted();
     return await (request.persistent && !request.secret ? askServedInterpreter(root, request, signal) : spawnInterpreter(root, request, signal));
   } finally { release(); }
 }
@@ -302,6 +303,7 @@ interface ServedInterpreter {
   buffer: string;
   stderr: string;
   idle?: NodeJS.Timeout;
+  retired?: boolean;
   onLine?: (line: string) => void;
   onExit?: (code: number | null, killedBy: NodeJS.Signals | null) => void;
 }
@@ -313,15 +315,18 @@ const SERVED_MAX_USES = 200;
 /** Interpreters kept idle per script; more run at once only while the admission above allows. */
 const SERVED_IDLE_PER_KEY = 2;
 const servedIdle = new Map<string, ServedInterpreter[]>();
+const servedInterpreters = new Set<ServedInterpreter>();
 let servedRequests = 0;
 
 /** Stops every served interpreter. For shutdown and tests; a call in flight fails as an exit. */
 export function stopServedInterpreters(): void {
-  for (const list of servedIdle.values()) for (const served of list) retireServed(served);
+  for (const served of [...servedInterpreters]) retireServed(served);
   servedIdle.clear();
 }
 
 function retireServed(served: ServedInterpreter): void {
+  served.retired = true;
+  servedInterpreters.delete(served);
   if (served.idle) clearTimeout(served.idle);
   const list = servedIdle.get(served.key);
   if (list?.includes(served)) list.splice(list.indexOf(served), 1);
@@ -331,7 +336,7 @@ function retireServed(served: ServedInterpreter): void {
 function parkServed(served: ServedInterpreter): void {
   served.onLine = served.onExit = undefined;
   const list = servedIdle.get(served.key) ?? [];
-  if (served.uses >= SERVED_MAX_USES || list.length >= SERVED_IDLE_PER_KEY || served.child.exitCode !== null || served.child.signalCode !== null) {
+  if (served.retired || served.uses >= SERVED_MAX_USES || list.length >= SERVED_IDLE_PER_KEY || served.child.exitCode !== null || served.child.signalCode !== null) {
     retireServed(served);
     return;
   }
@@ -350,6 +355,7 @@ function startServed(root: string, args: string[], key: string): ServedInterpret
   });
   liveInterpreters.add(child);
   const served: ServedInterpreter = { key, child, uses: 0, buffer: '', stderr: '' };
+  servedInterpreters.add(served);
   child.stdout!.setEncoding('utf8');
   child.stderr!.setEncoding('utf8');
   child.stdout!.on('data', (chunk: string) => {
@@ -415,6 +421,7 @@ function askServedInterpreter(root: string, request: PythonRunRequest, signal: A
       const stderr = `${target.stderr}\n${killedBy ? `The interpreter was terminated by ${killedBy}.` : 'The interpreter exited before it answered.'}`.slice(-STDERR_TAIL);
       finish({ result: { code: code === null ? signalExitCode(killedBy) : code || 1, stdout: '', stderr } }, false);
     };
+    if (signal.aborted) { abort(); return; }
     try { target.child.stdin!.write(`${JSON.stringify({ id, stdin: request.stdin ?? '' })}\n`); }
     catch (error) { finish({ error: error instanceof Error ? error : new Error(String(error)) }, false); }
   });
@@ -463,6 +470,7 @@ function spawnInterpreter(root: string, request: PythonRunRequest, signal: Abort
       if (code === null && killedBy) stderr = `${stderr}\nThe interpreter was terminated by ${killedBy}.`.slice(-STDERR_TAIL);
       finish(undefined, code ?? signalExitCode(killedBy));
     });
+    if (signal.aborted) { abort(); return; }
     try {
       if (request.secret) child.stdin.write(`${request.secret}\n`);
       if (request.stdin) child.stdin.write(request.stdin);

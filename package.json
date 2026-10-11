@@ -119,6 +119,7 @@
     "verify:browser-connector": "node scripts/verify-browser-connector-server.mjs",
     "verify:browser-connector-live": "node scripts/verify-browser-connector-live.mjs",
     "verify:study-whisper": "node scripts/verify-study-whisper.mjs",
+    "verify:scriptor-dictation": "node scripts/verify-scriptor-dictation.mjs",
     "verify:study-improve-local": "node scripts/verify-study-improve-local.mjs",
     "verify:database-records": "node scripts/verify-database-records.mjs",
     "verify:home-dashboard": "node scripts/verify-home-dashboard.mjs",
