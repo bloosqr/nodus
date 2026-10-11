@@ -8893,4 +8893,17 @@ export const FR: Record<string, string> = {
   "El enlace nativo no está disponible. Requiere macOS y permiso de red local.": "La connexion native est indisponible. Elle nécessite macOS et une autorisation réseau local.",
   "Escanea desde Nodus Presenter. Conecta el ordenador y el móvil a la misma red local.": "Scannez depuis Nodus Presenter. Connectez l’ordinateur et le mobile au même réseau local.",
   "El enlace de la app no está disponible. Comprueba la conexión de red e inicia de nuevo la presentación.": "La connexion à l’app est indisponible. Vérifiez la connexion réseau et relancez la présentation.",
+  // Live local dictation in Scriptor.
+  "No se pudo iniciar el micrófono.": "Impossible de démarrer le microphone.",
+  "Dictado pausado para terminar el audio pendiente. Reanuda cuando esté listo.": "Dictée en pause pour terminer l’audio en attente. Reprenez quand il sera prêt.",
+  "Preparando dictado…": "Préparation de la dictée…",
+  "Cancelar dictado": "Annuler la dictée",
+  "Dictado en directo · Local": "Dictée en direct · Locale",
+  "Escuchando…": "Écoute…",
+  "El texto se inserta automáticamente en el cursor.": "Le texte est inséré automatiquement à la position du curseur.",
+  "Opciones de dictado": "Options de dictée",
+  "Descarga un modelo local de transcripción en Ajustes → Modelos IA para dictar.": "Téléchargez un modèle de transcription local dans Paramètres → Modèles IA pour dicter.",
+  "Audio pendiente": "Audio en attente",
+  "Modelo local": "Modèle local",
+  "Detener dictado": "Arrêter la dictée",
 };
