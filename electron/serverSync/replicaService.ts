@@ -21,6 +21,7 @@ import { syncServerProfilePreferencesForVault } from './profilePreferencesSync';
 import { advancingCloudflareCursor, cloudflareSyncGate } from './cloudflareSyncSafety';
 import { hydrateBinaryMutations, applyBinaryMutation } from './binaryMutationSync';
 import { importReplicaSnapshotInUtility, cancelReplicaImports } from './serverReplicaWorkerHost';
+import { UnsupportedReplicaSchemaError } from './replicaSnapshotErrors';
 import { serverFetchWithTimeout, ServerHttpError, requireCloudflareSafety } from './serverNetwork';
 import {
   LEGACY_SERVER_MUTATION_LIMITS,
@@ -75,6 +76,18 @@ interface ReplicaRuntime {
 
 const runtimes = new Map<string, ReplicaRuntime>();
 const readonlyPool = new Map<string, Database.Database>();
+
+/**
+ * Publications this build refused because their schema is newer than its own.
+ *
+ * Without this the refusal was rediscovered on every thirty-second tick: the stored ETag is
+ * the last revision APPLIED, so the server answered each poll with the whole snapshot again
+ * (36.7 MiB gzipped on a real academic library), which was then gunzipped and parsed on the
+ * main thread (0.7–1.6 s) only to be refused. Asking with the refused revision lets the
+ * server answer 304 until it publishes something else. In memory on purpose: installing the
+ * update that can read it restarts the app, which is when it must be fetched again.
+ */
+const refusedSnapshots = new Map<string, { revision: string; message: string }>();
 
 function runtimeFor(vaultId: string): ReplicaRuntime {
   let runtime = runtimes.get(vaultId);
@@ -200,8 +213,10 @@ export async function createConnectedVault(input: {
   try {
     setNodusServerTokenFor(vault.id, session.deviceToken);
     await pullReplica(vault.id, { force: true });
-    if (runtimeFor(vault.id).phase==='error') throw new Error(runtimeFor(vault.id).lastError || 'No se pudo importar la réplica.');
+    const hydration = runtimeFor(vault.id);
+    if (hydration.phase === 'error' || hydration.phase === 'revoked') throw new Error(hydration.lastError || 'No se pudo importar la réplica.');
   } catch (error) {
+    runtimes.delete(vault.id);
     // A hydration that never completed leaves a vault that looks connected and holds
     // nothing. Roll it back rather than leave that behind.
     try { deleteVault(vault.id, true); } catch { /* the registry entry is already gone */ }
@@ -278,7 +293,9 @@ async function pullRelayOperations(vault: VaultSummary, token: string, db: Datab
     for (const mutation of mutations) {
       if (mutation.kind !== 'upsert' || !['world_images', 'map_images'].includes(mutation.table)) continue;
       const hash = String(mutation.assets?.[0]?.hash ?? '');
-      if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('El servidor entregó una imagen de mundo sin hash válido.');
+      // Deterministic: refused and acknowledged rather than thrown, or this one row would
+      // stop the replica from receiving anything after it.
+      if (!/^[0-9a-f]{64}$/.test(hash)) { mutation.refusal = 'La imagen llegó sin referencia a sus bytes y no puede guardarse.'; continue; }
       const binary = await request(
         `${normalizeUrl(vault.remote!.url)}/api/v1/spaces/${encodeURIComponent(vault.remote!.spaceId)}/assets/${hash}`,
         { headers: { authorization: `Bearer ${token}`, accept: 'image/*' } },
@@ -443,10 +460,19 @@ export async function pullReplica(vaultId: string, options: { force?: boolean } 
     if (vault.active) await syncServerProfilePreferencesForVault(vault, undefined, { pull: true }).catch(() => undefined);
 
     const headers: Record<string, string> = { authorization: `Bearer ${token}` };
-    if (vault.remote.lastPulledRevision && !options.force) headers['if-none-match'] = `W/"${vault.remote.lastPulledRevision}"`;
+    const refused = refusedSnapshots.get(vaultId);
+    if (refused) headers['if-none-match'] = `W/"${refused.revision}"`;
+    else if (vault.remote.lastPulledRevision && !options.force) headers['if-none-match'] = `W/"${vault.remote.lastPulledRevision}"`;
     const response = await request(`${endpoint}/snapshot`, { headers });
 
     if (response.status === 401 || response.status === 403) { handleRevocation(vaultId, runtime); return; }
+    if (response.status === 304 && refused) {
+      // Still the publication this build cannot read. Same answer as when it was refused,
+      // without downloading it again.
+      runtime.phase = 'error';
+      runtime.lastError = refused.message;
+      return;
+    }
     if (response.status === 304) {
       const db = openReplicaDb(vault);
       if (db) {
@@ -469,7 +495,14 @@ export async function pullReplica(vaultId: string, options: { force?: boolean } 
     if (!db) throw new Error('No se ha podido abrir la base de datos de la réplica.');
     const connections = [db];
     if (vault.active && getDb().name === db.name) connections.push(getDb());
-    const snapshot = await importReplicaSnapshotInUtility(response, db, SCHEMA_VERSION, connections);
+    const snapshot = await importReplicaSnapshotInUtility(response, db, SCHEMA_VERSION, connections).catch((error: unknown) => {
+      if (error instanceof UnsupportedReplicaSchemaError) {
+        const refusedRevision = response.headers.get('x-nodus-revision') || error.revision;
+        if (refusedRevision && /^[a-zA-Z0-9._:-]{1,256}$/.test(refusedRevision)) refusedSnapshots.set(vaultId, { revision: refusedRevision, message: error.message });
+      }
+      throw error;
+    });
+    refusedSnapshots.delete(vaultId);
     const revision = response.headers.get('x-nodus-revision') || snapshot.revision || null;
     // Commit the imported revision before optional images: a failed image must not
     // force another full snapshot download and rewrite on the next pass.
@@ -555,6 +588,27 @@ async function limitsFor(vault: VaultSummary, token: string): Promise<RemoteMuta
     // Offline. Not cached, so the next tick asks again.
     return fallback;
   }
+}
+
+/**
+ * Image tables whose bytes travel on the asset channel, and the column that holds them.
+ *
+ * Every receiver of these rows requires the image's hash in `assets`: the owner's inbox
+ * (inboxPoller hydrateImageMutations) and other replicas (pullRelayOperations) throw on a
+ * row without it, and neither acknowledges past a throw. A desktop writer sent them with
+ * the bytes stripped and no `assets`, so one edited illustration stopped the owner from
+ * collecting anything else, from anyone, for good.
+ */
+const IMAGE_MUTATION_COLUMNS: Record<string, string> = { world_images: 'blob', map_images: 'blob', decorative_images: 'image_blob' };
+
+function readImageBytes(db: Database.Database, table: string, column: string, rowKey: string): Buffer | null {
+  let key: unknown[];
+  try { key = JSON.parse(rowKey) as unknown[]; } catch { return null; }
+  const identity = identityColumns(table, undefined, db);
+  if (identity.length !== key.length) return null;
+  const where = identity.map((name) => `${quoteIdentifier(name)} IS ?`).join(' AND ');
+  const row = db.prepare(`SELECT ${quoteIdentifier(column)} AS data FROM ${quoteIdentifier(table)} WHERE ${where}`).get(...key) as { data: unknown } | undefined;
+  return Buffer.isBuffer(row?.data) && row.data.length > 0 ? row.data : null;
 }
 
 /** Read the live row a queued entry points at, so what is sent is never a stale copy. */
@@ -684,6 +738,41 @@ async function drainOutboxOnce(vaultId: string): Promise<void> {
         return;
       }
     }
+    let assets: { hash: string }[] | null = null;
+    const imageColumn = entry.op === 'upsert' ? IMAGE_MUTATION_COLUMNS[entry.table_name] : undefined;
+    if (imageColumn) {
+      const image = readImageBytes(db, entry.table_name, imageColumn, entry.row_key);
+      if (!image) {
+        markOutboxRejected(db, [entry.id], 'Esta imagen todavía no tiene sus bytes en este equipo y no puede enviarse sin ellos.');
+        continue;
+      }
+      const imageHash = createHash('sha256').update(image).digest('hex');
+      const assetEndpoint = `${normalizeUrl(vault.remote.url)}/api/v1/spaces/${encodeURIComponent(vault.remote.spaceId)}/assets/${imageHash}`;
+      try {
+        const present = await request(assetEndpoint, { method: 'HEAD', headers: { authorization: `Bearer ${token}` } });
+        if (!present.ok) {
+          const upload = await request(assetEndpoint, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'content-type': 'application/octet-stream', 'content-length': String(image.length) },
+            body: image,
+          });
+          if (upload.status === 413 || upload.status === 415) {
+            // Deterministic: this server will never take these bytes. Kept and explained.
+            const detail = await upload.json().catch(() => ({})) as { error_description?: string };
+            markOutboxRejected(db, [entry.id], detail.error_description || `El servidor no acepta esta imagen (HTTP ${upload.status}).`);
+            continue;
+          }
+          if (!upload.ok) {
+            runtime.lastError = `El servidor rechazó una imagen (HTTP ${upload.status}).`;
+            return;
+          }
+        }
+      } catch (error) {
+        runtime.lastError = error instanceof Error ? error.message : String(error);
+        return;
+      }
+      assets = [{ hash: imageHash }];
+    }
     const mutation = {
       id: entry.id,
       clientId: clientIdFor(vaultId),
@@ -698,6 +787,7 @@ async function drainOutboxOnce(vaultId: string): Promise<void> {
       hlc: entry.hlc,
       ...(documentHash ? { documentHash } : {}),
       ...(blobHash ? { blobHash } : {}),
+      ...(assets ? { assets } : {}),
     };
 
     // Measured here, where the row is in hand. A Deep Research report is one row carrying its

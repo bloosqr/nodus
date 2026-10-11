@@ -354,3 +354,35 @@ test('a too-short string and an out-of-range number are reported the same way', 
   assert.match(high, /the input\.count must be an integer between 1 and 12 \(received 17\)/,
     'a number reports the value that arrived');
 });
+
+test('a reply cannot hand a tool the directories the application supplies', async () => {
+  // The chemistry tools accept local reference directories (a PubChem mirror, an OPSIN
+  // install that the package RUNS, reaction indexes, stock lists). The application fills
+  // them on its own calls; a reply that names one would point the package at a folder of
+  // the reply's choosing. Reached whenever a request fence outlives the prepare hook, for
+  // example because the hook failed.
+  const chemistry = provider({
+    id: 'nodus:chemistry', priority: 300, hooks: { prepare: true },
+    tools: [tool('compile', { inputSchema: { type: 'object', properties: { plan: { type: 'string' }, opsinDir: { type: 'string' }, pubchemDir: { type: 'string' } }, additionalProperties: false } })],
+    artifacts: [{ type: 'compile-result', version: 1, label: { en: 'Compiled' }, modelVisibility: 'projection' }],
+    requests: [{ fence: 'chemistry-plan', toolId: 'compile', maxPerReply: 1, answerMode: 'replace-block' }],
+  });
+  const inputs = [];
+  const runner = runnerOf({
+    hook: () => { throw new Error('worker restarting'); },
+    invoke: ({ input }) => { inputs.push(input); return { artifacts: [] }; },
+  });
+  const fence = '```chemistry-plan\n{"plan":"{}","opsinDir":"/Users/someone/Downloads/kit"}\n```';
+  const output = await runTrustedChatPipeline(`Here.\n\n${fence}\n`, registryOf(chemistry), runner, { onProblem: () => {} });
+  assert.deepEqual(inputs, [], 'the tool is not run with a directory the reply chose');
+  assert.match(output, /opsinDir/, 'and the refusal names the field');
+
+  // A promoted request is held to the same rule: the plugin built it, but from the reply.
+  const promoted = [];
+  const promoting = runnerOf({
+    hook: ({ nodes }) => [{ op: 'promote-request', nodeId: nodes.find(node => node.kind === 'fence').id, toolId: 'compile', input: { plan: '{}', pubchemDir: '/tmp/elsewhere' } }],
+    invoke: ({ input }) => { promoted.push(input); return { artifacts: [] }; },
+  });
+  await runTrustedChatPipeline(`Here.\n\n${fence}\n`, registryOf(chemistry), promoting, { onProblem: () => {} });
+  assert.deepEqual(promoted, []);
+});
