@@ -41,7 +41,7 @@ try {
   const later = () => new Date(Date.now() + 60_000).toISOString();
 
   // resolved: the Documentary Index step failed, then a later run published a current profile.
-  for (const id of ['resolved', 'other-error', 'still-failing', 'single']) addWork(id);
+  for (const id of ['resolved', 'other-error', 'still-failing', 'single', 'invalidated', 'no-analysis']) addWork(id);
   works.setDeepResult('resolved', 'failed', null, null, 'documentary_publication_superseded');
   profile('resolved', 'current', later());
   // other-error: a genuine deep-analysis failure is never cleared by an index run.
@@ -53,6 +53,15 @@ try {
   // single: resolved, but only cleared when its own id is passed.
   works.setDeepResult('single', 'failed', null, null, 'documentary_job_already_claimed');
   profile('single', 'current', later());
+  // A later index must not make an invalidated deep analysis current again.
+  works.setDeepResult('invalidated', 'failed', null, null, 'documentary_embedding_busy');
+  db.prepare("UPDATE works SET deep_status='pending' WHERE nodus_id=?").run('invalidated');
+  db.prepare("UPDATE library_analysis_freshness SET freshness='stale', fingerprint='new-content', reason='content_changed' WHERE work_id=? AND component='deep'").run('invalidated');
+  profile('invalidated', 'current', later());
+  // Indexing alone also cannot substitute for a deep scan that never committed.
+  db.prepare('UPDATE works SET deep_hash=NULL WHERE nodus_id=?').run('no-analysis');
+  works.setDeepResult('no-analysis', 'failed', null, null, 'documentary_embedding_busy');
+  profile('no-analysis', 'current', later());
 
   assert.equal(state('resolved').error, 'documentary_publication_superseded');
   assert.equal(state('resolved').freshness, 'failed');
@@ -66,6 +75,9 @@ try {
   assert.equal(state('other-error').error, 'El modelo devolvió un JSON inválido.', 'a non-documentary deep failure stays visible');
   assert.equal(state('other-error').freshness, 'failed');
   assert.equal(state('still-failing').error, 'documentary_embedding_busy', 'a failure newer than the last profile stays visible');
+  assert.deepEqual(state('invalidated'), { error: 'documentary_embedding_busy', freshness: 'stale' }, 'a pending analysis keeps its invalidation');
+  assert.deepEqual(db.prepare("SELECT fingerprint, reason FROM library_analysis_freshness WHERE work_id='invalidated' AND component='deep'").get(), { fingerprint: 'new-content', reason: 'content_changed' });
+  assert.deepEqual(state('no-analysis'), { error: 'documentary_embedding_busy', freshness: 'failed' }, 'a missing committed analysis stays failed');
   assert.equal(works.clearResolvedDocumentaryDeepErrors(), 0, 'the sweep is idempotent');
 
   // The queue calls it when a job completes and once per vault when it starts.
