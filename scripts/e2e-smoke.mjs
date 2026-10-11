@@ -2176,7 +2176,8 @@ try {
   await page.getByTestId('study-dictation-start').waitFor();
   assert.equal(await page.evaluate(() => window.__e2eDictationStreams.length), 2, 'dictation can restart after cancellation');
   assert.equal(await page.evaluate(() => window.__e2eDictationStreams.every(stream => stream.getTracks().every(track => track.readyState === 'ended'))), true, 'stop releases the restarted microphone');
-  await clickEditorAction(page.getByTestId('study-dictation-toggle'));
+  await dictationPanel.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await dictationPanel.waitFor({ state: 'hidden' });
   console.log('[e2e] live dictation consent, independent settings, pause/resume, cancel/stop and fake microphone capture ok');
   if (process.env.NODUS_E2E_STT_UI_ONLY === '1') {
     const recordingId = await page.evaluate(async () => (await window.nodus.createStudyRecording({
