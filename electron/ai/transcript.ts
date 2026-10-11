@@ -33,7 +33,7 @@ function append(record: Record<string, unknown>): void {
   const file = transcriptFile();
   if (!file) return;
   try {
-    appendFileSync(file, JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n');
+    appendFileSync(file, JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n', { mode: 0o600 });
   } catch {
     // Never let transcript logging break a generation.
   }
@@ -68,6 +68,54 @@ export function recordRetrieval(fields: Record<string, unknown>): void {
   append({ phase: 'retrieval', ...fields });
 }
 
+// Provider authentication headers must never reach the debugging file. Normalising through
+// Headers covers all three RequestInit representations and makes names case-insensitive.
+const SAFE_HEADERS = new Set(['accept', 'content-type', 'anthropic-version', 'openai-beta']);
+function transcriptHeaders(headers?: RequestInit['headers']): Record<string, string> {
+  const safe: Record<string, string> = {};
+  new Headers(headers).forEach((value, name) => { if (SAFE_HEADERS.has(name)) safe[name] = value; });
+  return safe;
+}
+
+function transcriptUrl(input: Parameters<typeof fetch>[0]): string {
+  try {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    url.username = '';
+    url.password = '';
+    for (const name of Array.from(url.searchParams.keys())) {
+      if (/^(?:key|api[-_]?key|access[-_]?token|token|authorization)$/i.test(name)) url.searchParams.set(name, '[redacted]');
+    }
+    return url.toString();
+  } catch { return '[unparseable URL]'; }
+}
+
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+async function recordHttpResponse(response: Response, keyFp: string | null): Promise<void> {
+  try {
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let raw = '', bytes = 0, truncated = false;
+    if (reader) {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        const remaining = MAX_RESPONSE_BYTES - bytes;
+        const accepted = chunk.value.subarray(0, remaining);
+        raw += decoder.decode(accepted, { stream: true });
+        bytes += accepted.byteLength;
+        if (chunk.value.byteLength > remaining || bytes === MAX_RESPONSE_BYTES) {
+          truncated = true;
+          // Cancelling a tee branch can wait for the original consumer. Never wait for it here.
+          void reader.cancel().catch(() => undefined);
+          break;
+        }
+      }
+      raw += decoder.decode();
+    }
+    append({ phase: 'http-response', status: response.status, keyFp, len: raw.length, raw, truncated });
+  } catch { /* A failed debug read must not affect the caller's response. */ }
+}
+
 /** A `fetch` for a provider client that records the exact request and response (and a key
  *  fingerprint, never the key) when the transcript is on; undefined when off, so the client keeps its
  *  default fetch and pays nothing. */
@@ -76,11 +124,10 @@ export function transcriptFetch(key: string | null | undefined): typeof fetch | 
   const keyFp = key ? createHash('sha256').update(key).digest('hex').slice(0, 12) : null;
   return (async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const body = typeof init?.body === 'string' ? init.body : undefined;
-    append({ phase: 'http', url: String(url), keyFp, bodyLen: body?.length, headers: init?.headers, body });
+    append({ phase: 'http', url: transcriptUrl(url), keyFp, bodyLen: body?.length, headers: transcriptHeaders(init?.headers), body });
     const response = await fetch(url, init);
     try {
-      const raw = await response.clone().text();
-      append({ phase: 'http-response', status: response.status, keyFp, len: raw.length, raw });
+      void recordHttpResponse(response.clone(), keyFp);
     } catch {
       // A non-cloneable body (rare) just skips the response record.
     }
