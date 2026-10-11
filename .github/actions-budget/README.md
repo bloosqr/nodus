@@ -51,16 +51,18 @@ solicitada por el propietario.
 
 ## Workflows secundarios y reglas
 
-Se deshabilitan desde GitHub AppImage, Backfill macOS Intel, CLA, Local AI runtime,
+Se deshabilitan desde GitHub AppImage, Backfill macOS Intel, Local AI runtime,
 imagen del servidor, Website, Presenter, Research corpus native, Research corpus
 packaging, Scheme scan y SearXNG. Sus YAML y triggers siguen intactos. El workflow
 interno `pages-build-deployment` no admite deshabilitación por API. Pages usa
 `build_type=workflow`; al pausar Website no se generan publicaciones automáticas.
 El sitio ya publicado se conserva.
 
-El requisito `CLA / signature` del ruleset de `main` se retira temporalmente para
-que una comprobación pausada no impida fusionar. Las otras reglas y el ruleset de
-`cla-signatures` se conservan; no se inventan firmas ni estados de éxito.
+Contributor License Agreement permanece activo por indicación expresa del
+propietario, con todos sus triggers originales. El requisito `CLA / signature`
+del ruleset de `main` también se mantiene: solo pueden fusionarse contribuciones
+con la aceptación verificada. Todas las reglas originales de `main` y el
+ruleset de `cla-signatures` se conservan; no se inventan firmas ni estados de éxito.
 
 ## Restauración exacta
 
