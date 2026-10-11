@@ -121,8 +121,24 @@ cambios ajenos. Conservar las copias hasta verificar la restauración.
 
 ## Verificación de la política
 
-La vía rápida se verifica con un PR que modifica únicamente este documento.
-Debe completar el selector, los contratos del sitio, las citas y el CLA, y
-producir `test` satisfactorio sin iniciar los jobs Linux completo, macOS,
-Windows, Scheme scan o servidor. La ejecución completa se comprueba por separado
-antes de activar esta política en `main`.
+[CI completo verificado](https://github.com/jorgepb96/nodus/actions/runs/38128596957):
+835 archivos ejecutados exactamente una vez, 4.667 casos, 4.657 aprobados, cero
+fallos/cancelaciones y las diez omisiones previstas de Linux. Los nueve casos
+exclusivos de macOS también se ejecutaron y aprobaron en su host nativo.
+macOS aprobó los 33 casos nativos/Python, las 17 regresiones de Research y los E2E
+reales de notebooks, PDF y actividad. Windows aprobó sus seis casos nativos/Python,
+las 17 regresiones de Research, Presenter y la instalación/migración de capacidades.
+Scheme scan, AppImage, Presenter Linux y el arranque del contenedor también
+aprobaron. El proceso CLI de la prueba de corpus de Windows termina explícitamente
+solo después de completar todas las aserciones y la limpieza esperada; los errores
+no se aceptan ni se convierten en éxito.
+
+[CI de documentación verificado](https://github.com/jorgepb96/nodus/actions/runs/38128712044):
+83 segundos, 101 contratos del sitio y 27 casos del CLA aprobados, `test` y
+`CLA / signature` satisfactorios y todas las vías costosas omitidas. El selector
+y el validador de workflows siguen ejecutándose también en esta vía rápida.
+
+La restauración se probó en una copia aislada: recupera los 28 archivos originales
+byte por byte y retira los cinco archivos añadidos por esta política. La publicación
+firmada y los instaladores conservan sus gates; se ejercitarán al solicitar su
+ejecución, sin generar una release o un despliegue únicamente para esta validación.
