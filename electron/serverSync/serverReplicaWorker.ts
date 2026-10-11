@@ -3,6 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import Database from 'better-sqlite3';
 import { applySnapshotToReplica } from './replicaApply';
 import { ASSET_SOURCES, type SnapshotAssetRef } from './serverSnapshot';
+import { UnsupportedReplicaSchemaError } from './replicaSnapshotErrors';
 
 export interface ReplicaWorkerRequest { file: string; database: string; schemaVersion: number }
 export interface ReplicaWorkerResult { revision: string | null; assets: SnapshotAssetRef[] }
@@ -18,7 +19,8 @@ export function importReplicaSnapshot(input: ReplicaWorkerRequest): ReplicaWorke
   };
   if (!snapshot || typeof snapshot !== 'object' || snapshot.format !== 'nodus.server-snapshot'
     || !snapshot.tables || typeof snapshot.tables !== 'object' || Array.isArray(snapshot.tables)) throw new Error('El snapshot remoto no tiene un formato válido.');
-  if (!Number.isSafeInteger(snapshot.schemaVersion) || Number(snapshot.schemaVersion) > input.schemaVersion) throw new Error('El snapshot requiere una versión de Nodus más reciente o tiene un esquema inválido.');
+  if (!Number.isSafeInteger(snapshot.schemaVersion)) throw new Error('El snapshot requiere una versión de Nodus más reciente o tiene un esquema inválido.');
+  if (Number(snapshot.schemaVersion) > input.schemaVersion) throw new UnsupportedReplicaSchemaError(Number(snapshot.schemaVersion), typeof snapshot.revision === 'string' ? snapshot.revision : null, input.schemaVersion);
   let rows = 0;
   for (const value of Object.values(snapshot.tables)) {
     if (!Array.isArray(value) || value.some((row) => !row || typeof row !== 'object' || Array.isArray(row))) throw new Error('El snapshot contiene tablas inválidas.');
@@ -48,5 +50,6 @@ export function importReplicaSnapshot(input: ReplicaWorkerRequest): ReplicaWorke
 
 process.parentPort?.on('message', (event) => {
   try { process.parentPort?.postMessage({ ok: true, result: importReplicaSnapshot(event.data as ReplicaWorkerRequest) }); }
-  catch (error) { process.parentPort?.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error) }); }
+  catch (error) { process.parentPort?.postMessage({ ok: false, error: error instanceof Error ? error.message : String(error),
+    ...(error instanceof UnsupportedReplicaSchemaError ? { code: 'unsupported-schema', schemaVersion: error.schemaVersion, revision: error.revision } : {}) }); }
 });

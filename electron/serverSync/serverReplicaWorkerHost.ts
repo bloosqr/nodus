@@ -5,6 +5,7 @@ import { utilityProcess } from 'electron';
 import type Database from 'better-sqlite3';
 import { beginReplicaImportWait } from '../db/replicaImportWait';
 import type { ReplicaWorkerResult } from './serverReplicaWorker';
+import { UnsupportedReplicaSchemaError } from './replicaSnapshotErrors';
 
 const active = new Set<() => void>();
 export function cancelReplicaImports(): void { for (const cancel of active) cancel(); }
@@ -52,8 +53,11 @@ export async function importReplicaSnapshotInUtility(response: Response, db: Dat
         }
         abort.signal.addEventListener('abort', onAbort, { once: true });
         child.once('exit', (code) => finish(new Error(`El proceso auxiliar de réplica terminó sin completar la importación (${code}).`)));
-        child.on('message', (message: { ok?: boolean; error?: string; result?: ReplicaWorkerResult }) => {
+        child.on('message', (message: { ok?: boolean; error?: string; result?: ReplicaWorkerResult; code?: string; schemaVersion?: number; revision?: string | null }) => {
           if (message.ok && message.result) finish(undefined, message.result);
+          else if (message.code === 'unsupported-schema' && Number.isSafeInteger(message.schemaVersion) && Number(message.schemaVersion) > schemaVersion) {
+            finish(new UnsupportedReplicaSchemaError(Number(message.schemaVersion), typeof message.revision === 'string' ? message.revision : null, schemaVersion));
+          }
           else finish(new Error(message.error || 'No se pudo importar el snapshot.'));
         });
         if (abort.signal.aborted) onAbort(); else child.postMessage({ file, database: db.name, schemaVersion });
