@@ -25,18 +25,22 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 // The dictation lists its saved clips from IndexedDB, which jsdom does not provide; the stub never answers.
 globalThis.indexedDB = dom.window.indexedDB = { open() { return {}; } };
-process.on('unhandledRejection', () => {});
 
 const live = { tracks: 0, recorders: 0, contexts: 0 };
 let grant = null;
 const mediaDevices = {
   getUserMedia: () => new Promise(resolve => { grant = () => { live.tracks++; resolve({ getTracks: () => [{ stop() { live.tracks--; } }] }); }; }),
   enumerateDevices: async () => [],
+  addEventListener() {},
+  removeEventListener() {},
 };
 Object.defineProperty(dom.window.navigator, 'mediaDevices', { value: mediaDevices, configurable: true });
 globalThis.MediaRecorder = dom.window.MediaRecorder = class { constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; } static isTypeSupported() { return true; } start() { this.state = 'recording'; live.recorders++; } stop() { if (this.state !== 'inactive') live.recorders--; this.state = 'inactive'; } pause() {} resume() {} };
 globalThis.AudioContext = dom.window.AudioContext = class { constructor() { live.contexts++; } createAnalyser() { return { fftSize: 0, getByteTimeDomainData() {} }; } createMediaStreamSource() { return { connect() {} }; } async close() { live.contexts--; } };
-dom.window.nodus = new Proxy({ getSettings: async () => ({ sttProvider: 'transformers', sttTransformersModel: 'none' }) }, {
+dom.window.nodus = new Proxy({
+  getSettings: async () => ({ sttProvider: 'transformers', sttTransformersModel: 'none' }),
+  getWhisperCppStatus: async () => ({ executableReady: true, models: [{ id: 'base', downloaded: true }] }),
+}, {
   get(target, key) { if (key in target) return target[key]; if (typeof key === 'string' && /^on[A-Z]/.test(key)) return () => () => {}; if (typeof key === 'string' && key.startsWith('list')) return async () => []; return async () => null; },
 });
 
@@ -44,6 +48,10 @@ const bundle = build({
   stdin: { contents: "export { useLocalAudioRecorder } from './src/components/media/LocalAudioRecorder'; export { StudyDictation } from './src/components/editor/StudyDictation';", resolveDir: root, loader: 'ts' },
   bundle: true, write: false, platform: 'node', format: 'cjs', external: ['react', 'react-dom', 'react/jsx-runtime', '@huggingface/transformers', 'onnxruntime-web'],
   loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty', '.woff2': 'empty' }, logLevel: 'silent',
+  plugins: [{ name: 'worklet-url', setup(api) {
+    api.onResolve({ filter: /\?url&no-inline$/ }, () => ({ path: 'worklet-url', namespace: 'test-url' }));
+    api.onLoad({ filter: /.*/, namespace: 'test-url' }, () => ({ contents: 'export default "test-worklet-url";' }));
+  } }],
 }).then(result => {
   const module = new Module(path.join(root, 'scripts', 'microphone-start-after-close.cjs'));
   module.paths = Module._nodeModulePaths(root);
@@ -78,10 +86,13 @@ test('a dictation closed while the permission is pending releases the microphone
   const container = document.createElement('div');
   document.body.appendChild(container);
   const rootNode = createRoot(container);
-  await React.act(async () => { rootNode.render(React.createElement(StudyDictation, { documentId: 'd1', language: 'en', vocabulary: [], customDictionary: [], onInsert: () => {}, onAction: () => {} })); });
+  await React.act(async () => { rootNode.render(React.createElement(StudyDictation, {
+    documentId: 'd1', language: 'en', vocabulary: [], customDictionary: [],
+    settings: { sttProvider: 'whisper_cpp', sttWhisperCppModel: 'base' },
+    onUpdate: () => {}, onEnd: () => {}, onStateChange: () => {}, onClose: () => {},
+  })); });
   await settle(React);
-  await React.act(async () => { container.querySelector('[data-testid="study-dictation-start"]').click(); });
-  await settle(React);
+  // The live dictation introduced in main starts when its installed model is ready.
   assert.ok(grant, 'the microphone was requested');
   await React.act(async () => { rootNode.unmount(); });
   await React.act(async () => { grant(); });

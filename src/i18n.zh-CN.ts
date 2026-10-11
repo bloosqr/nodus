@@ -7909,4 +7909,17 @@ export const ZH_CN: Record<string, string> = {
   "El enlace nativo no está disponible. Requiere macOS y permiso de red local.": "原生连接不可用。需要 macOS 和本地网络权限。",
   "Escanea desde Nodus Presenter. Conecta el ordenador y el móvil a la misma red local.": "使用 Nodus Presenter 扫描。请将电脑和手机连接到同一本地网络。",
   "El enlace de la app no está disponible. Comprueba la conexión de red e inicia de nuevo la presentación.": "应用连接不可用。请检查网络连接并重新开始演示。",
+  // Live local dictation in Scriptor.
+  "No se pudo iniciar el micrófono.": "无法启动麦克风。",
+  "Dictado pausado para terminar el audio pendiente. Reanuda cuando esté listo.": "听写已暂停，以完成待处理的音频。处理完成后可继续。",
+  "Preparando dictado…": "正在准备听写…",
+  "Cancelar dictado": "取消听写",
+  "Dictado en directo · Local": "实时听写 · 本地",
+  "Escuchando…": "正在聆听…",
+  "El texto se inserta automáticamente en el cursor.": "文字将自动插入光标位置。",
+  "Opciones de dictado": "听写选项",
+  "Descarga un modelo local de transcripción en Ajustes → Modelos IA para dictar.": "请在设置 → AI 模型中下载本地转录模型以使用听写。",
+  "Audio pendiente": "待处理音频",
+  "Modelo local": "本地模型",
+  "Detener dictado": "停止听写",
 };
