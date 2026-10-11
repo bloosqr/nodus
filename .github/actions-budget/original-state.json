@@ -405,6 +405,11 @@
       "snapshot": "original-files/scripts/test-nodus-server-deployment.mjs",
       "originalSha256": "17ae320ce0ec6ba546aa554ced4e8e0d1c0eec934ffa6f3cd40facd8bb8cf351",
       "restrictedSha256": "bec9b29c5177db131844ddafb79c09872577d285d2e1effed179eba4cc76fcb7"
+    },
+    "scripts/test-research-corpus-run.mjs": {
+      "snapshot": "original-files/scripts/test-research-corpus-run.mjs",
+      "originalSha256": "98712fb6f835e403f23e21b86544030c0a5ae14ea3310919e384433b6399a512",
+      "restrictedSha256": "3370e50eec38cc6ada881b6c734a89d73a83d907b103099f2e322807457df54a"
     }
   },
   "addedFiles": {
