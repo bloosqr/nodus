@@ -19,6 +19,7 @@ const dom = new JSDOM('<!doctype html><div id="root"></div>', { pretendToBeVisua
 for (const key of ['window', 'document', 'navigator', 'HTMLElement', 'Node', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   try { Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true, writable: true }); } catch { /* read-only global */ }
 }
+
 globalThis.localStorage = dom.window.localStorage;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.ResizeObserver = dom.window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -89,6 +90,27 @@ for (const viewer of ['html', 'epub']) {
       assert.equal(article.querySelector('a[href="#note-1"]')?.textContent, 'note');
       assert.ok(article.querySelector('p#note-1 em'));
       assert.equal(article.querySelector('img[alt="figure"]')?.getAttribute('src'), 'data:image/png;base64,iVBORw0KGgo=');
+    } finally { await unmount(); }
+  });
+}
+
+for (const viewer of ['html', 'epub']) {
+  test(`${viewer} keeps publication formulae as MathML while removing active mixed content`, async () => {
+    const payload = '<p>Energy: <math xmlns="http://www.w3.org/1998/Math/MathML" display="inline" onclick="alert(1)" href="javascript:alert(1)">'
+      + '<mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup>'
+      + '<annotation-xml encoding="text/html"><img src="x" onerror="alert(1)"></annotation-xml>'
+      + '<mglyph src="https://evil.example/glyph.svg"/><mtext><span onclick="alert(1)"> safe text</span></mtext>'
+      + '</math>.</p>';
+    const { article, unmount } = await mount(viewer, payload);
+    try {
+      const math = article.querySelector('math');
+      assert.ok(math, article.innerHTML);
+      assert.equal(math.namespaceURI, 'http://www.w3.org/1998/Math/MathML');
+      assert.equal(math.querySelector('msup')?.namespaceURI, math.namespaceURI);
+      assert.match(math.textContent, /E=mc2/);
+      assert.match(math.textContent, /safe text/);
+      assert.equal(math.getAttribute('display'), 'inline');
+      assert.equal(article.querySelectorAll('[onclick], [onerror], [href], annotation-xml, mglyph, math img, math span').length, 0, article.innerHTML);
     } finally { await unmount(); }
   });
 }
