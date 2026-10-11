@@ -118,3 +118,11 @@ La restauración completa reproduce la configuración original, incluida la matr
 Intel y sus verificaciones. El script sin argumentos solo consulta estados. Si
 algún archivo o regla cambió entretanto, revisar antes de continuar, sin pisar
 cambios ajenos. Conservar las copias hasta verificar la restauración.
+
+## Verificación de la política
+
+La vía rápida se verifica con un PR que modifica únicamente este documento.
+Debe completar el selector, los contratos del sitio, las citas y el CLA, y
+producir `test` satisfactorio sin iniciar los jobs Linux completo, macOS,
+Windows, Scheme scan o servidor. La ejecución completa se comprueba por separado
+antes de activar esta política en `main`.
