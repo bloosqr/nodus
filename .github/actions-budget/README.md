@@ -60,10 +60,18 @@ y Linux, firma/notarización, procesos nativos, migraciones, runtime Research,
 integridad y el gate final: cualquier fallo impide publicar. Los controles nativos
 rechazan skips y se ejecutan aunque ese código no haya cambiado.
 
-El propietario pidió dejar de producir releases macOS Intel. Se conserva el
-merger auditado para normalizar el manifiesto arm64 y dejan de exigirse assets
-Intel. El backfill histórico sigue conservado y deshabilitado; las descargas Intel
-públicas apuntan a la última release existente con Intel, `v5.8.1`.
+macOS Intel queda fuera de la matriz que condiciona la publicación, a petición
+del propietario, para que su runner más lento no retrase la release. Se publica
+después: cuando `verify-and-publish` termina, `release-macos-intel.yml` compila
+Intel desde el mismo tag, lo firma y notariza, lo añade a la release ya publicada
+y fusiona sus entradas en el manifiesto con el merger auditado, sin tocar las de
+arm64 ni el puntero de compatibilidad. Si falla, la release publicada queda
+intacta y se reintenta lanzando ese workflow a mano con el tag y el canal. Hasta
+que termina, las instalaciones Intel no ven actualización y siguen en su versión;
+las descargas Intel públicas apuntan a `latest`. El backfill histórico sigue
+conservado y deshabilitado. La restauración completa elimina
+`release-macos-intel.yml`, porque la configuración original compila Intel dentro
+de la matriz.
 
 GitHub introdujo `macos-26-intel` en su
 [anuncio del 26 de febrero de 2026](https://github.blog/changelog/2026-02-26-macos-26-is-now-generally-available-for-github-hosted-runners/).
