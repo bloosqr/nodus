@@ -1,4 +1,5 @@
 import { BACKUPS_TRANSLATIONS } from './i18n.backups';
+import { SCRIPTOR_AI_TRANSLATIONS } from './i18n.scriptorAi';
 import { RESEARCH_CHAT_HISTORY_TRANSLATIONS } from './i18n.researchChatHistory';
 import { RESEARCH_ACTIVITY_TRANSLATIONS } from './i18n.researchActivity';
 import { RESEARCH_NOTEBOOK_TRANSLATIONS } from './i18n.researchNotebooks';
@@ -168,6 +169,7 @@ export const FR: Record<string, string> = {
   ...COMPLETE_GUIDE_TRANSLATIONS["fr"],
   ...STUDY_FOCUS_TRANSLATIONS["fr"],
   ...STUDY_NOTE_LINKS_TRANSLATIONS["fr"],
+  ...SCRIPTOR_AI_TRANSLATIONS["fr"],
   ...STUDY_IMPROVE_TRANSLATIONS.fr,
   ...WORKSPACE_TRANSLATIONS.fr,
   "Lo que cuenta el mapa": "Ce que raconte la carte",

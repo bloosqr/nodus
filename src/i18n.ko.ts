@@ -1,4 +1,5 @@
 import { BACKUPS_TRANSLATIONS } from './i18n.backups';
+import { SCRIPTOR_AI_TRANSLATIONS } from './i18n.scriptorAi';
 import { RESEARCH_CHAT_HISTORY_TRANSLATIONS } from './i18n.researchChatHistory';
 import { RESEARCH_ACTIVITY_TRANSLATIONS } from './i18n.researchActivity';
 import { RESEARCH_NOTEBOOK_TRANSLATIONS } from './i18n.researchNotebooks';
@@ -125,6 +126,7 @@ export const KO: Record<string, string> = {
   ...COMPLETE_GUIDE_TRANSLATIONS["ko"],
   ...STUDY_FOCUS_TRANSLATIONS["ko"],
   ...STUDY_NOTE_LINKS_TRANSLATIONS["ko"],
+  ...SCRIPTOR_AI_TRANSLATIONS["ko"],
   ...STUDY_IMPROVE_TRANSLATIONS.ko,
   ...WORKSPACE_TRANSLATIONS.ko,
   ...WORLDBUILDING_TRANSLATIONS.ko,
