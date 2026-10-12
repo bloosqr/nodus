@@ -557,9 +557,9 @@ export function StudyEditor({
     const generation = aiGeneration.current;
     void Promise.all([window.nodus.getSettings(), window.nodus.listImageModels(), window.nodus.getNodusLocalImageStatus()]).then(([fresh, catalog, local]) => {
       if (generation !== aiGeneration.current) return;
-      const defaultModel = { provider: fresh.imageProvider, model: fresh.imageModel }; setImageModel(defaultModel);
-      const choices = savedEditorImageModels(catalog, fresh.imageFavorites ?? [], defaultModel).map(entry => ({ id: `${entry.provider}:${entry.id}`, label: `${entry.provider === 'google' ? 'Google' : entry.provider} · ${entry.name}`, disabled: entry.provider === 'nodus' ? !(local.runtime.ready && local.model.downloaded) : entry.provider === 'codex' ? false : !fresh.providerKeys[entry.provider === 'google' ? 'gemini' : entry.provider] }));
-      if (!choices.some(choice => choice.id === `${defaultModel.provider}:${defaultModel.model}`)) choices.unshift({ id: `${defaultModel.provider}:${defaultModel.model}`, label: `${defaultModel.provider} · ${defaultModel.model}`, disabled: true });
+      const configuredImageModel = { provider: fresh.imageProvider, model: fresh.imageModel }; setImageModel(configuredImageModel);
+      const choices = savedEditorImageModels(catalog, fresh.imageFavorites ?? [], configuredImageModel).map(entry => ({ id: `${entry.provider}:${entry.id}`, label: `${entry.provider === 'google' ? 'Google' : entry.provider} · ${entry.name}`, disabled: entry.provider === 'nodus' ? !(local.runtime.ready && local.model.downloaded) : entry.provider === 'codex' ? false : !fresh.providerKeys[entry.provider === 'google' ? 'gemini' : entry.provider] }));
+      if (!choices.some(choice => choice.id === `${configuredImageModel.provider}:${configuredImageModel.model}`)) choices.unshift({ id: `${configuredImageModel.provider}:${configuredImageModel.model}`, label: `${configuredImageModel.provider} · ${configuredImageModel.model}`, disabled: true });
       setImageChoices(choices);
     }).catch(cause => { if (generation === aiGeneration.current) setImproveStreamError(aiErrorMessage(cause)); });
   };

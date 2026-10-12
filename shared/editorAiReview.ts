@@ -25,6 +25,6 @@ export function normalizeImageFavorites(value: unknown): EditorImageModel[] {
   }).map(entry => ({ provider: entry.provider, model: entry.model.trim() }));
 }
 
-export function savedEditorImageModels(catalog: ImageModelInfo[], favorites: EditorImageModel[], defaultModel: EditorImageModel): ImageModelInfo[] {
-  return catalog.filter(entry => [defaultModel, ...favorites].some(saved => saved.provider === entry.provider && saved.model === entry.id));
+export function savedEditorImageModels(catalog: ImageModelInfo[], favorites: EditorImageModel[], configuredImageModel: EditorImageModel): ImageModelInfo[] {
+  return catalog.filter(entry => [configuredImageModel, ...favorites].some(saved => saved.provider === entry.provider && saved.model === entry.id));
 }
