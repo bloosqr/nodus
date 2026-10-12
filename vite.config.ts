@@ -353,6 +353,7 @@ export default defineConfig({
       databaseDeepResearchWorkerBuild,
       vectorScanWorkerBuild,
       utilityBuild('backupUtilityWorker', 'electron/export/backupUtilityWorker.ts'),
+      utilityBuild('openBackupWorker', 'electron/export/openBackupWorker.ts'),
       // One bootstrap for every trusted capability: a plugin ships a module, not a process.
       utilityBuild('capabilityWorkerBootstrap', 'electron/capabilities/workerBootstrap.ts'),
       utilityBuild('recoveryProbeUtilityWorker', 'electron/recovery/recoveryProbeUtilityWorker.ts'),

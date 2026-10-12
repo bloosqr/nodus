@@ -185,6 +185,11 @@ jobs:
       - name: E2E smoke (real app boot)
         timeout-minutes: 10
         run: xvfb-run --auto-servernum bash -e -c 'npm run test:e2e'
+      - name: Backups export and restore E2E
+        timeout-minutes: 10
+        env:
+          NODUS_BACKUPS_ARTIFACT_DIR: ${{ github.workspace }}/.ci/backups-e2e
+        run: xvfb-run --auto-servernum npm run test:e2e:backups
       - name: Stellar canvas E2E
         timeout-minutes: 5
         run: xvfb-run --auto-servernum bash -e -c 'npm run test:e2e:stellar'
@@ -216,6 +221,8 @@ jobs:
           path: |
             .ci/plan.json
             .ci/reports/*.json
+            .ci/backups-e2e/*.png
+            .ci/backups-e2e/verification.json
             research-runtime-lifecycle.json
           include-hidden-files: true
           if-no-files-found: warn

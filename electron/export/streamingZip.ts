@@ -169,5 +169,11 @@ export class StreamingZipWriter {
     });
   }
 
+  async abort(): Promise<void> {
+    this.closed = true;
+    if (this.output.closed) return;
+    await new Promise<void>(resolve => { this.output.once('close', resolve); this.output.destroy(); });
+  }
+
   path(): string { return this.target; }
 }
