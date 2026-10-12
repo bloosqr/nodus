@@ -8,6 +8,7 @@
     "image insertion and exact undo in Markdown",
     "multi-paragraph formatting and exact Markdown offsets",
     "academic/formula selection preflight",
+    "alphabetical style, text and image model options, including a non-favorite current text model and the default image model",
     "image picker, saved models, preview, insertion, original bytes and persistence",
     "images from selection and explicit retargeting of disappeared anchors",
     "late image responses cannot cross documents",

@@ -4,14 +4,16 @@ import type { EditorImageModel, EditorImageResult } from '@shared/editorAiReview
 import { Icon, Spinner } from '../ui';
 import { ModelPicker } from '../ModelPicker';
 import { useModelPickerPopover } from '../useModelPickerPopover';
-import { t } from '../../i18n';
+import { getActiveLang, t } from '../../i18n';
 import './scriptorAi.css';
 
 export interface AiChoice { id: string; label: string; description?: string; disabled?: boolean }
 export function ScriptorSearchSelect({ label, testId, value, choices, onChange, disabled }: { label: string; testId: string; value: string; choices: AiChoice[]; onChange(id: string): void; disabled?: boolean }) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null);
-  const filtered = useMemo(() => choices.filter(item => `${item.label} ${item.description ?? ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())), [choices, query]);
+  const language = getActiveLang();
+  const ordered = useMemo(() => [...choices].sort((a, b) => a.label.localeCompare(b.label, language, { sensitivity: 'base' })), [choices, language]);
+  const filtered = useMemo(() => ordered.filter(item => `${item.label} ${item.description ?? ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())), [ordered, query]);
   useModelPickerPopover(open, popup, trigger);
   useEffect(() => {
     if (!open) return;
@@ -21,7 +23,7 @@ export function ScriptorSearchSelect({ label, testId, value, choices, onChange, 
   useEffect(() => { popup.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
   const choose = (id: string) => { onChange(id); setOpen(false); trigger.current?.focus({ preventScroll: true }); };
   return <div ref={root} className="scriptor-ai-select">
-    <button type="button" ref={trigger} data-testid={testId} disabled={disabled} aria-label={label} title={choices.find(item => item.id === value)?.label} aria-haspopup="listbox" aria-expanded={open} onClick={() => { setQuery(''); setActive(Math.max(0, choices.findIndex(item => item.id === value))); setOpen(!open); }}><span>{choices.find(item => item.id === value)?.label ?? label}</span><Icon name="chevronDown" size={13} /></button>
+    <button type="button" ref={trigger} data-testid={testId} disabled={disabled} aria-label={label} title={choices.find(item => item.id === value)?.label} aria-haspopup="listbox" aria-expanded={open} onClick={() => { setQuery(''); setActive(Math.max(0, ordered.findIndex(item => item.id === value))); setOpen(!open); }}><span>{choices.find(item => item.id === value)?.label ?? label}</span><Icon name="chevronDown" size={13} /></button>
     {open && <div ref={popup} className="model-picker-options scriptor-ai-options" onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setActive(index => filtered.length ? (index + (event.key === 'ArrowDown' ? 1 : -1) + filtered.length) % filtered.length : 0); }

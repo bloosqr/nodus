@@ -4,7 +4,7 @@ Verified on October 12, 2026 with Nodus 5.8.1 on macOS. These screenshots use sy
 
 ## Workflow
 
-Selecting text exposes **Polish** in the contextual toolbar. The existing prompt manager stays in its current location; applying a library prompt or an inspector shortcut opens the same bottom composer. Styles and text models have searchable selectors, and pinned prompts remain quick actions. The last style is saved immediately per vault, with Clear as the initial or unavailable-style fallback. Free instructions supplement the style; an empty instruction field applies the style alone.
+Selecting text exposes **Polish** in the contextual toolbar. The existing prompt manager stays in its current location; applying a library prompt or an inspector shortcut opens the same bottom composer. Styles come from the existing active prompt library, including prompts created or edited from the upper toolbar. Styles and text/image models have searchable selectors ordered alphabetically by their visible labels, with provider and model name ordering for text models. The current/default model keeps its alphabetical position. Pinned prompts remain quick actions. The last style is saved immediately per vault, with Clear as the initial or unavailable-style fallback. Free instructions supplement the style; an empty instruction field applies the style alone.
 
 The composer floats inside the writing area. Its card is opaque, while the editor remains visible around it. It follows Nodus themes and vault accents, leaves the contextual inspector accessible, and scrolls the captured selection above the card. Preview images shrink in short windows so the input and decision controls stay visible. There is a Tools button and no additional plus button.
 
@@ -32,13 +32,19 @@ The main Electron E2E uses controlled AI responses while exercising the real edi
 
 The [provider integration results](provider-results.json) use the unmodified study service, native provider transport and improvement log against a controlled local Ollama endpoint. They verify streaming, additional instructions, reject/accept logging, undo/redo, reload persistence, provider cancellation and empty responses. No live paid provider requests were made during these checks.
 
-Focused unit/component/contract/translation checks passed 56 tests. Relevant editor/storage/model regressions, desktop typecheck/build and the web build passed. The existing Scriptor action and polish E2Es also passed.
+Focused unit/component/contract/translation checks passed 56 tests. Another 13 real-component checks passed, covering alphabetical options, search, selected IDs and keyboard navigation, including saved non-favorite models. Relevant editor/storage/model regressions, desktop typecheck/build and the web build passed. The existing Scriptor action and polish E2Es and the general Electron smoke suite also passed.
 
 ## Screenshots
 
 Searchable text model in the bottom composer:
 
 ![Text model search](text-model-search.png)
+
+Alphabetical styles from the existing prompt library and compatible image models:
+
+![Alphabetical styles](styles-dark-1440.png)
+
+![Alphabetical image models](image-models-dark-1440.png)
 
 Temporary word differences and whole-proposal decisions:
 
@@ -59,6 +65,8 @@ Build the desktop app first. The scripts create and delete their own isolated te
 ```sh
 npm run build
 node --test scripts/test-scriptor-ai-review.mjs scripts/test-scriptor-editor-images.mjs scripts/test-scriptor-image-favorites-ui.mjs scripts/test-study-improve-ui.mjs scripts/test-study-improve.mjs scripts/test-ipc-contract.mjs scripts/test-i18n-coverage.mjs scripts/test-model-prefs-recovery.mjs
+node --test scripts/test-model-picker-search.mjs
+npm run test:e2e
 node scripts/e2e-scriptor-ai-review.mjs
 node scripts/e2e-scriptor-provider.mjs
 node scripts/e2e-scriptor-actions.mjs
