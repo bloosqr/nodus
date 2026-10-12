@@ -120,9 +120,11 @@ test('stable and beta publication have isolated entry points and shared build lo
   assert.match(shared, /Beta release contains stable update manifest/);
   assert.match(shared, /--prerelease --latest=false/);
   assert.match(shared, /- os: macos-latest/, 'Apple silicon packaging runs on an ARM64 host for native optional dependencies');
-  assert.doesNotMatch(shared, /- os: macos-\d+-intel/, 'new releases do not consume an Intel runner');
+  assert.doesNotMatch(shared, /- os: macos-\d+-intel/, 'the Intel runner never sits in the matrix that gates publication');
   assert.match(shared, /platform: '--mac --arm64'/, 'each macOS runner packs exactly one architecture');
-  assert.doesNotMatch(shared, /platform: '--mac --x64'/, 'new macOS releases are Apple silicon only');
+  assert.doesNotMatch(shared, /platform: '--mac --x64'/, 'Intel is built after publication, not before it');
+  assert.match(shared, /release-macos-intel:\n(?:    #.*\n)*    needs: verify-and-publish\n    uses: \.\/\.github\/workflows\/release-macos-intel\.yml/,
+    'Intel is appended only once the release is published');
   // The audited manifest gate and all native builds must pass before publication.
   assert.match(shared, /merge-mac-manifest:/, 'the supported macOS manifest is normalized before publication');
   assert.match(shared, /needs\.merge-mac-manifest\.result == 'success'/, 'publication waits for the merged manifest');
