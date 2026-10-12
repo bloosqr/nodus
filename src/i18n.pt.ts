@@ -1,4 +1,5 @@
 import { BACKUPS_TRANSLATIONS } from './i18n.backups';
+import { SCRIPTOR_AI_TRANSLATIONS } from './i18n.scriptorAi';
 import { RESEARCH_CHAT_HISTORY_TRANSLATIONS } from './i18n.researchChatHistory';
 import { RESEARCH_ACTIVITY_TRANSLATIONS } from './i18n.researchActivity';
 import { RESEARCH_NOTEBOOK_TRANSLATIONS } from './i18n.researchNotebooks';
@@ -168,6 +169,7 @@ export const PT: Record<string, string> = {
   ...COMPLETE_GUIDE_TRANSLATIONS["pt"],
   ...STUDY_FOCUS_TRANSLATIONS["pt"],
   ...STUDY_NOTE_LINKS_TRANSLATIONS["pt"],
+  ...SCRIPTOR_AI_TRANSLATIONS["pt"],
   ...STUDY_IMPROVE_TRANSLATIONS.pt,
   ...WORKSPACE_TRANSLATIONS.pt,
   "Lo que cuenta el mapa": "O que conta o mapa",
