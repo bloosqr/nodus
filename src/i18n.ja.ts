@@ -1,3 +1,4 @@
+import { BACKUPS_TRANSLATIONS } from './i18n.backups';
 import { RESEARCH_CHAT_HISTORY_TRANSLATIONS } from './i18n.researchChatHistory';
 import { RESEARCH_ACTIVITY_TRANSLATIONS } from './i18n.researchActivity';
 import { RESEARCH_NOTEBOOK_TRANSLATIONS } from './i18n.researchNotebooks';
@@ -84,6 +85,7 @@ import { ACADEMIC_TOUR_TRANSLATIONS } from './i18n.academicTour';
  * translator's review debt and should be treated as a first pass.
  */
 export const JA: Record<string, string> = {
+  ...BACKUPS_TRANSLATIONS.ja,
   // First, so every entry below wins: the server's English-only keys.
   ...SERVER_ENGLISH_FALLBACKS.ja,
   ...CALENDAR_SYNC_TRANSLATIONS["ja"],
