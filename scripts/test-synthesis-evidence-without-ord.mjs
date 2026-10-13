@@ -22,7 +22,7 @@ globalThis.__ord = { provider: null, indexDir: null, invoke: null, calls: 0 };
 
 const STUBS = {
   '../capabilities/registry': `export const capabilityRegistry = () => ({ providers: new Map(globalThis.__ord.provider ? [['nodus:chemistry', globalThis.__ord.provider]] : []) });`,
-  '../reactionIndex': `export const reactionIndexService = () => ({ localDirectory: async () => globalThis.__ord.indexDir });`,
+  '../reactionIndex': `export const reactionIndexService = () => ({ localDirectory: async () => { if (globalThis.__ord.indexError) throw globalThis.__ord.indexError; return globalThis.__ord.indexDir; } });`,
   './moleculeInspection': `export const chemistryRunner = () => ({ runner: { invoke: async (request) => { globalThis.__ord.calls += 1; return globalThis.__ord.invoke(request); } }, dispose: async () => {} });`,
   './aiClient': `export const embed = async () => null;`,
   // No stock lists imported: disconnections are requested without a stock directory.
@@ -58,7 +58,7 @@ const { gatherSynthesisEvidence, clearSynthesisEvidenceCache } = await import(pa
 // asks about the same target and would otherwise be served the FIRST test's stubbed answer. Each
 // case starts from an empty cache; without this the suite silently stops exercising the gather,
 // which is how the cache was first seen working.
-test.beforeEach(() => clearSynthesisEvidenceCache());
+test.beforeEach(() => { clearSynthesisEvidenceCache(); delete globalThis.__ord.indexError; });
 const { synthesisEvidencePayload } = await import(pathToFileURL(await (async () => {
   const out = path.join(tmp, 'shared.mjs');
   await build({ entryPoints: [path.join(root, 'shared/synthesisEvidence.ts')], outfile: out, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' });
@@ -470,7 +470,7 @@ test('cancellation during decomposition does not fall back to another chemistry 
   assert.deepEqual(calls, ['decompose-target']);
 });
 
-test('a package with decomposition does not start a chemistry worker when the ORD index is absent', async () => {
+test('a package with decomposition does not invoke it when the ORD index is absent', async () => {
   Object.assign(globalThis.__ord, { provider: DECOMPOSE_PROVIDER, indexDir: null, calls: 0,
     invoke: async request => {
       if (request.toolId === 'decompose-target') return decompositionArtifact(decomposition());
@@ -479,4 +479,13 @@ test('a package with decomposition does not start a chemistry worker when the OR
   const evidence = await quiet(() => gatherSynthesisEvidence(LARGE_REQUEST));
   assert.ok(evidence);
   assert.equal(globalThis.__ord.calls, 0, 'decomposition cannot provide ORD evidence without an index');
+});
+
+
+test('an unavailable index remains best-effort and does not block textbook evidence', async () => {
+  Object.assign(globalThis.__ord, { provider: DECOMPOSE_PROVIDER, indexDir: '/idx', calls: 0,
+    indexError: new Error('index unavailable'), invoke: async () => { throw new Error('must not run'); } });
+  const evidence = await quiet(() => gatherSynthesisEvidence(REQUEST));
+  assertTextbookOnly(evidence, 'unavailable index');
+  assert.equal(globalThis.__ord.calls, 0);
 });
