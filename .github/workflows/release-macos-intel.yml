@@ -62,6 +62,24 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
 
+      # The application comes from the tag, but the signing verifiers are
+      # build tooling that never enters the bundle. Taking them from this
+      # workflow's commit lets a verifier fix reach a tag cut before it, as
+      # v5.9.0's Intel build needed for a flaky Apple ticket lookup.
+      - name: Checkout this workflow's macOS verifiers
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: |
+            scripts/verify-macos-code-signing.cjs
+            scripts/verify-macos-release.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Apply this workflow's macOS verifiers
+        run: cp .release-tools/scripts/verify-macos-code-signing.cjs .release-tools/scripts/verify-macos-release.cjs scripts/
+
       - name: Verify the release is one this may touch
         run: |
           set -euo pipefail
