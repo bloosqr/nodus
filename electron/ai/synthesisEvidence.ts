@@ -129,7 +129,7 @@ export async function invokeDisconnections(runner: Runner, targets: string[], st
 
 /** The package's decomposition tool, when it has one (older packages do not). */
 function decomposeProvider() {
-  const provider = capabilityRegistry().provider(CHEMISTRY_CAPABILITY);
+  const provider = capabilityRegistry().providers.get(CHEMISTRY_CAPABILITY);
   return provider?.tools.some((tool) => tool.id === DECOMPOSE_TOOL) ? provider : null;
 }
 
