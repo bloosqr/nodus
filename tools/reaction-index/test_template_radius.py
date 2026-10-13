@@ -7,6 +7,7 @@ Getting this wrong is silent: too small a radius and a template stops firing whe
 reads as "no disconnection found" rather than as an error. Hence tests on hand-written templates
 whose answers are known by inspection, plus the properties the query relies on.
 """
+import os
 import sys
 
 import build_index as B
@@ -69,10 +70,18 @@ rev = "[C:1]-[OH:2].[CH3:3]-[OH]>>[C:1]-[O;H0:2]-[CH3:3]"
 check("both directions get a radius", (radius(fwd) is not None, radius(rev) is not None), (True, True))
 
 print("\nreal templates from the shipped index (if present)")
+# Both locations come from the environment: the index is local data and never ships with this
+# repository, and the worker lives in the chemistry plugin's own repository.
+#   NODUS_REACTION_INDEX_DIR   a built index directory (the one the app reads)
+#   CHEMISTRY_WORKER_DIR       the plugin's python/ directory, holding reactions_worker.py
+index_dir = os.environ.get("NODUS_REACTION_INDEX_DIR")
+worker_dir = os.environ.get("CHEMISTRY_WORKER_DIR")
 try:
-    sys.path.insert(0, "/Users/avijit/Code/NodusResearch/marketplace/plugins/chemistry-studio/python")
+    if not index_dir or not worker_dir:
+        raise RuntimeError("set NODUS_REACTION_INDEX_DIR and CHEMISTRY_WORKER_DIR to run this part")
+    sys.path.insert(0, worker_dir)
     import reactions_worker as W
-    rows = W._retro_templates("/Users/avijit/Code/NodusResearch/ord-index/index-v3")[:2000]
+    rows = W._retro_templates(index_dir)[:2000]
     vals = [B.template_radius(r[2])[0] for r in rows]
     have = [v for v in vals if v is not None]
     check("every sampled template gets a radius", len(have) == len(vals), True)
