@@ -423,6 +423,40 @@ export function completionTimeoutMs(model: ModelRef): number {
   return runsOnDevice(model.provider) ? ON_DEVICE_COMPLETION_TIMEOUT_MS : CLOUD_COMPLETION_TIMEOUT_MS;
 }
 
+/**
+ * How long a provider may send NOTHING before a streamed answer is abandoned. Long, because it
+ * has to cover a thinking phase the provider does not narrate.
+ *
+ * Every chunk resets the deadline, so a provider that streams its reasoning — DeepSeek, Claude —
+ * never approaches it however long it thinks, and CLOUD_COMPLETION_TIMEOUT_MS is the right
+ * allowance for the gap between two chunks. OpenAI's reasoning models stream nothing at all until
+ * the answer begins, so for them that same number is a cap on THINKING, which is a different and
+ * much smaller thing than it looks.
+ *
+ * Measured 2026-10-12: gpt-6.1-sol with reasoning high, on four hard synthesis targets, streamed
+ * 0 characters and was cut off at 180,003 ms on every one — our own deadline, surfaced to the
+ * user as "Timed out waiting for the AI provider. Try a faster model or a smaller fragment."
+ * Nothing was wrong with the provider and a faster model was not the remedy.
+ *
+ * Scoped to requests that actually asked for reasoning: a non-reasoning OpenAI model streams at
+ * once, and a wedged one should still fail in three minutes rather than fifteen. STREAM_TOTAL_MS
+ * bounds the request either way.
+ */
+const HIDDEN_REASONING_STREAM_IDLE_MS = 15 * 60_000;
+
+/** Whether this provider withholds its reasoning from the stream, so silence means "thinking". */
+function hidesReasoningStream(model: ModelRef): boolean {
+  return model.provider === 'openai';
+}
+
+export function streamIdleTimeoutMs(model: ModelRef, reasoning: ReasoningEffort = 'off'): number {
+  if (runsOnDevice(model.provider)) return ON_DEVICE_COMPLETION_TIMEOUT_MS;
+  const thinking = reasoning !== 'off';
+  return thinking && hidesReasoningStream(model)
+    ? Math.max(HIDDEN_REASONING_STREAM_IDLE_MS, CLOUD_COMPLETION_TIMEOUT_MS)
+    : CLOUD_COMPLETION_TIMEOUT_MS;
+}
+
 /** A research turn's own short JSON calls (its plan, each supervisor decision): a few hundred
  *  output tokens, each with a fallback. A cloud provider that stalls one held the turn for the
  *  full completion timeout, three minutes, before that fallback ran. On-device models keep theirs. */
@@ -2167,7 +2201,9 @@ async function rawCompleteStreamTransport(
     : compatLocalPlan?.outputTokens ?? requestedMax;
   const freeTier = isProviderFreeTier(model.provider);
   const maxTokens = freeTier ? freeTierBudget(model, opts, localMax) : localMax;
-  const streamTimeoutMs = opts.timeoutMs ?? completionTimeoutMs(model);
+  // The STREAM's allowance, not a completion's: with a provider that hides its reasoning this has
+  // to cover the thinking phase, because no chunk arrives to reset it. See streamIdleTimeoutMs.
+  const streamTimeoutMs = opts.timeoutMs ?? streamIdleTimeoutMs(model, reasoning);
   const OpenAI = (await import('openai')).default;
   const client = new OpenAI({
     apiKey: key,
@@ -2233,7 +2269,8 @@ async function rawCompleteStreamTransport(
     }
   };
   // Idle, not total: a reasoning stream that keeps sending chunks is working, however long it
-  // thinks. STREAM_TOTAL_MS still bounds a provider that never finishes.
+  // thinks. STREAM_TOTAL_MS still bounds a provider that never finishes. For a provider that
+  // sends nothing while it reasons, streamTimeoutMs is already widened to cover that silence.
   const executeStream = (body: any) => withIdleTransportDeadline(
     streamTimeoutMs,
     Math.max(streamTimeoutMs, STREAM_TOTAL_MS),

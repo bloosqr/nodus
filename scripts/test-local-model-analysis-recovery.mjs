@@ -111,6 +111,43 @@ try {
   settingsRepo.updateSettings({ customProvider: { baseUrl: '', models: [] } });
   assert.equal(aiClient.completionTimeoutMs({ provider: 'custom', model: 'x' }), cloudBudget);
 
+  // --- 1b. A stream's allowance covers reasoning the provider does not narrate ---
+  //
+  // The idle deadline is reset by every chunk, so for a provider that streams its thinking it
+  // only ever measures the gap between two chunks. OpenAI's reasoning models send nothing at all
+  // until the answer starts, which turns the same number into a cap on how long the model may
+  // think. Measured 2026-10-12: gpt-6.1-sol with reasoning high streamed 0 characters on four
+  // hard synthesis targets and was cut off at 180,003 ms on every one — our deadline, reported
+  // to the user as the provider timing out and advising a faster model.
+  const openai = { provider: 'openai', model: 'gpt-6.1-sol' };
+  assert.ok(
+    aiClient.streamIdleTimeoutMs(openai, 'high') > cloudBudget,
+    'an OpenAI reasoning request must be allowed to think for longer than one chunk gap',
+  );
+  // Enough to cover a hard reasoning call, not merely a nudge past the old ceiling.
+  assert.ok(aiClient.streamIdleTimeoutMs(openai, 'high') >= 600_000,
+    `the allowance must clear a long reasoning phase, got ${aiClient.streamIdleTimeoutMs(openai, 'high')}ms`);
+  for (const effort of ['low', 'medium', 'high']) {
+    assert.ok(aiClient.streamIdleTimeoutMs(openai, effort) > cloudBudget, `reasoning ${effort} is still hidden`);
+  }
+  // Scoped, in both directions. A non-reasoning OpenAI request streams at once, so silence there
+  // is a stuck request and must still fail in three minutes.
+  assert.equal(aiClient.streamIdleTimeoutMs(openai, 'off'), cloudBudget,
+    'without reasoning there is nothing to wait through');
+  assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-4o' }, 'off'), cloudBudget);
+  // And a provider that DOES stream its reasoning keeps the tight gap: its silence is a fault.
+  for (const provider of ['deepseek', 'anthropic', 'gemini', 'openrouter', 'groq']) {
+    assert.equal(aiClient.streamIdleTimeoutMs({ provider, model: 'x' }, 'high'), cloudBudget,
+      `${provider} narrates its reasoning, so a silent stream is a stall, not thinking`);
+  }
+  // Local models keep their own larger budget, whatever the reasoning setting.
+  for (const provider of ['lmstudio', 'ollama', 'nodus']) {
+    assert.equal(aiClient.streamIdleTimeoutMs({ provider, model: 'x' }, 'off'),
+      aiClient.completionTimeoutMs({ provider, model: 'x' }));
+  }
+  // The default argument must not quietly widen every stream.
+  assert.equal(aiClient.streamIdleTimeoutMs(openai), cloudBudget);
+
   // --- 2. A timeout is tagged, not merely worded ------------------------------
   //
   // The deep scan answers a timeout by splitting the chunk, which it must not do for an
@@ -133,8 +170,11 @@ try {
   const client = read('electron/ai/aiClient.ts');
   assert.match(client, /const timeoutMs = opts\.timeoutMs \?\? completionTimeoutMs\(model\)/,
     'buffered leased Nodus-local clients size their timeout by provider');
-  assert.match(client, /const streamTimeoutMs = opts\.timeoutMs \?\? completionTimeoutMs\(model\)/,
-    'streaming clients size their timeout by provider');
+  // A stream is sized by streamIdleTimeoutMs, not completionTimeoutMs: same provider rule, plus
+  // the allowance for a provider that sends nothing while it reasons (section 1b). Pinned to the
+  // source because the distinction is invisible at runtime until a model thinks for 3 minutes.
+  assert.match(client, /const streamTimeoutMs = opts\.timeoutMs \?\? streamIdleTimeoutMs\(model, reasoning\)/,
+    'streaming clients size their timeout by provider AND by whether the reasoning is streamed');
   assert.ok((client.match(/withTransportDeadline\(/g) ?? []).length >= 2,
     'buffered OpenAI-compatible clients keep the deadline until the complete body settles');
   // The stream keeps a deadline over the complete body too, measured as idle time (a reasoning
