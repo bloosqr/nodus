@@ -40,6 +40,13 @@ test('Intel runs only after publication, outside the gate that publishes', () =>
 test('the Intel build is the released application, signed exactly like a release', () => {
   assert.match(intel, /runs-on: macos-15-intel/);
   assert.match(intel, /ref: \$\{\{ inputs\.tag \}\}/, 'the Intel build comes from the release tag itself');
+  // Only the verifiers are taken from the workflow commit, never product code.
+  const tools = step(intel, "Checkout this workflow's macOS verifiers");
+  assert.match(tools, /ref: \$\{\{ github\.workflow_sha \}\}/);
+  assert.deepEqual([...tools.matchAll(/^ {12}(\S+)$/gm)].map((match) => match[1]),
+    ['scripts/verify-macos-code-signing.cjs', 'scripts/verify-macos-release.cjs']);
+  assert.ok(intel.indexOf("Apply this workflow's macOS verifiers") < intel.indexOf('Build, sign and notarize the Intel artifacts'),
+    'the verifiers are in place before afterSign runs them');
   assert.match(intel, /verify-release-channel\.mjs "\$CHANNEL" "\$RELEASE_TAG"/);
   assert.match(intel, /NODUS_REQUIRE_BOOTSTRAP: '1'/, 'the offline capability bootstrap is required, as on every release build');
   assert.match(intel, /electron-builder --mac --x64 --publish never --config build\/electron-builder\.release\.cjs/);
