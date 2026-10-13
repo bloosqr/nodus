@@ -8,6 +8,11 @@ const { Arch } = require('electron-builder');
 const { assertServerWeb } = require('../scripts/packaged-server-web.cjs');
 const { verifyPackagedNativeRuntime, assertBinaryArchitecture } = require('../scripts/verify-packaged-native-runtime.cjs');
 const {
+  packedLayout,
+  stageAndVerifyOnDemandRuntimes,
+  verifyPackagedNodeModules,
+} = require('../scripts/verify-packaged-node-modules.cjs');
+const {
   packagedExecutable,
   stagePackagedServerRuntime,
   verifyPackagedServerRuntime,
@@ -58,6 +63,14 @@ exports.default = async function afterPack(context) {
   );
   const server = await verifyPackagedServerRuntime({ executable: packagedExecutable(context), resourcesPath });
   for (const line of server.passed) console.log(`[afterPack] Nodus Server: ${line}`);
+
+  // node_modules is pruned to what the main process loads (build/packagedNodeModules.cjs).
+  // Prove that nothing it loads went missing: every package must be packed, and must load
+  // in the executable just packed, run as Node the same way the server check above runs it.
+  const layout = packedLayout(context.appOutDir, context.electronPlatformName, appName, context.packager.executableName);
+  verifyPackagedNodeModules(layout);
+  // Codex and Copilot are downloaded at first use, from the tarballs this manifest pins.
+  stageAndVerifyOnDemandRuntimes(layout, context.electronPlatformName, Arch[context.arch]);
 
   if (context.electronPlatformName !== 'darwin') return;
 
