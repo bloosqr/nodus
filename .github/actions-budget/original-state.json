@@ -413,8 +413,8 @@
     }
   },
   "addedFiles": {
-    ".github/workflows/release-macos-intel.yml": "7b3bff83364da673228f306abca37481b741e52b80d8cabc3f6b290ea516f905",
-    "scripts/test-macos-intel-release.mjs": "54fff2c64e49b39d97ce375ae4576eab2f8806a4cab66ca19ccaeca834350613",
+    ".github/workflows/release-macos-intel.yml": "9b8b7ee939fae8c0b2301b5ad92ed742999f5cf961e9d60b8453fd8bd9e7e59f",
+    "scripts/test-macos-intel-release.mjs": "2cfaad6cb0735c3700af8901b6cc7cd8a5cc3b15f38735bfaeb180a735fd1424",
     "scripts/ci-routing.mjs": "b4f93db88c1fd5d9e01023bab1b3daa968583500ec1f117cc2636496da331130",
     "scripts/ci-native-checks.mjs": "c3ddb954a0d025883817044ae1fa376425b2a26467654599ffcb7a9e9741ee6f",
     "scripts/test-ci-routing.mjs": "f0147947a4329350d270844ce4e197e483170591047e473ff50dd89eb0e371a6",
