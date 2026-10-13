@@ -13,7 +13,7 @@ await build({ entryPoints: [path.join(root, 'electron/ai/cutOffRetry.ts')], outf
 const { retryOnceWhenCutOff } = await import(pathToFileURL(outfile).href);
 const effortFile = path.join(tmp, 'researchReasoning.mjs');
 await build({ entryPoints: [path.join(root, 'shared/researchReasoning.ts')], outfile: effortFile, bundle: true, format: 'esm', platform: 'node', logLevel: 'silent' });
-const { reducedResearchEffort } = await import(pathToFileURL(effortFile).href);
+const { reducedResearchEffort, researchReasoningProfile, researchReasoningBody } = await import(pathToFileURL(effortFile).href);
 test.after(() => rm(tmp, { recursive: true, force: true }));
 
 class Cut extends Error { code = 'output_truncated'; }
@@ -66,17 +66,51 @@ test('the retry asks for less thinking than the attempt that was cut off', async
   assert.deepEqual(efforts, [false, true], 'the second call must be told it IS the retry');
 });
 
-test('one rung down, and never below the ladder', () => {
-  // The caller's half of the contract: what "less thinking" means.
-  assert.equal(reducedResearchEffort('high'), 'medium');
-  assert.equal(reducedResearchEffort('xhigh'), 'high');
-  assert.equal(reducedResearchEffort('medium'), 'low');
-  assert.equal(reducedResearchEffort('low'), 'minimal');
-  // Nothing below the floor, and the levels that are not sizes cannot be lowered at all.
-  assert.equal(reducedResearchEffort('minimal'), null);
-  for (const effort of ['standard', 'none', 'off', 'on', undefined]) {
-    assert.equal(reducedResearchEffort(effort), null, `${effort} is not a budget that can be stepped down`);
+test('one supported rung down, never disabling thinking or inventing a level', () => {
+  const p = { mode: 'effort', levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] };
+  for (const [effort, less] of [['high', 'medium'], ['xhigh', 'high'], ['medium', 'low'], ['low', 'minimal'], ['max', 'xhigh'], ['ultra', 'max']]) {
+    assert.equal(reducedResearchEffort(effort, p), less);
   }
-  // A step, not a jump to the floor: the answer needs room, not the smallest budget available.
-  assert.notEqual(reducedResearchEffort('ultra'), 'minimal');
+  for (const effort of ['minimal', 'standard', 'none', 'off', 'on', undefined]) {
+    assert.equal(reducedResearchEffort(effort, p), null);
+  }
+  assert.equal(reducedResearchEffort('high', { mode: 'none', levels: [] }), null);
+});
+
+test('DeepSeek retries send a supported lower effort and keep thinking enabled', async () => {
+  const ref = { provider: 'deepseek', model: 'deepseek-flash' };
+  for (const info of [undefined, { id: ref.model, researchReasoningLevels: ['none', 'max', 'high', 'low'] }]) {
+    const p = researchReasoningProfile(ref, info);
+    assert.equal(reducedResearchEffort('high', p), 'low');
+    assert.equal(reducedResearchEffort('max', p), 'high');
+    assert.equal(reducedResearchEffort('low', p), null);
+    const sent = [];
+    let resets = 0;
+    const answer = await retryOnceWhenCutOff(async isRetry => {
+      const effort = isRetry ? reducedResearchEffort('high', p) ?? 'high' : 'high';
+      sent.push({ max_tokens: 149422, ...researchReasoningBody(ref, effort, 149422, info) });
+      if (!isRetry) throw new Cut('cut');
+      return 'answer';
+    }, { isCutOff, beforeRetry: () => resets++ });
+    assert.equal(answer, 'answer');
+    assert.deepEqual(sent, [
+      { max_tokens: 149422, thinking: { type: 'enabled' }, reasoning_effort: 'high' },
+      { max_tokens: 149422, thinking: { type: 'enabled' }, reasoning_effort: 'low' },
+    ]);
+    assert.equal(resets, 1);
+  }
+});
+
+test('each model uses its own gaps and floor, including live subscription catalogues', () => {
+  for (const [ref, info, from, want] of [
+    [{ provider: 'openai', model: 'gpt-6.1-sol' }, undefined, 'low', null],
+    [{ provider: 'gemini', model: 'gemini-3-pro' }, undefined, 'high', 'low'],
+    [{ provider: 'anthropic', model: 'claude-fable-5-1' }, undefined, 'max', 'xhigh'],
+    [{ provider: 'codex', model: 'gpt-6.1-sol' }, { supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }, 'high', 'low'],
+    [{ provider: 'openai', model: 'gpt-6.1-sol' }, { researchReasoningLevels: ['high', 'low'], reasoningMandatory: true }, 'high', 'low'],
+  ]) {
+    const p = researchReasoningProfile(ref, info);
+    assert.equal(reducedResearchEffort(from, p), want);
+    if (want) assert.ok(p.levels.includes(want));
+  }
 });

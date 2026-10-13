@@ -21,7 +21,7 @@ export async function retryOnceWhenCutOff<T>(
     return await write(false);
   } catch (error) {
     if (options.signal?.aborted || !options.isCutOff(error)) throw error;
-    console.warn('[research] answer cut off at the output limit; retrying once with less thinking');
+    console.warn('[research] answer cut off at the output limit; retrying once');
     options.beforeRetry?.();
     return write(true);
   }

@@ -2,7 +2,7 @@ import { withResearchActivity, researchActivityStep, startResearchActivity } fro
 import type { ResearchActivity } from '@shared/researchActivity';
 import { runConcilium } from './researchConcilium';
 import { conciliumAssessments, type ConciliumResult } from '@shared/researchConcilium';
-import { reducedResearchEffort } from '@shared/researchReasoning';
+import { reducedResearchEffort, researchReasoningProfile } from '@shared/researchReasoning';
 import { prepareResearchAttachments, withResearchAttachmentFallback } from './researchAttachments';
 import { withResearchSystemPrompt } from './researchSystemPrompt';
 import { resolveResearchSourceScope, type ResearchSourceScope } from './researchSourceScope';
@@ -421,7 +421,7 @@ async function streamResearchChatTurn(
   // token budget is deliberately NOT recomputed — the same ceiling with less thinking in front of
   // it is exactly the room the answer needs.
   const write = (isRetry = false) => {
-    const less = isRetry ? reducedResearchEffort(opts.researchEffort) : null;
+    const less = isRetry ? reducedResearchEffort(opts.researchEffort, researchReasoningProfile(resolveModelRef(request.model), opts.researchModelInfo)) : null;
     const attempt = less ? { ...opts, researchEffort: less } : opts;
     return researchActivityStep('response', 'write', () => withResearchAttachmentFallback(attachments, attempt, options => completeTextStream(options, onDelta, request.model, signal)), request.model?.model);
   };

@@ -18,7 +18,7 @@ export function isResearchEffort(value: unknown): value is ResearchEffort {
 const EFFORT_LADDER = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 
 /**
- * One rung down, or null when there is none to take.
+ * One supported rung down, or null when there is none to take.
  *
  * Written for the retry after a cut-off: a model that spent its whole output ceiling thinking and
  * never wrote the answer will do it again if asked the same way, so the second attempt asks for
@@ -27,12 +27,15 @@ const EFFORT_LADDER = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultr
  * unchanged, hit the ceiling a second time on all four.
  *
  * A step rather than a jump to the floor: the answer needs room, not the smallest budget going,
- * and `high` to `medium` is usually enough to leave it. `standard` returns null because we did not
- * choose its size and so cannot lower it.
+ * with gaps and the floor taken from this model's native profile. `standard` returns null
+ * because we did not choose its size and so cannot lower it.
  */
-export function reducedResearchEffort(effort: ResearchEffort | undefined): ResearchEffort | null {
-  const at = EFFORT_LADDER.indexOf(effort as (typeof EFFORT_LADDER)[number]);
-  return at > 0 ? EFFORT_LADDER[at - 1] : null;
+export function reducedResearchEffort(effort: ResearchEffort | undefined, profile: ResearchReasoningProfile): ResearchEffort | null {
+  if (!effort || effort === 'standard') return null;
+  const native = resolveResearchEffort(profile, effort);
+  const supported = EFFORT_LADDER.filter(level => profile.levels.includes(level));
+  const at = supported.indexOf(native as (typeof EFFORT_LADDER)[number]);
+  return at > 0 ? supported[at - 1] : null;
 }
 export interface ResearchReasoningProfile {
   levels: NativeResearchEffort[];
