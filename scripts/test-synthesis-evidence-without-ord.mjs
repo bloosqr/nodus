@@ -27,6 +27,9 @@ const STUBS = {
   './aiClient': `export const embed = async () => null;`,
   // No stock lists imported: disconnections are requested without a stock directory.
   './chemistryStock': `export const chemistryStockDirectory = () => null; export const chemistryStockLists = () => [];`,
+  // The monomer library resolves its directory through electron's app, which a bundle run under
+  // plain node cannot load; without this stub the whole file fails before a test runs.
+  './chemistryMonomers': 'export const monomerLibraryDirectory = () => null;',
   // No textbook-scheme index unless a scenario sets one.
   './textbookSchemes': `export const textbookSchemeDirectory = () => globalThis.__textbook?.dir ?? null; export const textbookCitations = (ids) => (globalThis.__textbook?.cite ?? (() => []))(ids); export const textbookTemplateCitations = (templates) => (globalThis.__textbook?.citeTemplates ?? (() => []))(templates);`,
   // No local reranker installed: the fused order stands.
