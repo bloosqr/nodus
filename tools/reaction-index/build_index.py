@@ -59,7 +59,11 @@ RETRO_MIN_COUNT = 5
 #   1: retro templates only (every index up to and including v5)
 #   2: forward templates alongside, spectator-stripped
 #   3: --extra-mapped can supply a map for a reaction whose source has none
-EXTRACTION_VERSION = 3
+#   4: an ambiguous map is repaired where that can be done without choosing anything, AND the
+#      template cut from a repaired map must reproduce its own reaction or the reaction is dropped.
+#      (Repair without that validation was measured first and was worse than excluding: see
+#      reaction_audit.repair_duplicate_maps. A metal excuse was measured with it and left out.)
+EXTRACTION_VERSION = 6
 # Reactions kept per molecule for "recorded ways to make it".
 MOLECULE_SAMPLE_KEYS = 50
 REACTION_SMILES = 2
@@ -280,22 +284,77 @@ def _template_forward(reactants, agents, products, rid):
 
 
 def _map_audit(reactants, agents, products):
-    """Exclusions for one atom-mapped reaction (reaction_audit, shared with the textbook templates).
+    """(exclusions, reactants, products, repaired) for one atom-mapped reaction (reaction_audit,
+    shared with the textbook templates).
+
     A record carries no prose, so nothing can be declared: a mechanism flag here has no scheme text
     that could explain it, and in a mined record it is more often a mapping or transcription error
     than genuinely unusual chemistry. The template is the atom map, so a flagged map would propose
     that error as a disconnection — this builder therefore treats every mechanism flag as an
     exclusion. Stereocentres from achiral inputs are excused when an agent is itself chiral (a
-    chiral catalyst or ligand), which is the one case the prose would otherwise have declared."""
-    from reaction_audit import audit_reaction, MECHANISM_FLAGS
-    hard, soft, _ = audit_reaction(f'{reactants}>>{products}', '')
-    excluded = set(hard) | (MECHANISM_FLAGS & set(soft))
-    if 'stereo from achiral inputs' in excluded:
-        chiral_agent = any(Chem.FindMolChiralCenters(m, useLegacyImplementation=False)
-                           for m in (Chem.MolFromSmiles(x) for x in agents.split('.') if x) if m is not None)
-        if chiral_agent:
-            excluded.discard('stereo from achiral inputs')
-    return sorted(excluded)
+    chiral catalyst or ligand), which is the one case the prose would otherwise have declared.
+
+    An ambiguous (duplicated) map is REPAIRED where the ambiguity can be removed without choosing
+    anything, and the repaired sides come back so the template is cut from them. `repaired` says so,
+    because a repaired map's template must then be VALIDATED — see _template_reproduces. Measured:
+    repairing alone recovers 43% of duplicate-flagged reactions but their templates are only 0-55%
+    sound against 94% for an untouched map, so the repair cannot be trusted on its own.
+
+    A metal catalyst among the agents is deliberately NOT excused here. Validation cannot help that
+    case: a mis-mapped reaction's template reproduces the mis-mapped reaction perfectly, so the test
+    says nothing about whether the chemistry is real. It stays unproven rather than smuggled in."""
+    from reaction_audit import audit_reaction, repair_duplicate_maps, MECHANISM_FLAGS
+
+    def judge(r, p):
+        hard, soft, _ = audit_reaction(f'{r}>>{p}', '')
+        out = set(hard) | (MECHANISM_FLAGS & set(soft))
+        if 'stereo from achiral inputs' in out:
+            chiral_agent = any(Chem.FindMolChiralCenters(m, useLegacyImplementation=False)
+                               for m in (Chem.MolFromSmiles(x) for x in agents.split('.') if x) if m is not None)
+            if chiral_agent:
+                out.discard('stereo from achiral inputs')
+        return out
+
+    excluded = judge(reactants, products)
+    if 'duplicate atom maps' in excluded:
+        repaired = repair_duplicate_maps(reactants, products)
+        if repaired:
+            r, p, _ = repaired
+            after = judge(r, p)
+            if 'duplicate atom maps' not in after:
+                return sorted(after), r, p, True
+    return sorted(excluded), reactants, products, False
+
+
+def _template_reproduces(retro, reactants, products):
+    """Does this retro template, run on the reaction's own product, propose one of its reactants?
+
+    The gate on a repaired map. Repairing it makes the audit pass; it does not make the template
+    usable, and measurement showed the difference plainly — every one of 19 templates from a
+    renumbered map failed inside RDChiral, and 41% of those from a de-duplicated map did. So the
+    template is held to the only standard that matters: reproduce the reaction it came from.
+
+    Anything other than a clear success is a failure, exceptions included. A repaired map is a
+    guess that happened to pass a check; the burden is on it."""
+    from rdchiral.main import rdchiralReaction, rdchiralReactants, rdchiralRun
+
+    def bare(smiles):
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        for atom in mol.GetAtoms():
+            atom.SetAtomMapNum(0)
+        return Chem.MolToSmiles(mol)
+
+    want = {b for b in (bare(x) for x in reactants.split('.')) if b}
+    clean = [b for b in (bare(x) for x in products.split('.')) if b]
+    if not want or not clean:
+        return False
+    try:
+        outcomes = rdchiralRun(rdchiralReaction(retro), rdchiralReactants(max(clean, key=len)))
+    except Exception:
+        return False
+    return any(bare(f) in want for outcome in outcomes for f in outcome.split('.'))
 
 
 def _template_for(reactants, agents, products, rid, n_atoms, force_fast=False):
@@ -494,10 +553,38 @@ def process_row_group(args):
                     reactants, agents, products_s, mapped = sr, sa or agents, sp, True
                     extra_used += 1
         if mapped:
+            repaired = False
+            rescued = False
             try:
-                hard = _map_audit(reactants, agents, products_s)
+                # The sides may come back repaired: a duplicated map number that could be resolved
+                # without choosing anything. As with the supplied maps above, the canonical sides
+                # are NOT replaced — only what the template is cut from — so exact keys, products
+                # and citations are unaffected either way.
+                hard, reactants, products_s, repaired = _map_audit(reactants, agents, products_s)
             except Exception as e:
                 hard = [f'audit error: {type(e).__name__}']
+            # A recorded map that fails the audit is not excused — it is REPLACED, if and only
+            # if an independently produced map for exactly this reaction passes the SAME audit.
+            # `supplied` is already set when the source data had no map at all, so this only fires
+            # for reactions that HAD a map and lost it. The canonical sides are untouched either
+            # way, so exact keys, products and citations do not depend on which map won.
+            if hard and not supplied:
+                alt = _EXTRA_MAPPED.get(key)
+                if alt and '>' in alt:
+                    ar, aa, ap = _split(alt)
+                    if ar and ap:
+                        try:
+                            alt_hard, ar2, ap2, _ = _map_audit(ar, aa or agents, ap)
+                        except Exception as e:
+                            alt_hard = [f'audit error: {type(e).__name__}']
+                        if not alt_hard:
+                            reactants, products_s = ar2, ap2
+                            agents = aa or agents
+                            hard, rescued = [], True
+                            extra_used += 1
+                            audit_flags['remap rescued a rejected map'] += 1
+                        else:
+                            audit_flags['remap also failed the audit'] += 1
             if key not in map_audit or not hard:
                 map_audit[key] = hard
             if hard:
@@ -509,6 +596,62 @@ def process_row_group(args):
                 fast_templates += 1
             else:
                 rdchiral_templates += 1
+            if repaired or rescued:
+                # A map that did not come from the source data has to earn its template. The fast
+                # extractor's output never reaches the runtime retro set, so there is nothing to
+                # validate on that path and nothing to gain by paying for it.
+                # Rescued maps face the same bar as repaired ones deliberately: on this set the
+                # maps that PASS the audit are the ones the mapper was least sure of (median
+                # confidence 0.287 against 0.498 for those still flagged), so passing the audit
+                # cannot be read as being right. Reproducing its own reaction can.
+                label = 'remap' if rescued else 'repair'
+                if who == 'fast':
+                    audit_flags[f'{label} kept (fast path, not in the retro set)'] += 1
+                elif t and _template_reproduces(t, reactants, products_s):
+                    audit_flags[f'{label} validated'] += 1
+                else:
+                    # LAST CHANCE for a repaired map. The rescue above fires only when the audit
+                    # REJECTED the recorded map, and a successful repair makes the audit pass — so
+                    # a repair that then fails validation has never been offered an independently
+                    # produced map. Try one here, through the SAME audit and the SAME validation,
+                    # before discarding the reaction. Strictly additive: this runs only on the path
+                    # that was about to `continue`, so nothing that already validated can be lost.
+                    saved = False
+                    if repaired and not rescued and not supplied:
+                        alt = _EXTRA_MAPPED.get(key)
+                        if alt and '>' in alt:
+                            ar, aa, ap = _split(alt)
+                            if ar and ap:
+                                try:
+                                    alt_hard, ar2, ap2, _ = _map_audit(ar, aa or agents, ap)
+                                except Exception as e:
+                                    alt_hard = [f'audit error: {type(e).__name__}']
+                                if alt_hard:
+                                    audit_flags['remap after a failed repair also failed the audit'] += 1
+                                else:
+                                    agents2 = aa or agents
+                                    t2, t2_fwd, who2 = _template_for(ar2, agents2, ap2, rid,
+                                                                     r_atoms + p_atoms, force_fast)
+                                    # these count EXTRACTIONS performed, so a second one counts
+                                    if who2 == 'fast':
+                                        fast_templates += 1
+                                    else:
+                                        rdchiral_templates += 1
+                                    if who2 == 'fast':
+                                        audit_flags['remap after a failed repair kept (fast path)'] += 1
+                                        saved = True
+                                    elif t2 and _template_reproduces(t2, ar2, ap2):
+                                        audit_flags['remap after a failed repair VALIDATED'] += 1
+                                        saved = True
+                                    else:
+                                        audit_flags['remap after a failed repair rejected by validation'] += 1
+                                    if saved:
+                                        t, t_fwd, who = t2, t2_fwd, who2
+                                        reactants, products_s, agents = ar2, ap2, agents2
+                                        extra_used += 1
+                    if not saved:
+                        audit_flags[f'{label} rejected by validation'] += 1
+                        continue
             if t:
                 templates[t] += 1
                 (templates_fast if who == 'fast' else templates_rdchiral)[t] += 1
