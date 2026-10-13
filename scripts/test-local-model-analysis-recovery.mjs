@@ -118,6 +118,8 @@ try {
   }
   assert.equal(aiClient.streamIdleTimeoutMs(openai), 900_000, 'a reasoning model thinks by default');
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-4o' }), cloudBudget);
+  assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-4o' }, { reasoning_effort: 'high' }), cloudBudget, 'a global effort does not make a non-reasoning model think');
+  assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'new-model' }, {}, { reasoningMandatory: true }), 900_000, 'native metadata identifies mandatory thinking without guessing a model name');
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-unknown' }), cloudBudget);
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-5.6' }, { reasoning_effort: 'none' }), cloudBudget);
   for (const provider of ['deepseek', 'anthropic', 'gemini', 'openrouter', 'groq']) {
@@ -160,6 +162,8 @@ try {
     assert.equal(sdkCalls.at(-1).options.timeout, cloudBudget, 'a real opt-out keeps the tight deadline');
     await aiClient.completeTextStream({ system: 's', user: 'u', reasoning: 'off' }, () => {}, { provider: 'openai', model: 'gpt-4o' });
     assert.equal(sdkCalls.at(-1).options.timeout, cloudBudget);
+    await aiClient.completeTextStream({ system: 's', user: 'u', reasoning: 'high' }, () => {}, { provider: 'openai', model: 'gpt-4o' });
+    assert.equal(sdkCalls.at(-1).options.timeout, cloudBudget, 'unsupported global hints cannot widen the SDK deadline');
   } finally {
     delete globalThis.__streamSdk;
     providers.listModels = originalListModels;

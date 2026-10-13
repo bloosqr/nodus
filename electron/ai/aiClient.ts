@@ -455,9 +455,9 @@ export function streamIdleTimeoutMs(model: ModelRef, body: { reasoning_effort?: 
   // Research deliberately sets the portable `reasoning` to off; its native effort is separate.
   // An omitted effort on a known reasoning model leaves the provider's default thinking enabled.
   const effort = body.reasoning_effort;
-  const thinking = effort === undefined
-    ? researchReasoningProfile(model, info).levels.some(level => level !== 'none' && level !== 'off')
-    : effort !== 'none' && effort !== 'off';
+  const canThink = researchReasoningProfile(model, info).levels.some(level => level !== 'none' && level !== 'off')
+    || info?.reasoning === true || info?.reasoningMandatory === true;
+  const thinking = canThink && effort !== 'none' && effort !== 'off';
   return thinking && hidesReasoningStream(model)
     ? Math.max(HIDDEN_REASONING_STREAM_IDLE_MS, CLOUD_COMPLETION_TIMEOUT_MS)
     : CLOUD_COMPLETION_TIMEOUT_MS;
