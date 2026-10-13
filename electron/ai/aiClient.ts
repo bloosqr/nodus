@@ -1,7 +1,7 @@
 import { currentResearchRequestBudget, researchPromptUpperBound } from './researchRequestBudget';
 import { documentedContextWindow } from '@shared/providerContextWindows';
 import { withJobThinking } from './thinkingEffort';
-import { researchReasoningBody, researchOmitsTemperature, type ResearchEffort } from '@shared/researchReasoning';
+import { researchReasoningBody, researchReasoningProfile, researchOmitsTemperature, type ResearchEffort } from '@shared/researchReasoning';
 import { getSettings } from '../db/settingsRepo';
 import { documentVisualPlanningPrompt } from './documentVisualContext';
 import { jobOutputLanguage } from './jobOutputLanguage';
@@ -28,7 +28,7 @@ import {
   isGroqReasoningModel,
 } from './providers';
 import { DEFAULT_EMBEDDING_MODELS, isLocalEndpointAddress, normalizeEmbeddingModel, PROVIDER_LABELS } from '@shared/providers';
-import type { AiProvider, CodexReasoningEffort, EmbeddingProvider, LocalProvider, ModelRef, PromptLanguage, ReasoningEffort } from '@shared/types';
+import type { AiProvider, CodexReasoningEffort, EmbeddingProvider, LocalProvider, ModelInfo, ModelRef, PromptLanguage, ReasoningEffort } from '@shared/types';
 import { vaultTypePromptPack } from '@shared/vaultTypes';
 import { codexReasoningFor } from '@shared/codexReasoning';
 import { anthropicVisionContent, openAiVisionContent, type VisionImagePart } from '@shared/imageAnalysis';
@@ -438,8 +438,8 @@ export function completionTimeoutMs(model: ModelRef): number {
  * user as "Timed out waiting for the AI provider. Try a faster model or a smaller fragment."
  * Nothing was wrong with the provider and a faster model was not the remedy.
  *
- * Scoped to requests that actually asked for reasoning: a non-reasoning OpenAI model streams at
- * once, and a wedged one should still fail in three minutes rather than fifteen. STREAM_TOTAL_MS
+ * Scoped to requests with effective reasoning, including a reasoning model's native default.
+ * Non-reasoning OpenAI models retain the three-minute allowance. STREAM_TOTAL_MS
  * bounds the request either way.
  */
 const HIDDEN_REASONING_STREAM_IDLE_MS = 15 * 60_000;
@@ -449,9 +449,15 @@ function hidesReasoningStream(model: ModelRef): boolean {
   return model.provider === 'openai';
 }
 
-export function streamIdleTimeoutMs(model: ModelRef, reasoning: ReasoningEffort = 'off'): number {
+export function streamIdleTimeoutMs(model: ModelRef, body: { reasoning_effort?: unknown } = {}, info?: ModelInfo): number {
   if (runsOnDevice(model.provider)) return ON_DEVICE_COMPLETION_TIMEOUT_MS;
-  const thinking = reasoning !== 'off';
+  // Inspect the body after Research options and thinking compatibility have been applied.
+  // Research deliberately sets the portable `reasoning` to off; its native effort is separate.
+  // An omitted effort on a known reasoning model leaves the provider's default thinking enabled.
+  const effort = body.reasoning_effort;
+  const thinking = effort === undefined
+    ? researchReasoningProfile(model, info).levels.some(level => level !== 'none' && level !== 'off')
+    : effort !== 'none' && effort !== 'off';
   return thinking && hidesReasoningStream(model)
     ? Math.max(HIDDEN_REASONING_STREAM_IDLE_MS, CLOUD_COMPLETION_TIMEOUT_MS)
     : CLOUD_COMPLETION_TIMEOUT_MS;
@@ -2201,17 +2207,7 @@ async function rawCompleteStreamTransport(
     : compatLocalPlan?.outputTokens ?? requestedMax;
   const freeTier = isProviderFreeTier(model.provider);
   const maxTokens = freeTier ? freeTierBudget(model, opts, localMax) : localMax;
-  // The STREAM's allowance, not a completion's: with a provider that hides its reasoning this has
-  // to cover the thinking phase, because no chunk arrives to reset it. See streamIdleTimeoutMs.
-  const streamTimeoutMs = opts.timeoutMs ?? streamIdleTimeoutMs(model, reasoning);
   const OpenAI = (await import('openai')).default;
-  const client = new OpenAI({
-    apiKey: key,
-    baseURL: baseURL ?? undefined,
-    timeout: streamTimeoutMs,
-    maxRetries: 0,
-    defaultHeaders: openAiClientHeaders(model),
-  });
   const baseBody = {
     model: model.model,
     ...requestSamplingBody(model, opts, reasoning),
@@ -2271,16 +2267,23 @@ async function rawCompleteStreamTransport(
   // Idle, not total: a reasoning stream that keeps sending chunks is working, however long it
   // thinks. STREAM_TOTAL_MS still bounds a provider that never finishes. For a provider that
   // sends nothing while it reasons, streamTimeoutMs is already widened to cover that silence.
-  const executeStream = (body: any) => withIdleTransportDeadline(
-    streamTimeoutMs,
-    Math.max(streamTimeoutMs, STREAM_TOTAL_MS),
-    signal ?? opts.signal,
-    (transportSignal, touch) => model.provider === 'nodus'
-      ? withNodusLocalServerLease(model.model, 'chat', (apiUrl) => consumeStream(new OpenAI({
-          apiKey: key, baseURL: apiUrl, timeout: streamTimeoutMs, maxRetries: 0,
-        }), body, transportSignal, touch))
-      : consumeStream(client, body, transportSignal, touch),
-  );
+  const executeStream = (body: any) => {
+    const streamTimeoutMs = opts.timeoutMs ?? streamIdleTimeoutMs(model, body, opts.researchModelInfo);
+    const client = new OpenAI({
+      apiKey: key, baseURL: baseURL ?? undefined, timeout: streamTimeoutMs,
+      maxRetries: 0, defaultHeaders: openAiClientHeaders(model),
+    });
+    return withIdleTransportDeadline(
+      streamTimeoutMs,
+      Math.max(streamTimeoutMs, STREAM_TOTAL_MS),
+      signal ?? opts.signal,
+      (transportSignal, touch) => model.provider === 'nodus'
+        ? withNodusLocalServerLease(model.model, 'chat', (apiUrl) => consumeStream(new OpenAI({
+            apiKey: key, baseURL: apiUrl, timeout: streamTimeoutMs, maxRetries: 0,
+          }), body, transportSignal, touch))
+        : consumeStream(client, body, transportSignal, touch),
+    );
+  };
   /** One replay, dispatched through the same retry/scheduler seam as the first attempt. */
   const replayStream = (body: Record<string, unknown>) => withThinkingCompatibility(model, { ...baseBody, ...body },
     request => withProviderRetries(freeTier, () => scheduleProviderRequest(
