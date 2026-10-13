@@ -453,11 +453,18 @@ export function streamIdleTimeoutMs(model: ModelRef, body: { reasoning_effort?: 
   if (runsOnDevice(model.provider)) return ON_DEVICE_COMPLETION_TIMEOUT_MS;
   // Inspect the body after Research options and thinking compatibility have been applied.
   // Research deliberately sets the portable `reasoning` to off; its native effort is separate.
-  // An omitted effort on a known reasoning model leaves the provider's default thinking enabled.
+  // An omitted effort can leave mandatory thinking enabled; optional thinking may default to none.
   const effort = body.reasoning_effort;
-  const canThink = researchReasoningProfile(model, info).levels.some(level => level !== 'none' && level !== 'off')
-    || info?.reasoning === true || info?.reasoningMandatory === true;
-  const thinking = canThink && effort !== 'none' && effort !== 'off';
+  const profile = researchReasoningProfile(model, info);
+  const defaultEffort = info?.defaultReasoningEffort;
+  const canThink = profile.levels.some(level => level !== 'none' && level !== 'off')
+    || info?.reasoning === true || info?.reasoningMandatory === true
+    || (defaultEffort !== undefined && defaultEffort !== 'none');
+  // Supporting thinking is not the same as enabling it by default (GPT-5.1/5.4 mini).
+  // Prefer a published default; otherwise widen omitted effort only for mandatory thinking.
+  const defaultThinking = defaultEffort !== undefined ? defaultEffort !== 'none'
+    : info?.reasoningMandatory ?? (canThink && !profile.levels.includes('none') && !profile.levels.includes('off'));
+  const thinking = canThink && (effort === undefined ? defaultThinking : effort !== 'none' && effort !== 'off');
   return thinking && hidesReasoningStream(model)
     ? Math.max(HIDDEN_REASONING_STREAM_IDLE_MS, CLOUD_COMPLETION_TIMEOUT_MS)
     : CLOUD_COMPLETION_TIMEOUT_MS;

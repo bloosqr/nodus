@@ -121,6 +121,13 @@ try {
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-4o' }, { reasoning_effort: 'high' }), cloudBudget, 'a global effort does not make a non-reasoning model think');
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'new-model' }, {}, { reasoningMandatory: true }), 900_000, 'native metadata identifies mandatory thinking without guessing a model name');
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-unknown' }), cloudBudget);
+  for (const model of ['gpt-5.1', 'gpt-5.4-mini']) {
+    const ref = { provider: 'openai', model };
+    assert.equal(aiClient.streamIdleTimeoutMs(ref), cloudBudget, 'optional reasoning may default to none');
+    assert.equal(aiClient.streamIdleTimeoutMs(ref, { reasoning_effort: 'high' }), 900_000);
+    assert.equal(aiClient.streamIdleTimeoutMs(ref, {}, { defaultReasoningEffort: 'medium' }), 900_000, 'published defaults take precedence');
+    assert.equal(aiClient.streamIdleTimeoutMs(ref, {}, { defaultReasoningEffort: 'none' }), cloudBudget);
+  }
   assert.equal(aiClient.streamIdleTimeoutMs({ provider: 'openai', model: 'gpt-5.6' }, { reasoning_effort: 'none' }), cloudBudget);
   for (const provider of ['deepseek', 'anthropic', 'gemini', 'openrouter', 'groq']) {
     assert.equal(aiClient.streamIdleTimeoutMs({ provider, model: 'x' }, { reasoning_effort: 'high' }), cloudBudget);
@@ -164,6 +171,8 @@ try {
     assert.equal(sdkCalls.at(-1).options.timeout, cloudBudget);
     await aiClient.completeTextStream({ system: 's', user: 'u', reasoning: 'high' }, () => {}, { provider: 'openai', model: 'gpt-4o' });
     assert.equal(sdkCalls.at(-1).options.timeout, cloudBudget, 'unsupported global hints cannot widen the SDK deadline');
+    await aiClient.completeTextStream({ system: 's', user: 'u', reasoning: 'off' }, () => {}, { provider: 'openai', model: 'gpt-5.4-mini' });
+    assert.equal(sdkCalls.at(-1).options.timeout, cloudBudget, 'an optional model default does not acquire 15 minutes of silence');
   } finally {
     delete globalThis.__streamSdk;
     providers.listModels = originalListModels;
