@@ -47,6 +47,7 @@ import { t } from '../../i18n';
 import { DocOutline } from './DocOutline';
 import { StudyDictation, type StudyDictationHandle } from './StudyDictation';
 import { StudyImproveDialog } from './StudyImproveDialog';
+import { studyStyleDisplay } from './studyStyleLocalization';
 import { ScriptorAiPanel, type AiChoice } from './ScriptorAiPanel';
 import { editorReviewDiff, savedEditorImageModels, type EditorImageModel, type EditorImageResult } from '@shared/editorAiReview';
 import type { StudyImproveResult } from '@shared/studyImprove';
@@ -69,6 +70,13 @@ interface ImproveTarget {
   initialStyleId?: string;
   visual?: boolean;
   range?: { from: number; to: number };
+}
+
+function sameImproveTarget(previous: ImproveTarget, next: ImproveTarget) {
+  // The same phrase can appear twice, so compare its positions too.
+  return previous.text === next.text && previous.scope === next.scope && previous.visual === next.visual
+    && previous.from === next.from && previous.to === next.to
+    && previous.range?.from === next.range?.from && previous.range?.to === next.range?.to;
 }
 
 interface SynonymPanelState {
@@ -432,10 +440,20 @@ export function StudyEditor({
     return null;
   };
 
-  const showSelectionImproveShortcuts = (event?: { clientX?: number; clientY?: number }) => {
+  const showSelectionImproveShortcuts = (event?: { clientX?: number; clientY?: number; target?: EventTarget | null }) => {
+    const editorSelection = event?.target instanceof Element && Boolean(event.target.closest('.bn-editor, [data-testid="study-markdown-editor"]'));
     window.setTimeout(() => {
-      if (improveStreamingStyleId || aiResult) return;
+      if (active.id !== activeIdRef.current) return;
       const target = resolveImproveSelection(false);
+      const source = aiSource.current;
+      if (editorSelection && aiPanel === 'polish' && source?.id === activeIdRef.current && target) {
+        const changed = source.base !== draft || source.native !== JSON.stringify(nativeRef.current)
+          || !sameImproveTarget(source.target, target);
+        if (changed) {
+          cancelAi(); discardProposal(); capturePolishSource(target);
+        }
+      }
+      if (improvementRunning.current || resultRef.current) return;
       if (!target) { setSelectionImprove(null); return; }
       const selection = window.getSelection();
       const rect = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
@@ -475,6 +493,12 @@ export function StudyEditor({
     improvementRunning.current = false; imageRequest.current = null;
     setImproveStreamingStyleId(null); setImageBusy(false); setImprovePreview('');
   };
+  const capturePolishSource = (target: ImproveTarget) => {
+    const source = { id: active.id, base: draft, native: JSON.stringify(nativeRef.current), target };
+    aiSource.current = source;
+    preserveSelection(); setLastImprovement(null); setImproveStreamError('');
+    return source;
+  };
   const closeAiPanel = () => { cancelAi(); discardProposal(); setAiPanel(null); setSelectionImprove(null); setImproveStreamError(''); aiSource.current = null; imageSource.current = null; requestAnimationFrame(restoreSelection); };
   closeAiRef.current = closeAiPanel;
   useEffect(() => { closeAiPanel(); return () => { aiGeneration.current++; if (imageRequest.current) void window.nodus.cancelEditorImage(imageRequest.current); if (improvementRunning.current) { improveCancelled.current = true; void window.nodus.cancelStudyImprove(); } if (resultRef.current) void window.nodus.updateStudyImprovementAction(resultRef.current.logId, 'rejected').catch(() => undefined); }; }, [active?.id]);
@@ -486,8 +510,7 @@ export function StudyEditor({
     if (active.id !== activeIdRef.current || originalNative !== JSON.stringify(nativeRef.current)) { setImproveStreamError(t('El texto ha cambiado. Selecciónalo de nuevo para pulirlo.')); return; }
     setShowSearch(false); closeSynonymPanel();
     cancelAi(); setImageResult(null);
-    aiSource.current = { id: active.id, base: draft, native: JSON.stringify(nativeRef.current), target };
-    preserveSelection(); setLastImprovement(null); setSelectionImprove(null); setImproveStreamError(''); setAiPanel('polish');
+    capturePolishSource(target); setSelectionImprove(null); setAiPanel('polish');
     const generation = aiGeneration.current;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (generation === aiGeneration.current && target.range && originalNative === JSON.stringify(nativeRef.current)) canvasRef.current?.revealAiSelection(target.range);
@@ -496,9 +519,16 @@ export function StudyEditor({
   };
   const runQuickImprovement = (style: StudyStyle, target = selectionImprove?.target ?? resolveImproveSelection(false)) => openPolish(target, style);
   const runPolish = async () => {
-    const source = aiSource.current, style = allImproveStyles.find(item => item.id === aiStyleId);
+    let source = aiSource.current;
+    const style = allImproveStyles.find(item => item.id === aiStyleId);
     if (!source || !style || !active || !data || improvementRunning.current) return;
-    if (source.id !== active.id || source.base !== draft || source.native !== JSON.stringify(nativeRef.current)) { setImproveStreamError(t('El texto ha cambiado. Selecciónalo de nuevo para pulirlo.')); return; }
+    if (source.id !== active.id || active.id !== activeIdRef.current) { setImproveStreamError(t('El texto ha cambiado. Selecciónalo de nuevo para pulirlo.')); return; }
+    // Native menus or a mouseup outside the editor may not reach its handlers.
+    const selected = resolveImproveSelection(false);
+    if (selected && !sameImproveTarget(source.target, selected)) {
+      cancelAi(); discardProposal(); source = capturePolishSource(selected);
+    }
+    if (source.base !== draft || source.native !== JSON.stringify(nativeRef.current)) { setImproveStreamError(t('El texto ha cambiado. Selecciónalo de nuevo para pulirlo.')); return; }
     const target = source.target;
     try {
       if (target.visual && target.range) canvasRef.current?.validateAiSelection(target.range);
@@ -542,7 +572,8 @@ export function StudyEditor({
       replaceImprovedSelection(source.base, source.target, result.text, true);
       resultRef.current = null; setAiResult(null); setImprovePreview(''); setAiPanel(null);
       if (raw) focusRawAt(source.id, source.target.from + result.text.length);
-      setLastImprovement(allImproveStyles.find(style => style.id === result.styleId)?.name ?? t('Pulir'));
+      const style = allImproveStyles.find(style => style.id === result.styleId);
+      setLastImprovement(style ? studyStyleDisplay(style).name : t('Pulir'));
       void window.nodus.updateStudyImprovementAction(result.logId, 'replace').catch(cause => setImproveStreamError(aiErrorMessage(cause)));
     } catch (cause) { setImproveStreamError(aiErrorMessage(cause)); }
   };
@@ -1125,7 +1156,7 @@ export function StudyEditor({
         compact
       /></div>}
 
-      <div className="editorial-editor-body flex min-h-0 flex-1" onKeyDownCapture={event => { if (locked && (event.target as Element).closest('.nodus-blocknote') && (event.metaKey || event.ctrlKey) && !['a', 'c'].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopPropagation(); } }} onInputCapture={() => setLastImprovement(null)} onMouseUp={(event) => { if (!(event.target as Element).closest('.scriptor-ai-panel')) { if ((event.target as Element).closest('.editorial-document-scroll')) captureImageCursor(); showSelectionImproveShortcuts(event); } }} onKeyUp={event => { if (!(event.target as Element).closest('.scriptor-ai-panel')) { if ((event.target as Element).closest('.editorial-document-scroll')) captureImageCursor(); showSelectionImproveShortcuts(); } }} onDragOver={(event) => {
+      <div className="editorial-editor-body flex min-h-0 flex-1" onKeyDownCapture={event => { if (locked && (event.target as Element).closest('.nodus-blocknote') && (event.metaKey || event.ctrlKey) && !['a', 'c'].includes(event.key.toLowerCase())) { event.preventDefault(); event.stopPropagation(); } }} onInputCapture={() => setLastImprovement(null)} onMouseUp={(event) => { if (!(event.target as Element).closest('.scriptor-ai-panel')) { if ((event.target as Element).closest('.editorial-document-scroll')) captureImageCursor(); showSelectionImproveShortcuts(event); } }} onKeyUp={event => { if (!(event.target as Element).closest('.scriptor-ai-panel')) { if ((event.target as Element).closest('.editorial-document-scroll')) captureImageCursor(); showSelectionImproveShortcuts(event); } }} onDragOver={(event) => {
         if (event.dataTransfer.types.includes(port.dragType) || event.dataTransfer.types.includes('text/uri-list')) event.preventDefault();
       }} onDrop={(event) => void handleEditorDrop(event)}>
 
@@ -1171,7 +1202,7 @@ export function StudyEditor({
             {(contextTab==='checks'||contextTab==='structure')&&<AcademicPanel document={nativeDocument??[]} metadata={academicMetadata} onChange={setAcademicMetadata} canvas={canvasRef.current} view={contextTab} unresolvedComments={data.annotations.filter(a=>!a.resolvedAt).length} onOpenSource={(href,evidence)=>void navigateReference(href,evidence)} onSettings={()=>academicTools.current?.open('settings')} />}
             {contextTab === 'details' && contextDetails}
             {contextTab === 'outline' && <DocOutline markdown={draft} onJump={jumpToHeading} />}
-            {contextTab === 'assistant' && <div className="p-4"><div data-testid="study-editor-model-picker"><ModelPicker settings={settings} value={aiModel} onChange={setAiModel} compact menu allowEmpty={false} triggerModelOnly /></div><button className="btn mt-3" onClick={() => openImprovePrompts()}>{t('Prompts de mejora')}</button>{quickImproveStyles.map(prompt => <button data-testid={`study-toolbar-quick-improve-${prompt.id.replace(':', '-')}`} className="btn w-full mt-2" key={prompt.id} onClick={() => void runQuickImprovement(prompt)}>{prompt.name}</button>)}</div>}
+            {contextTab === 'assistant' && <div className="p-4"><div data-testid="study-editor-model-picker"><ModelPicker settings={settings} value={aiModel} onChange={setAiModel} compact menu allowEmpty={false} triggerModelOnly /></div><button className="btn mt-3" onClick={() => openImprovePrompts()}>{t('Prompts de mejora')}</button>{quickImproveStyles.map(prompt => <button data-testid={`study-toolbar-quick-improve-${prompt.id.replace(':', '-')}`} className="btn w-full mt-2" key={prompt.id} onClick={() => void runQuickImprovement(prompt)}>{studyStyleDisplay(prompt).name}</button>)}</div>}
       {contextTab === 'details' && (
         <div className="grid grid-cols-2 gap-3 p-4">
           {onUpdateMetadata && <label className="text-[10px] text-neutral-500">{t('Tipo de material')}<select data-testid="study-doc-kind" className="input mt-1 w-full" value={active.kind} onChange={(event) => void onUpdateMetadata({ kind: event.target.value as StudyDocumentKind })}>{STUDY_DOCUMENT_KINDS.map((kind) => <option key={kind} value={kind}>{t(STUDY_KIND_LABEL[kind])}</option>)}</select></label>}
