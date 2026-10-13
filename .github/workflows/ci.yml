@@ -319,6 +319,8 @@ jobs:
         run: |
           python -m compileall -q tools/scheme-scan tools/reaction-index
           python -m unittest discover -s tools/scheme-scan/tests -v
+          python -m unittest discover -s tools/reaction-index -p 'test_builder_regressions.py' -v
+          python tools/reaction-index/test_template_radius.py
 
   server:
     needs: changes

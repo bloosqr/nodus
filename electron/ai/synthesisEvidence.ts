@@ -174,13 +174,19 @@ async function retroTargets(runner: Runner, target: string, options: EvidenceOpt
     return { molecules: [target] };
   }
   const one = found?.[0];
-  if (!one || one.atoms < DECOMPOSE_ABOVE_ATOMS || one.linkBonds < 2) return { molecules: [target] };
+  if (!one || one.input !== target || !Number.isSafeInteger(one.atoms) || !Number.isSafeInteger(one.linkBonds)
+    || !Number.isFinite(one.covered) || one.covered < 0 || one.covered > 1
+    || one.atoms < DECOMPOSE_ABOVE_ATOMS || one.linkBonds < 2
+    || !Array.isArray(one.units) || !Array.isArray(one.unidentified)) return { molecules: [target] };
   const units = [...one.units, ...one.unidentified]
-    .map((unit) => unit.capped)
-    .filter((smiles): smiles is string => Boolean(smiles));
-  const molecules = [...new Set(units)];
+    .map((unit) => unit?.capped);
+  // Replacing the whole target requires a searchable molecule for every cut fragment.
+  // An incomplete/older decomposition must not silently remove the missing fragment's evidence.
+  if (units.some(unit => typeof unit !== 'string' || !unit.trim())) return { molecules: [target] };
+  const capped = units as string[];
+  const molecules = [...new Set(capped)];
   if (!molecules.length) return { molecules: [target] };
-  return { molecules: molecules.slice(0, 16), decomposition: one };
+  return { molecules, decomposition: one };
 }
 
 /** Python processes the evidence gather may run at once. Each disconnection call is one process
@@ -192,7 +198,7 @@ const DISCONNECTION_PROCESSES = 4;
  *  The same proposals per molecule — each target is searched independently either way — in a
  *  fraction of the wall time when there are several. */
 export async function invokeDisconnectionsEach(runner: Runner, targets: string[], starting: string[], limit: number, options: EvidenceOptions): Promise<TargetDisconnections[]> {
-  const parts = await eachBounded(targets.slice(0, 16), DISCONNECTION_PROCESSES, (molecule) => invokeDisconnections(runner, [molecule], starting, limit, options));
+  const parts = await eachBounded(targets, DISCONNECTION_PROCESSES, (molecule) => invokeDisconnections(runner, [molecule], starting, limit, options));
   options.signal?.throwIfAborted();
   return parts.flatMap((part) => part ?? []);
 }

@@ -19,12 +19,12 @@ Artifacts (in --out):
   reaction-keys.txt.zst  row -> exact hash, aligned with the faiss index
   reaction-smiles.tsv.zst "<hash>\t<canonical reactants>><canonical products>" (one representative
                          per exact hash, so a looked-up or similar reaction can be drawn)
-  retro-templates.tsv.zst "<count>\t<rdchiral count>\t<radius>\t<retro SMARTS>": the RDChiral
+  retro-templates.tsv.zst "<count>\t<rdchiral count>\t<retro SMARTS>": the RDChiral
                          templates seen at least RETRO_MIN_COUNT times, small enough to load per
-                         lookup. <radius> is how far the template reaches from its reaction centre,
-                         so a query can window the molecule around the site (lossless; see
-                         template_radius). Unwindowable templates are rejected, not stored.
-  forward-templates.tsv.zst  same shape, forward direction (reactants >> products), so the
+                         lookup. The three-column format remains readable by installed plugins.
+  template-radii.tsv.zst "<radius>\t<SMARTS>": radii for the retained retro and forward templates.
+                         Unwindowable templates are rejected, not stored.
+  forward-templates.tsv.zst "<count>\t<rdchiral count>\t<radius>\t<SMARTS>", so the
                          constraints sit on the reactant side where application enforces them
   molecules.tsv.zst      "<canonical molecule>\t<times a reactant>\t<times a product>\t<reaction hashes>":
                          per molecule (salts and co-products split), how common it is as a starting
@@ -39,7 +39,7 @@ brute-force Hamming search is ~6 ms per query at this size.
   manifest.json          source revision, licence, counts, sizes, sha256
 """
 
-import argparse, atexit, contextlib, glob, hashlib, io, json, os, re, sys, time
+import argparse, atexit, contextlib, glob, hashlib, io, json, math, os, re, sys, time
 from collections import Counter, defaultdict
 
 import multiprocessing as mp
@@ -63,7 +63,7 @@ RETRO_MIN_COUNT = 5
 #      template cut from a repaired map must reproduce its own reaction or the reaction is dropped.
 #      (Repair without that validation was measured first and was worse than excluding: see
 #      reaction_audit.repair_duplicate_maps. A metal excuse was measured with it and left out.)
-EXTRACTION_VERSION = 6
+EXTRACTION_VERSION = 7  # all contributing reactants must be reproduced by a repaired/remapped template
 # Reactions kept per molecule for "recorded ways to make it".
 MOLECULE_SAMPLE_KEYS = 50
 REACTION_SMILES = 2
@@ -327,7 +327,7 @@ def _map_audit(reactants, agents, products):
 
 
 def _template_reproduces(retro, reactants, products):
-    """Does this retro template, run on the reaction's own product, propose one of its reactants?
+    """Does this retro template recover all the reaction's contributing reactants?
 
     The gate on a repaired map. Repairing it makes the audit pass; it does not make the template
     usable, and measurement showed the difference plainly — every one of 19 templates from a
@@ -346,7 +346,10 @@ def _template_reproduces(retro, reactants, products):
             atom.SetAtomMapNum(0)
         return Chem.MolToSmiles(mol)
 
-    want = {b for b in (bare(x) for x in reactants.split('.')) if b}
+    # Solvents and spectators do not need to be generated. Every contributing reactant does:
+    # matching just one could validate a correct acid alongside the wrong alcohol, for example.
+    contributing = _contributing(reactants, products)
+    want = Counter(b for b in (bare(x) for x in contributing.split('.')) if b)
     clean = [b for b in (bare(x) for x in products.split('.')) if b]
     if not want or not clean:
         return False
@@ -354,7 +357,8 @@ def _template_reproduces(retro, reactants, products):
         outcomes = rdchiralRun(rdchiralReaction(retro), rdchiralReactants(max(clean, key=len)))
     except Exception:
         return False
-    return any(bare(f) in want for outcome in outcomes for f in outcome.split('.'))
+    return any(Counter(b for b in (bare(f) for f in outcome.split('.')) if b) == want
+               for outcome in outcomes)
 
 
 def _template_for(reactants, agents, products, rid, n_atoms, force_fast=False):
@@ -392,7 +396,8 @@ def file_digest(path):
 
 def part_name(path, group):
     return hashlib.sha1(f'{file_digest(path)}::{group}::v{EXTRACTION_VERSION}'
-                        f'::t{_TEMPLATE_THRESHOLD}'.encode()).hexdigest()[:24]
+                        f'::t{_TEMPLATE_THRESHOLD}::m{_EXTRA_MAPPED_DIGEST}'
+                        f'::c{_EXTRA_MAP_FLOOR}'.encode()).hexdigest()[:24]
 
 
 def legacy_part_name(path, group):
@@ -458,6 +463,14 @@ def _iter_reactions(path, group):
 
 _EXTRA_MAPPED = {}          # content key -> mapped reaction SMILES, from --extra-mapped
 _EXTRA_MAP_FLOOR = 0.0
+_EXTRA_MAPPED_DIGEST = 'none'
+
+
+def configure_mapping(path, floor):
+    """The extraction inputs shared by checkpoint discovery and every worker."""
+    global _EXTRA_MAPPED_DIGEST, _EXTRA_MAP_FLOOR
+    _EXTRA_MAPPED_DIGEST = file_digest(path) if path else 'none'
+    _EXTRA_MAP_FLOOR = floor
 
 
 def _load_extra_mapped(path, floor):
@@ -472,22 +485,23 @@ def _load_extra_mapped(path, floor):
         for line in fh:
             try:
                 r = json.loads(line)
-            except Exception:
+                key, mapped = r.get('key'), r.get('mapped')
+                confidence = float(r.get('confidence', 0.0))
+            except (ValueError, TypeError, AttributeError):
                 continue
-            if float(r.get('confidence', 0.0)) < floor:
+            if not math.isfinite(confidence) or confidence < floor:
                 continue
-            key, mapped = r.get('key'), r.get('mapped')
-            if key and mapped:
+            if isinstance(key, str) and key and isinstance(mapped, str) and mapped:
                 out[key] = mapped
     return out
 
 
 def init_worker(parts_dir, threshold, digests=None, rsmi=None, extra_mapped=None, map_floor=0.0):
-    global _PARTS_DIR, _TEMPLATE_THRESHOLD, _EXTRA_MAPPED, _EXTRA_MAP_FLOOR
+    global _PARTS_DIR, _TEMPLATE_THRESHOLD, _EXTRA_MAPPED
     _PARTS_DIR = parts_dir
     _TEMPLATE_THRESHOLD = threshold
     _FILE_DIGESTS.update(digests or {})
-    _EXTRA_MAP_FLOOR = map_floor
+    configure_mapping(extra_mapped, map_floor)
     _EXTRA_MAPPED = _load_extra_mapped(extra_mapped, map_floor)
     _RSMI_OFFSETS.update(rsmi or {})
     # A worker the watchdog terminates mid-result prints a BrokenPipeError traceback; that is
@@ -722,11 +736,11 @@ def compute_reaction_fps(items):
 
 
 def list_tasks(root, files, limit, rsmi=()):
-    from ord_schema.datasets import load_dataset
     paths = files or sorted(glob.glob(os.path.join(root, 'data', '*', '*.parquet')))
     tasks = [(path, g) for path in rsmi for g in range(len(rsmi_offsets(path)))]
     for path in paths:
         try:
+            from ord_schema.datasets import load_dataset
             view = load_dataset(path)
             for g in range(view.num_row_groups):
                 tasks.append((path, g))
@@ -788,6 +802,8 @@ def main():
                          "opt-in for a curated build. Map-audit flags always exclude")
     ap.add_argument('--revision', default='93475c46949f9218e1dfb6624096025135db2add')
     args = ap.parse_args()
+    if not math.isfinite(args.map_confidence) or args.map_confidence < 0:
+        ap.error('--map-confidence must be finite and nonnegative')
 
     # The checkpoint name now carries the template threshold, so this process has to agree with its
     # workers about what it is. Workers are handed args.template_threshold through init_worker; the
@@ -795,6 +811,7 @@ def main():
     # make every checkpoint a worker writes invisible to the completeness check below.
     global _TEMPLATE_THRESHOLD
     _TEMPLATE_THRESHOLD = args.template_threshold
+    configure_mapping(args.extra_mapped, args.map_confidence)
 
     parts_dir = os.path.join(args.out, 'parts')
     if args.fresh and os.path.isdir(parts_dir):
@@ -1124,16 +1141,17 @@ def main():
                     if templates[t] >= RETRO_MIN_COUNT and templates_r.get(t, 0) > 0 and t in radius),
                    key=lambda t: (-templates[t], t))
     write_zst(os.path.join(args.out, 'retro-templates.tsv.zst'),
-              '\n'.join(f'{templates[t]}\t{templates_r.get(t, 0)}\t{radius[t]}\t{t}' for t in retro))
+              '\n'.join(f'{templates[t]}\t{templates_r.get(t, 0)}\t{t}' for t in retro))
     print(f'templates rejected as unwindowable: {dict(rejected)}', flush=True)
-    # Forward templates: same row shape and same popularity floor as the retro file, so a consumer
-    # reads them with the same code. Written even when empty, so an index built by this version is
-    # distinguishable from one built before it.
+    # Forward templates carry an explicit radius; existing retro readers keep their three columns.
+    # Written even when empty, so a new index is distinguishable from one built before it.
     forward = sorted((t for t in templates_forward
                       if templates_forward[t] >= RETRO_MIN_COUNT and t in radius),
                      key=lambda t: (-templates_forward[t], t))
     write_zst(os.path.join(args.out, 'forward-templates.tsv.zst'),
               '\n'.join(f'{templates_forward[t]}\t{templates_forward[t]}\t{radius[t]}\t{t}' for t in forward))
+    write_zst(os.path.join(args.out, 'template-radii.tsv.zst'),
+              '\n'.join(f'{radius[t]}\t{t}' for t in sorted(set(retro) | set(forward))))
     print(f'forward templates: {len(forward)} kept of {len(templates_forward)} distinct '
           f'(floor {RETRO_MIN_COUNT})', flush=True)
 
@@ -1172,7 +1190,7 @@ def main():
         return h.hexdigest()
 
     for name in ('exact.tsv.zst', 'templates.tsv.zst', 'products.tsv.zst', 'reaction-smiles.tsv.zst',
-                 'retro-templates.tsv.zst', 'forward-templates.tsv.zst', 'molecules.tsv.zst', 'audit-excluded.tsv.zst', 'audit-flags.tsv.zst', 'exact.tsv.zst.blocks',
+                 'retro-templates.tsv.zst', 'forward-templates.tsv.zst', 'template-radii.tsv.zst', 'molecules.tsv.zst', 'audit-excluded.tsv.zst', 'audit-flags.tsv.zst', 'exact.tsv.zst.blocks',
                  'reaction-smiles.tsv.zst.blocks', 'molecules.tsv.zst.blocks', 'products.tsv.zst.blocks'):
         record(name, os.path.join(args.out, name))
 
@@ -1230,7 +1248,12 @@ def main():
         'templatesColumns': ['count', 'rdchiral', 'fast', 'sampleIds', 'smarts'],
         'extractionVersion': EXTRACTION_VERSION,
         'extraMappedUsed': extra_mapped_used,
-        'templateColumns': ['count', 'rdchiral', 'radius', 'smarts'],
+        'templateColumns': ['count', 'rdchiral', 'smarts'],
+        'forwardTemplateColumns': ['count', 'rdchiral', 'radius', 'smarts'],
+        'templateRadiiFile': 'template-radii.tsv.zst',
+        'templateRadiiColumns': ['radius', 'smarts'],
+        'extraMappedSha256': None if _EXTRA_MAPPED_DIGEST == 'none' else _EXTRA_MAPPED_DIGEST,
+        'mapConfidence': args.map_confidence,
         'queryMargin': 2,   # bonds added to a template's radius at query time; see DESIGN-REACTION-STORE.md
         'templatesRejectedUnwindowable': dict(rejected),
         'forwardTemplates': len(forward),
