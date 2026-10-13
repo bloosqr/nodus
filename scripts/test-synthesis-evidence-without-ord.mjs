@@ -469,3 +469,14 @@ test('cancellation during decomposition does not fall back to another chemistry 
   await assert.rejects(quiet(() => gatherSynthesisEvidence(LARGE_REQUEST, { signal: controller.signal })), { name: 'AbortError' });
   assert.deepEqual(calls, ['decompose-target']);
 });
+
+test('a package with decomposition does not start a chemistry worker when the ORD index is absent', async () => {
+  Object.assign(globalThis.__ord, { provider: DECOMPOSE_PROVIDER, indexDir: null, calls: 0,
+    invoke: async request => {
+      if (request.toolId === 'decompose-target') return decompositionArtifact(decomposition());
+      return { artifacts: [] };
+    } });
+  const evidence = await quiet(() => gatherSynthesisEvidence(LARGE_REQUEST));
+  assert.ok(evidence);
+  assert.equal(globalThis.__ord.calls, 0, 'decomposition cannot provide ORD evidence without an index');
+});

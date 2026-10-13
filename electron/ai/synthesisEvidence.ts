@@ -210,6 +210,9 @@ export async function invokeDisconnectionsEach(runner: Runner, targets: string[]
  *  what was found so far. */
 async function ordDisconnections(target: string, starting: string[], options: EvidenceOptions): Promise<TargetDisconnections[]> {
   if (options.evidenceScope?.external === false || !disconnectProvider()) return [];
+  const indexDir = await reactionIndexService().localDirectory();
+  options.signal?.throwIfAborted();
+  if (!indexDir) return [];
   const { runner, dispose } = chemistryRunner(options);
   const briefs: TargetDisconnections[] = [];
   try {
