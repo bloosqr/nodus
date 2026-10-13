@@ -2,6 +2,7 @@ import { withResearchActivity, researchActivityStep, startResearchActivity } fro
 import type { ResearchActivity } from '@shared/researchActivity';
 import { runConcilium } from './researchConcilium';
 import { conciliumAssessments, type ConciliumResult } from '@shared/researchConcilium';
+import { reducedResearchEffort } from '@shared/researchReasoning';
 import { prepareResearchAttachments, withResearchAttachmentFallback } from './researchAttachments';
 import { withResearchSystemPrompt } from './researchSystemPrompt';
 import { resolveResearchSourceScope, type ResearchSourceScope } from './researchSourceScope';
@@ -415,7 +416,15 @@ async function streamResearchChatTurn(
   delete evidence.council_assessments;
   const sourceContext = council?.assessments ? JSON.stringify(evidence) : user;
   const opts = { corpusContext: !!requestNotebookScope(request) && !attachments.images?.length, system: system + attachments.system, user: user + attachments.text, images: attachments.images, englishImagePrompts: execution.skills.some(skill => skillHasCapability(skill, 'image')), temperature: 0.2, ...generationOptions, signal };
-  const write = () => researchActivityStep('response', 'write', () => withResearchAttachmentFallback(attachments, opts, options => completeTextStream(options, onDelta, request.model, signal)), request.model?.model);
+  // On the retry, ask for one rung less thinking: the first attempt was cut off because the
+  // reasoning consumed the whole output ceiling, and repeating it unchanged reproduces that. The
+  // token budget is deliberately NOT recomputed — the same ceiling with less thinking in front of
+  // it is exactly the room the answer needs.
+  const write = (isRetry = false) => {
+    const less = isRetry ? reducedResearchEffort(opts.researchEffort) : null;
+    const attempt = less ? { ...opts, researchEffort: less } : opts;
+    return researchActivityStep('response', 'write', () => withResearchAttachmentFallback(attachments, attempt, options => completeTextStream(options, onDelta, request.model, signal)), request.model?.model);
+  };
   // Streamed thinking is provisional; the retry repaints from nothing.
   let answer = await retryOnceWhenCutOff(write, { isCutOff: error => error instanceof AiError && error.code === 'output_truncated', beforeRetry: () => onDelta('', 'replace'), signal });
   answer = await researchActivityStep('response', 'citations', () => finalizeAnswer(answer, local, sourceContext));

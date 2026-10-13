@@ -12,6 +12,28 @@ export type NativeResearchEffort = Exclude<ResearchEffort, 'standard'> | 'none' 
 export function isResearchEffort(value: unknown): value is ResearchEffort {
   return typeof value === 'string' && (RESEARCH_EFFORTS as readonly string[]).includes(value);
 }
+
+/** The ordered rungs, smallest budget first. `standard` is "whatever the model does unasked" and
+ *  `none`/`off`/`on` are not sizes, so none of them appears here. */
+const EFFORT_LADDER = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
+
+/**
+ * One rung down, or null when there is none to take.
+ *
+ * Written for the retry after a cut-off: a model that spent its whole output ceiling thinking and
+ * never wrote the answer will do it again if asked the same way, so the second attempt asks for
+ * less thinking. Measured 2026-10-12 on four hard synthesis targets at `high` — each spent the
+ * full 149,422-token ceiling on reasoning, and the existing retry, which repeated the request
+ * unchanged, hit the ceiling a second time on all four.
+ *
+ * A step rather than a jump to the floor: the answer needs room, not the smallest budget going,
+ * and `high` to `medium` is usually enough to leave it. `standard` returns null because we did not
+ * choose its size and so cannot lower it.
+ */
+export function reducedResearchEffort(effort: ResearchEffort | undefined): ResearchEffort | null {
+  const at = EFFORT_LADDER.indexOf(effort as (typeof EFFORT_LADDER)[number]);
+  return at > 0 ? EFFORT_LADDER[at - 1] : null;
+}
 export interface ResearchReasoningProfile {
   levels: NativeResearchEffort[];
   /** Compatibility for old requests and bounded internal validation, never a UI choice. */

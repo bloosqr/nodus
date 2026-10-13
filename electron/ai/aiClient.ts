@@ -2297,6 +2297,10 @@ async function rawCompleteStreamTransport(
     throw new AiError('El modelo se negó a responder a esta solicitud.', false);
   }
   if (/^(length|max_tokens|max_output_tokens)$/i.test(finishReason ?? '')) {
+    // Reported, not retried here: retryOnceWhenCutOff owns the one retry this deserves, at the
+    // research layer where the effort can be lowered (see cutOffRetry.ts). A second retry inside
+    // the transport would nest under it and cost four calls on a request that already ran for
+    // minutes.
     throw new AiError(truncatedOutputMessage(model, maxTokens), false, false, 'output_truncated');
   }
   if (!answer.trim()) {
