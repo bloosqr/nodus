@@ -14,6 +14,10 @@ export const fileConcurrency = 2;
 const allowedSkips = new Map([
   ['CompassStore persists pagination, selections, saved/dismissed records and bounded cache state', 'better-sqlite3 native addon requires the Electron ABI'],
   ['every published skill has an icon the application can draw', 'no marketplace checkout beside this one; set NODUS_MARKETPLACE_DIR'],
+  // The route-program contract is checked against the chemistry package's own parser and manifest,
+  // which live in a separate repository. Both cases run wherever that checkout is beside this one.
+  ['every program example in the prompt parses against the real grammar', 'the chemistry package checkout is not beside this one'],
+  ['the package declares the fence the rule names, with the fields the rule names', 'the chemistry package checkout is not beside this one'],
   // Nodus Sign's real-cryptography cases need a pyHanko interpreter; run them with NODUS_SIGN_PYTHON.
   ['real PKCS#12 inspection handles wrong, missing and expired certificates', 'Set NODUS_SIGN_PYTHON to run real crypto tests'],
   ['real PAdES B-B signs incrementally, validates and preserves a previous signature', 'Set NODUS_SIGN_PYTHON to run real crypto tests'],

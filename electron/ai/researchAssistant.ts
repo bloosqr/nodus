@@ -23,8 +23,21 @@ import { ResearchCorpusRun } from './researchCorpusRun';
 import { RESEARCH_CHAT_AGENT_DECISION_BYTES, RESEARCH_CHAT_AGENT_SETTINGS, RESEARCH_CHAT_LIGHT_AGENT_SETTINGS, researchScopeForPrompt, validateRetrievalSettings, compactResearchTraversal } from '@shared/researchCorpus';
 import { planResearchTurn, literalResearchTurnPlan } from './researchTurnPlanner';
 import { inspectResearchMolecules, appendStructureAudit, appendRouteReportAndDrawings, resolveNamedRoute, chemistryRunner } from './moleculeInspection';
-import { asksForRoute, countRouteSteps, findStepNamedSpecies, formatAuthorStructureNote, formatResolutionSourceNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeConversationState, routeFixPromptForHistory, routeReportsForHistory, stripDrawingRequests, uncheckedRouteNote } from '@shared/moleculeInspection';
+import { asksForRoute, countRouteSteps, FORWARD_STEPS_REQUIRED_RULE, FORWARD_STEPS_SYSTEM_RULE, forwardStepsRequired, findRouteProgram, findStepNamedSpecies, formatAuthorStructureNote, formatResolutionSourceNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatStructureDisagreementNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeConversationState, routeFixPromptForHistory, routeReportsForHistory, stripDrawingRequests, uncheckedRouteNote } from '@shared/moleculeInspection';
 import { SYNTHESIS_TEMPLATE_ADDENDUM, looksLikeSynthesisRequest } from '@shared/synthesisPrompt';
+import { routeProgramMode } from '@shared/routeRules';
+import { forwardStepsAvailable } from './moleculeInspection';
+
+/** Whether the forward-step search was offered to the model this turn, said out loud in the log.
+ *  A run where the model never used the fence is ambiguous otherwise: it may have declined, or it
+ *  may never have been told. Those call for opposite responses, so the log says which. */
+function forwardStepsOffered(): boolean {
+  const offered = forwardStepsAvailable();
+  const how = forwardStepsRequired() ? 'offered to the model as REQUIRED' : 'offered to the model';
+  console.info(`[forward-steps] ${offered ? how : 'NOT offered: the installed package has no propose-forward-steps tool'}`);
+  return offered;
+}
+import { routeProgramTransformsBlock } from './routeProgramTransforms';
 import { reviseRouteWithEvidence, revisionUserMessage, routeEvidencePassEnabled } from './routeEvidencePass';
 import { SYNTHESIS_EVIDENCE_KEY, SYNTHESIS_EVIDENCE_SYSTEM_RULE, synthesisEvidencePayload, synthesisRetrievalQuery, type SynthesisEvidence } from '@shared/synthesisEvidence';
 import { gatherSynthesisEvidence } from './synthesisEvidence';
@@ -299,6 +312,13 @@ async function auditAnswer(answer: string, execution: ReturnType<typeof skillExe
     // route is still checked and drawn; the clarification is appended after it. When the answer
     // carries no named route (or the installed package has no resolve-names tool), only the
     // structure check and a possible "list the species" chip run.
+    // Program mode: the answer carries a program, not named steps, so the names-first resolve
+    // below finds nothing and the legacy branch reports "no route" over a route that is perfectly
+    // checkable. Branch before it. Measured 2026-10-13: the model wrote a valid program and the
+    // reply still said nothing had been checked, because this gate came first.
+    if (chemistryEnabled && routeProgramMode() && findRouteProgram(skilled)) {
+      return await appendRouteReportAndDrawings(skilled, skilled, { ...options, target: execution.target });
+    }
     const resolved = await resolveNamedRoute(skilled, skilled, { ...options, target: execution.target });
     if (resolved.legacy) {
       const withStructures = await appendStructureAudit(skilled, skilled, options);
@@ -321,10 +341,13 @@ async function auditAnswer(answer: string, execution: ReturnType<typeof skillExe
     const routed = await appendRouteReportAndDrawings(withStructures, resolved.answer, { ...options, target: execution.target }, { steps: resolved.steps, labels: resolved.labels, unresolved: resolved.unresolved ?? [] });
     const correctionNote = formatNameCorrectionNote(resolved.corrections);
     const structureNote = formatAuthorStructureNote(resolved.authorStructures);
+    // A name that denotes a different molecule than the structure written beside it. The name was
+    // used, so this changes no verdict — it says that it happened, which nothing did before.
+    const disagreementNote = formatStructureDisagreementNote(resolved.disagreements ?? []);
     // Where every structure came from. A run that cannot say this cannot tell an offline
     // dictionary hit from a network lookup or from the model's own drawing of the molecule.
     const sourceNote = formatResolutionSourceNote(resolved.resolutionSources);
-    const notes = [correctionNote, structureNote, sourceNote].filter(Boolean).join('\n\n');
+    const notes = [correctionNote, structureNote, disagreementNote, sourceNote].filter(Boolean).join('\n\n');
     const withNotes = notes ? `${routed.trimEnd()}\n\n${notes}\n` : routed;
     return resolved.clarification ? `${withNotes.trimEnd()}\n\n${resolved.clarification}\n` : withNotes;
   } finally {
@@ -731,9 +754,16 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     council?.member ? '' : invokedSkillsRule(request.skillIds, skills),
     moleculeDossiers.length ? MOLECULE_DOSSIER_SYSTEM_RULE : '',
     chemistryEnabled ? ROUTE_CONTINUITY_SYSTEM_RULE : '',
+    // Only when the installed package carries the search: a fence the package cannot answer would
+    // come back as an error, and a contract that offers one is worse than one that stays quiet.
+    chemistryEnabled && forwardStepsOffered() ? (forwardStepsRequired() ? FORWARD_STEPS_REQUIRED_RULE : FORWARD_STEPS_SYSTEM_RULE) : '',
     // A correction carries the same rules itself, with its own edit policy; the first-request
     // contract is not added on top, so the rules are sent once.
     routeRequest ? SYNTHESIS_TEMPLATE_ADDENDUM : '',
+    // Program mode's contract tells the model to use only the transformation ids the application
+    // offers. They are the PACKAGE's, read from the installed slot, so they are never named twice.
+    // Empty when no list could be read, and the mode then has nothing valid to offer.
+    routeRequest && routeProgramMode() ? routeProgramTransformsBlock() : '',
     routeEvidence ? SYNTHESIS_EVIDENCE_SYSTEM_RULE : '',
     !genealogy && hasResearchSourceRestriction(request)
       ? 'Source restriction: use only the supplied context from the selected works. Do not supplement it with other corpus sources or general knowledge. If the selected sources are insufficient, state that explicitly. Continue answering in the configured language.' : '',
