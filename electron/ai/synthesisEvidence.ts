@@ -127,6 +127,51 @@ export async function invokeDisconnections(runner: Runner, targets: string[], st
   return artifact ? normalizeDisconnections(artifact.data, limit) : [];
 }
 
+const FORWARD_TOOL = 'propose-forward-steps';
+
+/** One forward-step candidate, as the application needs it: the product, the curated
+ *  transformation id when one makes it, the precedent count, and an objection when the record's
+ *  "outcome" is not a reaction. */
+export interface ForwardStep { product: string; named: string | null; recorded: number; caution?: string }
+
+/** What the recorded chemistry supports doing to one molecule, or null when the package has no
+ *  such tool or the index is not downloaded.
+ *
+ *  Invoked BY THE APPLICATION, which is the whole point. The same search has been available to the
+ *  model as a tool since it was written and the model has never once called it: 19 offers across
+ *  the small-molecule arm and 14 delivered as REQUIRED across the peptide chains produced zero
+ *  lookups (2026-10-14). In the very same turn that produced those zeroes, `propose-disconnections`
+ *  ran six times — because `invokeDisconnections` is an application call. The lesson is not that
+ *  the model dislikes tools, it is that asking it to fetch its own evidence does not work, and the
+ *  original objection to the application choosing still holds: this gathers candidates and ranks
+ *  them by precedent, and the choice stays with the model. */
+export async function invokeForwardSteps(runner: Runner, molecule: string, reagents: string[] = [], limit = 6, options: EvidenceOptions = {}): Promise<ForwardStep[] | null> {
+  options.signal?.throwIfAborted();
+  if (options.evidenceScope?.external === false) return null;
+  const provider = capabilityRegistry().providers.get(CHEMISTRY_CAPABILITY);
+  if (!provider?.tools.some((tool) => tool.id === FORWARD_TOOL) || !molecule.trim()) return null;
+  const indexDir = await reactionIndexService().localDirectory();
+  options.signal?.throwIfAborted();
+  if (!indexDir) return null;
+  const input = { indexDir, forwardSteps: { molecule, ...(reagents.length ? { reagents: reagents.slice(0, 4) } : {}), limit } };
+  dumpToolInput(FORWARD_TOOL, input);
+  const result = await runner.invoke({ provider, toolId: FORWARD_TOOL, input });
+  const artifact = (result.artifacts ?? []).find((entry) => entry.artifactType === 'forward-steps');
+  const rows = (artifact?.data as { forwardSteps?: unknown[] } | undefined)?.forwardSteps ?? [];
+  const out: ForwardStep[] = [];
+  for (const row of rows) {
+    const { product, named, count, caution } = (row ?? {}) as { product?: unknown; named?: unknown; count?: unknown; caution?: unknown };
+    if (typeof product !== 'string' || !product) continue;
+    out.push({
+      product,
+      named: typeof named === 'string' && named ? named : null,
+      recorded: typeof count === 'number' && Number.isFinite(count) ? count : 0,
+      ...(typeof caution === 'string' && caution ? { caution } : {}),
+    });
+  }
+  return out;
+}
+
 /** The package's decomposition tool, when it has one (older packages do not). */
 function decomposeProvider() {
   const provider = capabilityRegistry().providers.get(CHEMISTRY_CAPABILITY);
