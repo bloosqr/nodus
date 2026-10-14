@@ -181,11 +181,30 @@ function decomposeProvider() {
 /** Below this many atoms the target is searched whole, as it always was.
  *
  *  What is measured is the far end: at 270-290 atoms a whole-target pass takes 180-275 s and so is
- *  truncated by the tool's own 230 s budget, returning whatever it reached. Between 150 and 270 the
- *  pass has not been timed, so this threshold is a choice rather than a measurement — a low one,
- *  because the real gate is the `linkBonds` test below. A molecule that was not assembled from
- *  units has nothing to cut and is searched whole whatever its size. */
-const DECOMPOSE_ABOVE_ATOMS = 150;
+ *  truncated by the tool's own 230 s budget, returning whatever it reached. A molecule that was not
+ *  assembled from units has nothing to cut and is searched whole whatever its size — the real gate
+ *  is the `linkBonds` test below, and this number only says when it is worth asking.
+ *
+ *  The middle is now measured too, which is why this is 80 rather than 150. One call per target
+ *  against the real index, 2026-10-14, cost and answer both recorded:
+ *
+ *    chain n=4    23 atoms    3.2s   0 recorded   0 available
+ *    chain n=8    57 atoms   10.3s   0 recorded   0 available
+ *    chain n=12   94 atoms   26.7s   0 recorded   0 available
+ *    chain n=16  138 atoms   51.1s   0 recorded   0 available
+ *    chain n=24  196 atoms  105.5s   0 recorded   0 available
+ *
+ *  Not one proposal carried ORD precedent at any length, the cost grows roughly with the square of
+ *  the size, and the application makes 10 to 16 of these calls a turn — so at 150 the chains from
+ *  about eleven residues up paid minutes a turn for rows with no precedent before they were large
+ *  enough to be cut. 80 matches the coverage measurement already on record (whole-target coverage
+ *  was 0 of 20 steps above 80 heavy atoms) and leaves every target in the small-molecule suite far
+ *  below it: the largest is progesterone at 23 atoms, and a small molecule is where this search
+ *  earns its cost (acetaminophen, 2 recorded and 6 available in 1.8s).
+ *
+ *  Lowering it changes nothing for a molecule with nothing to cut: that is the `linkBonds` gate,
+ *  and a 200-carbon alkane is still searched whole. */
+const DECOMPOSE_ABOVE_ATOMS = 80;
 
 /** The units a target is built from. Null when the package has no such tool; [] when it has one and
  *  nothing could be cut. The unit library is the user's local data and may be absent, in which case
