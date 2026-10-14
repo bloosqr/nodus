@@ -25,7 +25,7 @@ import { planResearchTurn, literalResearchTurnPlan } from './researchTurnPlanner
 import { inspectResearchMolecules, appendStructureAudit, appendRouteReportAndDrawings, resolveNamedRoute, chemistryRunner } from './moleculeInspection';
 import { asksForRoute, countRouteSteps, FORWARD_STEPS_REQUIRED_RULE, FORWARD_STEPS_SYSTEM_RULE, forwardStepsRequired, findRouteProgram, findStepNamedSpecies, formatAuthorStructureNote, formatResolutionSourceNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatStructureDisagreementNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeConversationState, routeFixPromptForHistory, routeReportsForHistory, stripDrawingRequests, uncheckedRouteNote } from '@shared/moleculeInspection';
 import { SYNTHESIS_TEMPLATE_ADDENDUM, looksLikeSynthesisRequest } from '@shared/synthesisPrompt';
-import { routeProgramMode } from '@shared/routeRules';
+import { routeContractTurn, routeProgramMode } from '@shared/routeRules';
 import { forwardStepsAvailable } from './moleculeInspection';
 
 /** Whether the forward-step search was offered to the model this turn, said out loud in the log.
@@ -693,6 +693,9 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
   // The synthesis template goes with a request, not with a correction: the chip carries the same
   // rules with its own edit policy, so the first-request contract is not added on top.
   const routeRequest = chemistryRoute && !isRouteFixPrompt(question);
+  // A correction to a route the chemistry skill is handling. In program mode this still needs the
+  // contract and the ids; see routeContractTurn.
+  const programCorrection = chemistryRoute && isRouteFixPrompt(question);
   // The ORD disconnections and textbook passages are gathered for the route's original request,
   // on the first answer and again on each correction, so a fix weighs the same evidence. The
   // conversation's own request comes first: `originalRequest` is "the latest message that is not a
@@ -735,13 +738,15 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     // Only when the installed package carries the search: a fence the package cannot answer would
     // come back as an error, and a contract that offers one is worse than one that stays quiet.
     chemistryEnabled && forwardStepsOffered() ? (forwardStepsRequired() ? FORWARD_STEPS_REQUIRED_RULE : FORWARD_STEPS_SYSTEM_RULE) : '',
-    // A correction carries the same rules itself, with its own edit policy; the first-request
-    // contract is not added on top, so the rules are sent once.
-    routeRequest ? SYNTHESIS_TEMPLATE_ADDENDUM : '',
+    // A names-first correction carries the same rules itself, with its own edit policy, so the
+    // first-request contract is not added on top. A PROGRAM correction is the opposite case and
+    // `routeContractTurn` says why: it asks for the whole program back, in a grammar that lives
+    // only here.
+    routeContractTurn(routeRequest, programCorrection) ? SYNTHESIS_TEMPLATE_ADDENDUM : '',
     // Program mode's contract tells the model to use only the transformation ids the application
     // offers. They are the PACKAGE's, read from the installed slot, so they are never named twice.
     // Empty when no list could be read, and the mode then has nothing valid to offer.
-    routeRequest && routeProgramMode() ? routeProgramTransformsBlock() : '',
+    routeContractTurn(routeRequest, programCorrection) && routeProgramMode() ? routeProgramTransformsBlock() : '',
     routeEvidence ? SYNTHESIS_EVIDENCE_SYSTEM_RULE : '',
     !genealogy && hasResearchSourceRestriction(request)
       ? 'Source restriction: use only the supplied context from the selected works. Do not supplement it with other corpus sources or general knowledge. If the selected sources are insufficient, state that explicitly. Continue answering in the configured language.' : '',
