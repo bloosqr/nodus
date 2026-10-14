@@ -12,7 +12,7 @@ export const ROUTE_LABEL_LINES = [
 
 /** How species are named and assigned to roles, how a step is shaped, and when prose may change. */
 export const ROUTE_SPECIES_RULES = [
-  'Give every protected or non-natural amino acid as its SMILES with the structure fallback (for example `Fmoc-Lys(Boc)-OH — `O=C(O)[C@@H](CCCCNC(=O)OC(C)(C)C)NC(=O)OCC1c2ccccc2-c2ccccc21``): names like `Fmoc-Cys(Trt)-OH` do not resolve, and a non-natural residue has no resolvable name at all. A plain unprotected proteinogenic amino acid (glycine, L-alanine) may be named.',
+  'Give every protected or non-natural amino acid as its SMILES with the structure fallback (for example `Fmoc-Lys(Boc)-OH — `O=C(O)[C@H](CCCCNC(=O)OC(C)(C)C)NC(=O)OCC1c2ccccc2-c2ccccc21``): names like `Fmoc-Cys(Trt)-OH` do not resolve, and a non-natural residue has no resolvable name at all. A plain unprotected proteinogenic amino acid (glycine, L-alanine) may be named.',
   'Give each species as its systematic IUPAC name ONLY, separated by semicolons. Do not write SMILES, a formula, backticks, a reaction string or a `reactants>agents>products` line anywhere, except in the single structure fallback below: the application derives every structure from your names and solves every balanced equation itself.',
   'If, and only if, you cannot give a systematic name a reference service will resolve — an exotic fused cage or a named literature intermediate — write that species as its name followed by its isomeric SMILES in backticks, for example `the photodimer — `C1=CC2(C=C1)OCCO2``. The application takes the SMILES as the structure and checks it with RDKit. Never use this fallback for a species you can name. A common salt — a hydrochloride, a sodium or potassium salt, an ammonium salt — resolves by name, so name it (for example `aniline hydrochloride`, `sodium phenoxide`) rather than using the SMILES fallback.',
   'A species attached to a solid support (a resin, in a solid-phase synthesis) has no systematic name: write it with the structure fallback, the support as one `*` at its attachment atom — the `*` stands for the resin with its linker — for example `glycine on the resin — `*OC(=O)CN``. Keep the same `*` through every step. The support is never made or consumed: a loading step lists the free support (for example `the resin — `*Cl``) under Reactants, and a cleavage step lists the released support (for example `the resin — `*O``) under Byproducts.',
@@ -69,10 +69,74 @@ function singleEquationRestored(): boolean {
  *  it, and then it is spliced back where it used to sit. Both the first request and every
  *  correction read this, so a run cannot offer it in one and withhold it in the other. */
 export function routeSpeciesRules(): string[] {
+  // Program mode replaces the names-first contract outright: the model writes operations, never
+  // species lists, so none of the species rules apply. Switching HERE rather than in each caller
+  // keeps this file's whole point intact — the first request and every correction read one source,
+  // so a run cannot hold the answer to one contract and its fixes to another.
+  if (routeProgramMode()) return routeProgramRules();
   if (!singleEquationRestored()) return ROUTE_SPECIES_RULES;
   const restored = ROUTE_SPECIES_RULES.slice();
   restored.splice(RETIRED_RULE_POSITION, 0, RETIRED_SINGLE_EQUATION_RULE);
   return restored;
+}
+
+/** Program mode: the model writes a short route PROGRAM of references and operations, and the
+ *  application executes it in RDKit instead of reading structures out of prose.
+ *
+ *  Why: measured on chainL-3, 2026-10-13. The model got all ten assembly steps right and then
+ *  mis-declared ONE formula — a metal salt written with the acid's hydrogens and its metal — which
+ *  failed two steps and survived three fix rounds unchanged, the failure text byte-identical on
+ *  every turn. In program mode it never writes a formula at all: it names an operation and the
+ *  application computes the structure, so that whole class of error cannot occur. It also removes
+ *  the O(N^2) naming cost that killed a 40-unit chain on the output-token limit, because an
+ *  intermediate is a reference rather than a spelled-out systematic name.
+ *
+ *  The vocabulary here stays generic — `start`, `apply`, `site` — and must stay generic in diffs,
+ *  commit messages and pull-request text.
+ *
+ *  OFF by default. For a run: NODUS_ROUTE_PROGRAM=on (the harness suite field `program: true`).
+ *  The transformations themselves are the plugin's, not this file's: it ships the list and the
+ *  application offers it, so a transformation is never named in two places. */
+const ROUTE_PROGRAM_RULES = [
+  'Write the route as a PROGRAM, one statement per line, and nothing else between the program fences. Do not write equations, systematic names, formulae or structures for the intermediates: the application computes each one and checks it.',
+  'A reference is M1 to M999 and never a structure. The first statement is `M1 = start("<the starting material, as its systematic IUPAC name>")`, or `M1 = start(smiles="<SMILES>")` to give it as a structure.',
+  'Every later transformation is `M2 = apply(M1, named="<transformation id>", reagents=["<reagent>"], site="<site phrase>")`. The first argument is the reference it acts on; EVERY argument after it is written as key=value, and the id, the reagents and the site are quoted.',
+  'The last statement is `target = M<n>`, naming the reference that is the target. A program without it is refused.',
+  'Use only the transformation ids the application offers you, exactly as written. If none performs the step you want, say so in prose and stop; do not invent an id, and do not fall back to writing an equation.',
+  'Omit `site=` when the molecule has only one place the transformation can act. If a site phrase matches more than one place, the application says so and names every phrase that molecule does have — give a more specific one from that list, and never guess.',
+  'When no phrase is specific enough, point at where an earlier line acted. `site=@last` is the place the previous line changed, and `site=@M3` is the place the line that assigned M3 changed. That is what a growing chain needs: after a few couplings a peptide holds one amide per residue, so `site="amide"` cannot pick one out and no phrase can, however it is worded — but `@M5` names the amide that step M5 just made. Never write an atom number; the application keeps track for you.',
+  'A step that CUTS the molecule in two — a deprotection, a hydrolysis — has to say which piece the route follows, because both pieces are made of atoms that went in and only you know which one you are building. The curated deprotections already know and need nothing. Everywhere else write `carry="largest"`, or name the piece as a structure, `carry=[smiles="<the fragment>"]`. Naming it is worth preferring: if the step does not form that fragment the application says so at once and lists what it does form, rather than carrying the wrong molecule into every later line.',
+  'A reagent is given EITHER as a quoted systematic IUPAC name, `reagents=["methanol"]`, OR as a structure, `reagents=[smiles="CO"]`. A bare quoted string is always read as a NAME, so a SMILES string written without `smiles=` is looked up as a name and the line fails. The application supplies the coupling agents, solvents and conditions a transformation implies; you give only what becomes part of the product.',
+  'A line beginning with # is a comment and is ignored.',
+];
+
+/** The two subject-naming rules program mode needs, the counterparts of the two in
+ *  ROUTE_SPECIES_RULES. They say which FORM to write, not how to make anything work: both cases
+ *  already execute correctly (verified 2026-10-13 against the shipped transformations — a
+ *  side-chain-protected reagent and a support-bound molecule each give exactly one outcome, and
+ *  one operation can carry both at once). Every SMILES below was parsed and run before it was
+ *  written here.
+ *
+ *  Held out of upstream pull requests, as their names-first counterparts are. */
+export const ROUTE_PROGRAM_DOMAIN_RULES: string[] = [
+  'Give a protected or non-natural monomer as its SMILES, never as a shorthand or trade name: those do not resolve. Write every protecting group explicitly and keep the stereocentre — for example `M2 = apply(M1, named="amide-formation", reagents=[smiles="O=C(O)[C@H](CCCCNC(=O)OC(C)(C)C)NC(=O)OCC1c2ccccc2-c2ccccc21"])`. The application carries protecting groups through untouched: add or remove one only as its own operation, with the transformation that does it.',
+  'A species on a solid support has no name: write it as SMILES with the support as a single `*` at the attachment atom, and keep that `*` through every later operation — for example `M1 = start(smiles="*OC(=O)[C@H](C)N")`. The `*` is one atom standing for the support and is carried unchanged. Release the molecule with the transformation that cleaves it, never by deleting the `*`.',
+];
+
+/** Whether this run answers with a route program instead of names-first equations. Read
+ *  defensively: these rules are assembled in the renderer as well as in the main process. */
+export function routeProgramMode(): boolean {
+  try {
+    const host = globalThis as { process?: { env?: Record<string, string | undefined> } };
+    return host.process?.env?.NODUS_ROUTE_PROGRAM === 'on';
+  } catch {
+    return false;
+  }
+}
+
+/** The program-mode contract, with whatever subject rules the author has written appended. */
+export function routeProgramRules(): string[] {
+  return [...ROUTE_PROGRAM_RULES, ...ROUTE_PROGRAM_DOMAIN_RULES];
 }
 
 /** What a correction says about the target and about drawing. A route turn strips every
