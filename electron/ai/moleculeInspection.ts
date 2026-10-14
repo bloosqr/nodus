@@ -29,6 +29,7 @@ import {
   findRouteProgram,
   formatRouteAudit,
   formatRouteCheckUnavailable,
+  formatRouteProgramReportFix,
   formatStructureAudit,
   formatUnresolvedNameClarification,
   implyRacemicTarget,
@@ -1081,13 +1082,21 @@ async function appendRouteProgramReport(finalAnswer: string, program: string, op
   const { runner, dispose } = chemistryRunner(options);
   try {
     const { audit, blocked } = await invokeRouteProgram(runner, provider, program, options.target);
-    if (audit) return `${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit)}\n`;
+    // The audit is the report; the fix chip is what makes a failure recoverable. Appending it here
+    // is the only place it can happen for a program: this function returns before the names-first
+    // builder that used to be the sole caller of any fix-prompt code, which is why every program
+    // failure on record took exactly one turn with its fix rounds unspent.
+    if (audit) {
+      const fix = formatRouteProgramReportFix(audit, blocked);
+      return `${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit)}\n${fix ? `\n${fix}\n` : ''}`;
+    }
     // Rejected, not unchecked: the package read the program and said what is wrong with it, so the
     // model is given those lines to act on rather than a note that nothing happened.
     if (blocked.length) {
+      const fix = formatRouteProgramReportFix(null, blocked);
       return [finalAnswer.trimEnd(), '', '### Route check (RDKit)', '',
         '**The route program could not be executed** — it was read and refused, so no equation was checked.',
-        ...blocked.map((entry) => `- ${entry}`), ''].join('\n');
+        ...blocked.map((entry) => `- ${entry}`), ...(fix ? ['', fix] : []), ''].join('\n');
     }
     return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit for the program')}\n`;
   } catch (error) {

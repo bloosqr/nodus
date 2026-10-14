@@ -426,3 +426,180 @@ test('the program vocabulary stays generic, and a domain rule is appended whole'
     assert.ok(rules.some((rule) => rule.includes(grammar)), `the grammar rule "${grammar}" survives`);
   }
 });
+
+// A program failure has to come back as a fix CHIP, not only as report prose. Before this, the
+// program report path returned the audit and nothing else, so `no fix chip in the answer` ended
+// the run at turn 0 with every fix round unspent — twice on 2026-10-14, on messages that named
+// exactly what to change.
+const audit = (blocked, steps) => ({ blocked, steps, links: [], continuous: !blocked.length });
+// Shaped like a real audited step, not the three fields this once asserted on: the builder now
+// asks the shared failure predicate, which reads `differences` and the species lists. A fixture
+// thinner than the real thing passed until the production path grew one more question.
+const step = (index, ok, error) => ({
+  index, ok, reaction: '', reactants: [], agents: [], products: [],
+  balanced: ok ? true : null, chargeBalanced: ok ? true : null, differences: [],
+  unspecifiedStereocentres: 0, ...(error ? { error } : {}),
+});
+const chip = (fence) => JSON.parse(fence.replace(/^```nodus-route-fix\n/, '').replace(/\n```$/, ''));
+
+test('a refused statement becomes a fix chip carrying the toolkit message', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  // chainQ-8, verbatim: the toolkit named the verb that would have worked and nobody read it.
+  const line = 'Line 4: The carried molecule has no boc carbamate. Curated transformations that DO'
+    + ' apply to this molecule with the reagents given: tert-butyl-ester-removal. Later lines were'
+    + ' not executed.';
+  const fence = formatRouteProgramReportFix(audit([line], [step(0, true), step(1, true)]));
+  assert.ok(fence, 'a refused program must offer a correction');
+  const { label, prompt } = chip(fence);
+  assert.equal(label, 'Fix from the target backwards');
+  assert.ok(prompt.includes('tert-butyl-ester-removal'), 'the verb that applies must reach the model');
+  assert.match(prompt, /route-program/, 'it must ask for the whole program back');
+});
+
+test('a program refused before any audit still offers the correction', () => {
+  const { formatRouteProgramReportFix, isRouteFixPrompt } = inspection;
+  const fence = formatRouteProgramReportFix(null, ['Line 2: That reaction SMARTS is not a reaction RDKit can run forward.']);
+  assert.ok(fence, 'no audit is not the same as nothing to fix');
+  assert.match(chip(fence).prompt, /Line 2:/);
+  assert.ok(isRouteFixPrompt(chip(fence).prompt));
+});
+
+test('a refusal with no line number is correctable too', () => {
+  const { formatRouteProgramReportFix, isRouteFixPrompt } = inspection;
+  // chainQ-8, verbatim, 2026-10-14: a WHOLE-PROGRAM refusal. It carries no `Line n:`, so the
+  // shared builder's filter skipped it and the run ended at turn 0 with three rounds unspent.
+  const fence = formatRouteProgramReportFix(null, ['A route program may execute at most 24 transformations.']);
+  assert.ok(fence, 'a refusal without a line number is still a refusal');
+  const { prompt } = chip(fence);
+  assert.match(prompt, /at most 24 transformations/, 'the model must be told what was refused');
+  assert.ok(isRouteFixPrompt(prompt), 'and it must come back as a route turn');
+  // It must say how to get shorter, or the model can only resend the same length.
+  assert.match(prompt, /n-deprotect/);
+  assert.match(prompt, /site="every/);
+});
+
+test('no audit and nothing blocked offers nothing', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  assert.equal(formatRouteProgramReportFix(null, []), '');
+});
+
+test('a program that ran but left steps unbuilt offers the correction too', () => {
+  const { formatRouteProgramReportFix, UNBUILT_STEP_ERROR_PREFIX } = inspection;
+  const unbuilt = `${UNBUILT_STEP_ERROR_PREFIX}: a species it names has no resolved structure.`;
+  const fence = formatRouteProgramReportFix(audit([], [step(0, true), step(1, false, unbuilt), step(2, false, unbuilt)]));
+  assert.ok(fence, 'a part-executed program must not be a dead end');
+  const { prompt } = chip(fence);
+  assert.match(prompt, /step 2/, 'it names the FIRST statement that produced nothing');
+  // The verdict's own words now, from the shared predicate, so the chip and the report agree.
+  assert.match(prompt, /step 2, step 3/, 'and lists every step left without an input');
+  assert.match(prompt, /one wrong line accounts for all of them/);
+  assert.match(prompt, /could not be built/, 'it carries the reason the check gives');
+});
+
+test('a clean audit offers no correction', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  assert.equal(formatRouteProgramReportFix(audit([], [step(0, true), step(1, true)])), '');
+});
+
+test('the shared builder stays narrow, so names-first keeps its own correction', () => {
+  const { formatRouteProgramFixPrompt, UNBUILT_STEP_ERROR_PREFIX } = inspection;
+  // formatNamedRouteFixPrompts returns THIS the moment it is non-empty. If it widened to unbuilt
+  // steps, every names-first route with an unresolved species would get the program correction.
+  const unbuilt = `${UNBUILT_STEP_ERROR_PREFIX}: a species it names has no resolved structure.`;
+  assert.equal(formatRouteProgramFixPrompt(audit([], [step(0, false, unbuilt)])), '');
+  assert.equal(formatRouteProgramFixPrompt(audit(['Step 3 leaves nothing behind'], [step(0, true)])), '');
+});
+
+// The classes that were silently uncovered. Each of these ended a real run at turn 0 with every
+// fix round unspent, because the builder enumerated failure kinds instead of asking the verdict.
+test('the not-formed correction says what the program ended at', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  // chainQ-2 drew "no step forms the requested target" four turns running, byte-identical, and
+  // spent every fix round on it. The sentence names the problem; what the model needs is the GAP.
+  const ran = audit([], [
+    { ...step(0, true), products: [{ formula: 'C6H13NO2', canonicalSmiles: 'CC(C)C[C@H](N)C(=O)O' }] },
+    { ...step(1, true), products: [{ formula: 'C13H19NO2', canonicalSmiles: 'CC(C)C[C@H](N)C(=O)OCc1ccccc1' }] },
+  ]);
+  ran.target = { input: 'CCN', canonicalSmiles: 'CCN', formula: 'C2H7N', reason: 'not-formed' };
+  const { prompt } = chip(formatRouteProgramReportFix(ran));
+  assert.match(prompt, /The program ends at/, 'it must say where the route actually stopped');
+  assert.match(prompt, /C13H19NO2/, 'naming the LAST product that ran, not the first');
+  assert.match(prompt, /C2H7N/, 'and what was wanted, so the gap is visible');
+});
+
+test('a long structure is shortened rather than pasted whole', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  const long = `C${'C'.repeat(400)}O`;
+  const ran = audit([], [{ ...step(0, true), products: [{ formula: 'C401H804O', canonicalSmiles: long }] }]);
+  ran.target = { input: 'CCN', canonicalSmiles: 'CCN', formula: 'C2H7N', reason: 'not-formed' };
+  const { prompt } = chip(formatRouteProgramReportFix(ran));
+  assert.ok(!prompt.includes(long), 'a chain SMILES runs to thousands of characters; the point is the comparison');
+  assert.match(prompt, /…/);
+});
+
+test('a program that forms no target offers the correction', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  // chainQ-8's re-run, 2026-10-14: 0 failing, 0 unbuilt, and no chip — it ran clean and ended
+  // somewhere other than the target.
+  const clean = audit([], [step(0, true), step(1, true)]);
+  clean.target = { input: 'CCO', canonicalSmiles: 'CCO', reason: 'not-formed' };
+  const fence = formatRouteProgramReportFix(clean);
+  assert.ok(fence, 'a program that reaches nothing must not be a dead end');
+  assert.match(chip(fence).prompt, /no step forms the requested target/);
+});
+
+test('a broken intermediate link offers the correction', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  // chainQ-2, 2026-10-14: "1 intermediate link(s) do not carry the same structure (step 2 → 3)".
+  const linked = audit([], [step(0, true), step(1, true), step(2, true)]);
+  linked.links = [{ from: 1, to: 2, same: false }];
+  const fence = formatRouteProgramReportFix(linked);
+  assert.ok(fence, 'a route that loses its intermediate must not be a dead end');
+  assert.match(chip(fence).prompt, /intermediate link/);
+});
+
+test('a review problem offers the correction', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  // chainQ-4, 2026-10-14: it spent all three rounds and ended on "a route review raised 1 problem".
+  // `blocking` is the only severity that refuses a route the deterministic checker passed;
+  // advisory findings are shown and never block, so they must NOT produce a correction.
+  const fence = formatRouteProgramReportFix(audit([], [step(0, true)]), [],
+    { status: 'problems', problems: [{ step: 1, severity: 'blocking', detail: 'the named structure is wrong for the step' }] });
+  assert.ok(fence, 'a blocking review must be correctable too');
+  assert.match(chip(fence).prompt, /route review raised/);
+});
+
+test('the correction points at the affordances that prevent the common errors', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  const clean = audit([], [step(0, true)]);
+  clean.target = { input: 'CCO', canonicalSmiles: 'CCO', reason: 'not-formed' };
+  const { prompt } = chip(formatRouteProgramReportFix(clean));
+  assert.match(prompt, /n-deprotect/, 'the verb that cannot disagree with what was installed');
+  assert.match(prompt, /site="every/, 'the form for acting at several places at once');
+});
+
+test('an advisory review finding does not offer a correction', () => {
+  const { formatRouteProgramReportFix } = inspection;
+  // Advisory findings are shown and never block a route the deterministic checker passed, so
+  // offering a correction for one would ask the model to fix something that is not wrong.
+  assert.equal(formatRouteProgramReportFix(audit([], [step(0, true)]), [],
+    { status: 'problems', problems: [{ step: 1, severity: 'advisory', detail: 'unusual conditions' }] }), '');
+});
+
+// The joining check. Every piece above worked and the run still died: the chip was emitted, the
+// harness sent it, and `isRouteFixPrompt` did not recognise it — so the next turn was not a route
+// turn, carried no chemistry skill, and audited nothing. Three runs on 2026-10-14 each spent a fix
+// round, wrote a well-formed program and never had it checked.
+test('a program correction is recognised as a route fix prompt', () => {
+  const { formatRouteProgramReportFix, formatRouteProgramFixPrompt, isRouteFixPrompt } = inspection;
+  const refused = chip(formatRouteProgramFixPrompt(audit(['Line 4: nothing applies here.'], [step(0, true)])));
+  assert.ok(isRouteFixPrompt(refused.prompt),
+    'a refused program must come back as a ROUTE turn, or nothing audits the reply');
+  const ranBad = audit([], [step(0, true)]);
+  ranBad.target = { input: 'CCO', canonicalSmiles: 'CCO', reason: 'not-formed' };
+  const didNotPass = chip(formatRouteProgramReportFix(ranBad));
+  assert.ok(isRouteFixPrompt(didNotPass.prompt),
+    'a program that ran and failed must come back as a ROUTE turn too');
+  // Both must still say what to do, not merely be recognisable.
+  for (const { prompt } of [refused, didNotPass]) assert.match(prompt, /route-program/);
+});
