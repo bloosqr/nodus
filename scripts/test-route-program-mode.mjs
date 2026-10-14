@@ -603,3 +603,31 @@ test('a program correction is recognised as a route fix prompt', () => {
   // Both must still say what to do, not merely be recognisable.
   for (const { prompt } of [refused, didNotPass]) assert.match(prompt, /route-program/);
 });
+
+// A refused program's untried statements must not be reported as unresolved species. Measured on
+// chainQ-2, 2026-10-14: refused at line 2, and every turn's verdict read "7 step(s) could not be
+// built because a species they name has no resolved structure" — seven species that do not exist,
+// with the one real cause buried. The chip carried the truth; the verdict, which is what the
+// harness records and the matrix shows, did not.
+test('a refused program names the refusal and calls the rest untried', () => {
+  const { routeAuditFailureReasons } = inspection;
+  const refused = audit(
+    ['Line 2: This transformation does not apply at the free amine of the carried molecule. Later lines were not executed.'],
+    [{ ...step(0, false, 'This step could not be built: a species it names has no resolved structure.') },
+     { ...step(1, false, 'This step could not be built: a species it names has no resolved structure.') }],
+  );
+  const reasons = routeAuditFailureReasons(refused);
+  assert.match(reasons[0], /^Line 2:/, 'the refusal leads, because it is the cause');
+  assert.match(reasons.join(' '), /never run/, 'the untried statements are called untried');
+  assert.doesNotMatch(reasons.join(' '), /no resolved structure/,
+    'and are NOT reported as unresolved species, which would be a fault that does not exist');
+});
+
+test('without a refusal an unbuilt step still reports the species', () => {
+  const { routeAuditFailureReasons } = inspection;
+  // The names-first path never carries `Line n:` entries, so its wording must be untouched.
+  const reasons = routeAuditFailureReasons(audit([],
+    [{ ...step(0, false, 'This step could not be built: a species it names has no resolved structure.') }]));
+  assert.match(reasons.join(' '), /no resolved structure/);
+  assert.doesNotMatch(reasons.join(' '), /never run/);
+});

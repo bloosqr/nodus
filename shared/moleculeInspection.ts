@@ -2443,11 +2443,23 @@ export function routeAuditFailureReasons(audit: RouteAudit, review: RouteReview 
   const skeletal = audit.steps.filter((step) => Boolean(step.skeletonProblem)).map((step) => step.index + 1);
   const isolated = isolatedSteps(audit);
   const reviewProblems = blockingReviewProblems(review);
+  // A refused PROGRAM stops at one statement and the rest are never attempted. Their slots are kept
+  // empty on purpose (dropping them would shift every later step onto the wrong index), and an
+  // empty equation reads downstream as "no structure resolved" -- so a program refused at line 2
+  // reported SEVEN unresolved species that do not exist, and buried the one real cause. Measured
+  // 2026-10-14 on chainQ-2: every turn's verdict named the wrong fault while the fix chip carried
+  // the right one. The refusal leads, and the untried statements are called untried.
+  const refusals = audit.blocked.filter((entry) => /^Line \d+:/.test(entry));
   const reasons: string[] = [];
+  if (refusals.length) reasons.push(refusals[0].replace(/\s+$/, ''));
   if (failedSteps.length) reasons.push(`${failedSteps.length} of ${audit.steps.length} step(s) do not pass (${failedSteps.map((index) => `step ${index}`).join(', ')})`);
   // Said separately: an unbuilt step had nothing checked, so counting it as a failed check makes
   // a route look worse than it is and hides what the author actually has to fix.
-  if (unbuiltSteps.length) reasons.push(`${unbuiltSteps.length} step(s) could not be built because a species they name has no resolved structure (${unbuiltSteps.map((index) => `step ${index}`).join(', ')})`);
+  if (unbuiltSteps.length) {
+    reasons.push(refusals.length
+      ? `${unbuiltSteps.length} later statement(s) were never run (${unbuiltSteps.map((index) => `step ${index}`).join(', ')})`
+      : `${unbuiltSteps.length} step(s) could not be built because a species they name has no resolved structure (${unbuiltSteps.map((index) => `step ${index}`).join(', ')})`);
+  }
   if (assembled.length) reasons.push(`${assembled.length === 1 ? 'a step' : 'steps'} cannot be assembled from a single substrate molecule (${assembled.map((index) => `step ${index}`).join(', ')})`);
   if (skeletal.length) reasons.push(`${skeletal.length === 1 ? 'a step makes or breaks a bond' : 'steps make or break bonds'} its reactants cannot (${skeletal.map((index) => `step ${index}`).join(', ')})`);
   if (isolated.length) reasons.push(`${isolated.length} step(s) are disconnected from the rest of the route`);
@@ -2468,6 +2480,9 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     '',
   ];
   const unbuilt = (step: RouteStepAudit): boolean => !step.ok && Boolean(step.error?.startsWith(UNBUILT_STEP_ERROR_PREFIX));
+  // See routeAuditFailureReasons: after a refusal the remaining statements were never attempted,
+  // and calling that an unresolved species invents a fault.
+  const neverRan = audit.blocked.some((entry) => /^Line \d+:/.test(entry));
   // A check that could not run must not look like a check that passed. The bond-edit search is
   // budgeted and gives up on a hard graph; until this was said out loud, a route whose bonds were
   // never examined read exactly like one whose bonds were fine.
@@ -2509,7 +2524,9 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
         const advice = placeholder
           ? 'That is a placeholder, not a species: list each one by name, or write "none".'
           : 'Give that species a name a reference resolves, or its structure.';
-        lines.push(`- ${label} UNBUILT — nothing was checked: ${named.length ? `no structure resolved for ${named.join(', ')}` : 'a species it names has no resolved structure'}. ${advice}`);
+        lines.push(neverRan
+          ? `- ${label} was never run: the program was refused at an earlier statement, so this one was not attempted.`
+          : `- ${label} UNBUILT — nothing was checked: ${named.length ? `no structure resolved for ${named.join(', ')}` : 'a species it names has no resolved structure'}. ${advice}`);
         continue;
       }
       lines.push(`- ${label} FAIL — ${step.error ?? 'could not be parsed'}`);
