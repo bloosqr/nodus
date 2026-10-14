@@ -2978,7 +2978,7 @@ function unresolvedStepLines(names: UnresolvedName[], indent: string): string {
  *  finds one here too. */
 export function formatRouteProgramFixPrompt(audit: RouteAudit | null | undefined): string {
   const refusals = (audit?.blocked ?? []).filter((entry) => /^Line \d+:/.test(entry));
-  if (!refusals.length) return '';
+  if (!audit || !refusals.length) return '';
   const target = routeTargetDescriptor(audit);
   return routeFixFence({
     label: 'Fix from the target backwards',
