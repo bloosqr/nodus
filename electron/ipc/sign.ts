@@ -20,6 +20,7 @@ import { SignStore, validatePng } from "../toolkit/sign/library";
 import { exportVisualPdf, inspectVisualPdf } from "../toolkit/sign/visual";
 import { SignEngine } from "../toolkit/sign/engine";
 import { SignInstaller } from "../toolkit/sign/install";
+import { startTrackpad, stopTrackpad } from "../toolkit/sign/trackpad";
 import { readProtectSource } from "../protect/protectService";
 import * as archive from "../db/archiveRepo";
 import { showImportOpenDialog } from "../privacy";
@@ -242,6 +243,24 @@ export function registerSignIpc({
     assertTrustedNodusMainFrame(e, getWindow());
     installer?.cancel();
   });
+  let detachTrackpad = () => {};
+  const endTrackpad = () => { detachTrackpad(); detachTrackpad = () => {}; stopTrackpad(); };
+  h('sign:trackpad:start', async e => {
+    assertTrustedNodusMainFrame(e, getWindow());
+    endTrackpad();
+    const sender = e.sender;
+    const surface = startTrackpad(frame => { if (!sender.isDestroyed()) sender.send('sign:trackpad:frame', frame); });
+    if (!surface) return null;
+    // A closed or reloaded window must not leave the trackpad streaming.
+    sender.once('destroyed', endTrackpad);
+    sender.once('did-start-loading', endTrackpad);
+    detachTrackpad = () => { sender.off('destroyed', endTrackpad); sender.off('did-start-loading', endTrackpad); };
+    return surface;
+  });
+  h('sign:trackpad:stop', async e => {
+    assertTrustedNodusMainFrame(e, getWindow());
+    endTrackpad();
+  });
   h("sign:certificate:pick", async (e) => {
     assertTrustedNodusMainFrame(e, getWindow());
     const result = await showImportOpenDialog(
@@ -284,9 +303,11 @@ export function registerSignIpc({
       request.password.length > 4096
     )
       throw new Error("SIGN_CONFIRMATION_REQUIRED");
-    validatePng(request.appearancePng);
-    const widgets = request.widgets ?? [{ page: request.page, box: request.box }];
-    if (!Array.isArray(widgets) || !widgets.length || widgets.length > 1000 || widgets.some(w => !Number.isInteger(w.page) || w.page < 1 || !Array.isArray(w.box) || w.box.length !== 4 || !w.box.every(Number.isFinite)) || new Set(widgets.map(w => w.page)).size !== widgets.length)
+    // Without an appearance there is one signature and nothing drawn on any page.
+    const visible = request.visible !== false;
+    if (visible) validatePng(request.appearancePng);
+    const widgets = visible ? request.widgets ?? [{ page: request.page, box: request.box }] : [];
+    if (visible && (!Array.isArray(widgets) || !widgets.length || widgets.length > 1000 || widgets.some(w => !Number.isInteger(w.page) || w.page < 1 || !Array.isArray(w.box) || w.box.length !== 4 || !w.box.every(Number.isFinite)) || new Set(widgets.map(w => w.page)).size !== widgets.length))
       throw new Error("INVALID_SIGNATURE_PAGE");
     const source = document(request.documentId);
     const certificate = certPath(request.certificateToken);
@@ -302,7 +323,7 @@ export function registerSignIpc({
         type: "question",
         title: "Nodus Sign",
         message: copy("¿Autorizar esta firma criptográfica?"),
-        detail: `${source.name}\n${summary.subject}\nSHA-256: ${summary.fingerprint}\n${copy("Páginas seleccionadas")}: ${widgets.map(w => w.page).join(', ')}\n${copy("Firmas criptográficas")}: ${widgets.length}\n\n${copy("Se creará una copia PAdES B-B. La confianza y la revocación no se verifican en línea.")}`,
+        detail: `${source.name}\n${summary.subject}\nSHA-256: ${summary.fingerprint}\n${visible ? `${copy("Páginas seleccionadas")}: ${widgets.map(w => w.page).join(', ')}\n${copy("Firmas criptográficas")}: ${widgets.length}` : copy("Firma sin marca visible en las páginas")}\n\n${copy("Se creará una copia PAdES B-B. La confianza y la revocación no se verifican en línea.")}`,
         buttons: [
           copy("Cancelar"),
           copy("Autorizar y firmar"),
@@ -316,6 +337,7 @@ export function registerSignIpc({
     const result = await getEngine().run<{ pdf: string }>({
       ...request,
       widgets,
+      visible,
       op: "sign",
       certificate,
       expectedFingerprint: summary.fingerprint,

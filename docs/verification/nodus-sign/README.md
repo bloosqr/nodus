@@ -10,7 +10,7 @@ Run the existing development/release build first so the application's bootstrap 
 
 ```sh
 npm run typecheck:ci
-NODUS_SIGN_PYTHON=/path/to/test/python NODUS_SIGN_INSTALL_TEST=1 node --test scripts/test-sign.mjs scripts/test-sign-install.mjs scripts/test-toolkit-ui.mjs scripts/test-capability-python-host.mjs scripts/test-capability-runtime-provisioning.mjs
+NODUS_SIGN_PYTHON=/path/to/test/python NODUS_SIGN_INSTALL_TEST=1 node --test scripts/test-sign.mjs scripts/test-sign-install.mjs scripts/test-sign-trackpad.mjs scripts/test-toolkit-ui.mjs scripts/test-capability-python-host.mjs scripts/test-capability-runtime-provisioning.mjs
 node --test scripts/test-sign-i18n.mjs scripts/test-i18n-coverage.mjs
 node --test scripts/test-presenter-tools.mjs scripts/test-presenter-state.mjs scripts/test-presenter-perf.mjs scripts/test-protect-engine.mjs scripts/test-protect-ipc.mjs scripts/test-protect-persistence.mjs scripts/test-toolkit-localization.mjs
 NODUS_SIGN_PYTHON=/path/to/test/python npm run verify:sign
@@ -20,17 +20,17 @@ These are developer verification commands. End users install the optional signin
 
 ## Automated coverage
 
-The signing, installer, translation, Toolkit, Python-host, runtime-provisioning, Presenter and Protect groups ran **106 tests: 100 passed, 0 failed**. The 6 skipped tests are the cryptographic cases, which need `NODUS_SIGN_PYTHON`. With a pyHanko test interpreter, `scripts/test-sign.mjs` ran **15 of 15 passed, 0 skipped**. The Electron walkthrough below finished with 36 checks and no errors.
+The signing, installer, trackpad, translation, Toolkit, Python-host, runtime-provisioning, Presenter and Protect groups ran **131 tests: 124 passed, 0 failed**. The 7 skipped tests are the cryptographic cases and the real installation, which need `NODUS_SIGN_PYTHON` and `NODUS_SIGN_INSTALL_TEST`. With both, `scripts/test-sign.mjs` and `scripts/test-sign-install.mjs` ran **20 of 20 passed, 0 skipped**. The Electron walkthrough below finished with 40 checks and no errors.
 
-Coverage includes single/multiple-page PDFs, placement geometry, image reuse, signature/profile persistence, original preservation, real exports, wrong passwords, expired certificates, empty certificate selection, restricted and previously signed PDFs, successive incremental signatures, tampering, cancellation, failed installations and real standalone-Python installation followed by real signing and verification. The review model also flags intact signatures with partial coverage or incompatible later changes. All 11 translated catalogues are checked against the Spanish source, including native dialog copy and localized unexpected-error handling.
+Coverage includes single/multiple-page PDFs, placement geometry, image reuse, signature/profile persistence, original preservation, real exports, wrong passwords, expired certificates, empty certificate selection, restricted and previously signed PDFs, successive incremental signatures, tampering, cancellation, failed installations and real standalone-Python installation followed by real signing and verification. On macOS the installer never builds the engine on the bundled, team-signed Python, whose library validation refuses PyPI's native wheels; a test runs stub interpreters to pin which base each platform uses. Signatures without appearance, the trackpad's to-scale mapping and finger tracking, and resizing from all eight handles in rotated boxes are covered too. The review model also flags intact signatures with partial coverage or incompatible later changes. All 11 translated catalogues are checked against the Spanish source, including native dialog copy and localized unexpected-error handling.
 
 ## Real application walkthrough
 
 The Playwright harness launches Electron with an isolated temporary profile. File pickers, save dialogs and native authorization responses are automated only by the harness. Production has no simulation switch. Cryptographic operations use a genuine disposable self-signed test certificate and the real installed pyHanko engine.
 
-The walkthrough checks import, thumbnails, zoom, hide/show/resize panels, drawing and pixel-level undo/redo, image import, renaming/deleting library signatures, multiple placements, drag/resize/rotate, keyboard positioning, numeric dimensions, alignment presets, page ranges, preview, export, save/reimport through the real Nodus archive, certificate errors, appearance profiles, explicit authorization, cancellation, signing, validation, history and persistence after renderer restart.
+The walkthrough checks import, thumbnails, zoom, hide/show/resize panels, drawing and pixel-level undo/redo, the icon toolbar and its tooltips, drawing on the trackpad (finger frames injected on the native addon's own IPC channel; Esc keeps the editor open; one undo step per stroke), cropping before saving, image import, renaming/deleting library signatures, multiple placements, drag/resize/rotate, keyboard positioning, numeric dimensions, alignment presets, page ranges, preview, export, save/reimport through the real Nodus archive, certificate errors, appearance profiles, explicit authorization, cancellation, signing, validation, history and persistence after renderer restart.
 
-Handwritten page replication is checked for current/all/custom targets without duplicate copies. Certificate mode produces **two genuine incremental signatures on pages 1 and 3**, and none on page 2. Exported widget rectangles are checked against position **8% / 60%** and dimensions **70% / 15%**. The original fixture remains byte-identical.
+Handwritten page replication is checked for current/all/custom targets without duplicate copies. On the certificate box, a corner keeps the proportions and the west edge stretches only the width with the opposite edge fixed. A certificate signature without appearance adds a single zero-sized widget, and Poppler validates all three signatures of that copy. Certificate mode produces **two genuine incremental signatures on pages 1 and 3**, and none on page 2. Exported widget rectangles are checked against position **8% / 60%** and dimensions **70% / 15%**. The original fixture remains byte-identical.
 
 ## Visual review
 
@@ -41,7 +41,8 @@ The exported visual and certificate PDFs are reopened and rendered independently
 | English screenshot | Scenario |
 | --- | --- |
 | [Tool and sidebar icon](01-empty-light.png) | Empty state and signature library |
-| [Drawing](02-drawing.png) | Real pointer input and drawing controls |
+| [Drawing](02-drawing.png) | Real pointer input, icon toolbar and crop frame |
+| [Trackpad](02a-trackpad-finger.png) | The trackpad to scale while drawing with a finger |
 | [Exact position and dimensions](03c-exact-dimensions-light.png), [pages](03a-placement-pages-light.png) | Handwritten position, dimensions and page ranges |
 | [Automatic installation](05c-engine-install-progress.png) | Installation progress and cancellation |
 | [Certificate placement](07a-certificate-placement-pages.png) | Certificate dimensions and selected pages |
@@ -55,6 +56,6 @@ The exported visual and certificate PDFs are reopened and rendered independently
 
 Only **macOS Apple Silicon** was executed. Windows x64, Linux x64, macOS Intel and packaged installers still require platform runs. Static packaging/manifests do not establish platform verification. The Intel path reuses the native cryptography build already bundled with Nodus.
 
-Physical pen/touch hardware was not exercised; cursor input was tested. Native certificate stores, AutoFirma integration, PKCS#11, direct finger capture on trackpads, qualified certificates/hardware, TSA and online revocation were not verified or implemented. Cursor drawing and PKCS#12 remain the functional alternatives. Current appearances provide three local font families and a fixed image/text arrangement; arbitrary font files and additional layout presets remain follow-ups.
+Physical pen/touch hardware was not exercised by the harness; cursor input was tested, and an earlier build of finger drawing was tried by hand on a MacBook trackpad. Native certificate stores, AutoFirma integration, PKCS#11, finger capture on Windows and Linux trackpads, qualified certificates/hardware, TSA and online revocation were not verified or implemented. Cursor drawing and PKCS#12 remain the functional alternatives. Current appearances provide three local font families and a fixed image/text arrangement; arbitrary font files and additional layout presets remain follow-ups.
 
 The first optional engine download requires a connection; documents and credentials are never uploaded. Signing and validation operate locally. Visual exports are limited to 300 placements; cryptographic batches to 1,000 pages and 90 seconds, without publishing partial results after failure or cancellation.

@@ -33,7 +33,7 @@
     "test:ci:shard": "node scripts/ci-test-shards.mjs run",
     "lint:ci": "npm run lint -- --cache --cache-strategy content --cache-location .ci/cache/eslint",
     "typecheck:ci": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile .ci/cache/renderer.tsbuildinfo && tsc --noEmit -p electron/tsconfig.json --incremental --tsBuildInfoFile .ci/cache/electron.tsbuildinfo",
-    "prebuild:ci": "node scripts/clean-electron-output.mjs && node scripts/build-apple-calendar.cjs && node scripts/build-presenter-native.cjs && node scripts/build-system-audio.cjs",
+    "prebuild:ci": "node scripts/clean-electron-output.mjs && node scripts/build-apple-calendar.cjs && node scripts/build-presenter-native.cjs && node scripts/build-system-audio.cjs && node scripts/build-trackpad-native.cjs",
     "build:ci": "npm run build:cloudflare && npm run typecheck:ci && vite build",
     "prebuild:ci:bundle": "npm run prebuild:ci",
     "build:ci:bundle": "npm run build:cloudflare && vite build",
@@ -181,15 +181,15 @@
     "verify:maps": "node scripts/verify-maps.mjs",
     "verify:historical-maps": "node scripts/verify-historical-maps.mjs",
     "research:runtime": "node scripts/prepare-zotero-mcp.mjs",
-    "predev": "node scripts/build-apple-calendar.cjs && node scripts/build-presenter-native.cjs && node scripts/build-system-audio.cjs",
-    "prebuild": "node scripts/clean-electron-output.mjs && node scripts/build-apple-calendar.cjs && node scripts/build-presenter-native.cjs && node scripts/build-system-audio.cjs",
+    "predev": "node scripts/build-apple-calendar.cjs && node scripts/build-presenter-native.cjs && node scripts/build-system-audio.cjs && node scripts/build-trackpad-native.cjs",
+    "prebuild": "node scripts/clean-electron-output.mjs && node scripts/build-apple-calendar.cjs && node scripts/build-presenter-native.cjs && node scripts/build-system-audio.cjs && node scripts/build-trackpad-native.cjs",
     "build:apple-calendar": "node scripts/build-apple-calendar.cjs",
     "build:presenter-native": "node scripts/build-presenter-native.cjs",
     "test:presenter-native": "node scripts/test-presenter-native.mjs",
     "test:presenter-lan": "node scripts/verify-presenter-lan.cjs",
     "test:cloudflare-safety": "node --test scripts/test-cloudflare-sync-safety.mjs scripts/test-cloudflare-local-safety.mjs scripts/test-replica-utility-safety.mjs",
     "test:e2e:backups": "node scripts/e2e-backups.mjs",
-    "test:sign": "node --test scripts/test-sign.mjs scripts/test-sign-install.mjs scripts/test-sign-i18n.mjs",
+    "test:sign": "node --test scripts/test-sign.mjs scripts/test-sign-install.mjs scripts/test-sign-i18n.mjs scripts/test-sign-trackpad.mjs",
     "verify:sign": "node scripts/verify-sign.mjs"
   },
   "dependencies": {
@@ -443,6 +443,10 @@
         {
           "from": "build/system-audio/${arch}/nodus-system-audio.node",
           "to": "system-audio/nodus-system-audio.node"
+        },
+        {
+          "from": "build/trackpad-native/${arch}/nodus-trackpad.node",
+          "to": "trackpad-native/nodus-trackpad.node"
         },
         {
           "from": "build/apple-calendar/${arch}/nodus-apple-calendar.node",

@@ -3800,7 +3800,7 @@ export const TR: Record<string, string> = {
   "Contenido": "İçerik",
   "Crear una idea manual indexable": "Manuel olarak indekslenebilir bir fikir oluşturun",
   "Cuerpo de cada nota": "Her notanın gövdesi",
-  "Deshacer": "geri almak",
+  "Deshacer": "Geri al",
   "elemento": "eleman",
   "Esta carpeta tiene un resumen": "Bu klasörde bir özet var",
   "Estructura completa con ids y metadatos, ideal para procesar.": "İşleme için ideal, kimlikler ve meta veriler içeren eksiksiz yapı.",

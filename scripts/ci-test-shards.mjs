@@ -20,9 +20,10 @@ const allowedSkips = new Map([
   ['multi-page real signatures preserve an earlier signature and reject invalid page selections', 'Set NODUS_SIGN_PYTHON to run real crypto tests'],
   ['tampering and expired signing are rejected, no output presented as valid', 'Set NODUS_SIGN_PYTHON to run real crypto tests'],
   ['engine cancellation interrupts the subprocess', 'Set NODUS_SIGN_PYTHON to run real crypto tests'],
+  ['a signature without appearance adds one valid signature and draws nothing on any page', 'Set NODUS_SIGN_PYTHON to run real crypto tests'],
   ['real automatic Python download and installation can sign and validate without any preinstalled Python', 'Set NODUS_SIGN_INSTALL_TEST=1 to download and install the real engine'],
 ]);
-// These nine native macOS cases run as mandatory release checks on Apple
+// These ten native macOS cases run as mandatory release checks on Apple
 // silicon. Linux still runs their files and every platform-independent case.
 const macOnlySkips = new Map([
   ['unsigned macOS updates survive force quit and report interrupted installation', 'scripts/test-unsigned-mac-update.mjs'],
@@ -34,6 +35,7 @@ const macOnlySkips = new Map([
   ['the update does not leave a second application behind', 'scripts/test-mac-bundle-name.mjs'],
   ['macOS denies outside writes, descendant writes and forbidden network connections', 'scripts/test-research-isolation.mjs'],
   ['explicit disposable endpoints are reachable while all other network destinations are denied', 'scripts/test-research-isolation.mjs'],
+  ['the macOS addon starts and stops cleanly, with or without a trackpad', 'scripts/test-sign-trackpad.mjs'],
 ]);
 export const isAllowedSkip = (skip, platform = process.platform) =>
   (allowedSkips.has(skip.name) && allowedSkips.get(skip.name) === skip.reason) ||

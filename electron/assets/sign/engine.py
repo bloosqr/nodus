@@ -68,8 +68,11 @@ def main(req):
     if not cert['usable']: raise ValueError('CERTIFICATE_EXPIRED_OR_NOT_USABLE')
     signer = signers.SimpleSigner.load_pkcs12_data(p12, other_certs=[], passphrase=req.get('password', '').encode() or None)
     if not signer: raise ValueError('CERTIFICATE_PASSWORD_OR_FORMAT')
-    widgets = req.get('widgets', [{'page': req['page'], 'box': req['box']}])
-    if not isinstance(widgets, list) or not widgets or len(widgets) > 1000: raise ValueError('INVALID_SIGNATURE_PAGE')
+    # Without an appearance there is a single signature whose field has no
+    # widget box, so nothing is drawn on any page.
+    visible = req.get('visible', True) is not False
+    widgets = req.get('widgets', [{'page': req['page'], 'box': req['box']}]) if visible else []
+    if visible and (not isinstance(widgets, list) or not widgets or len(widgets) > 1000): raise ValueError('INVALID_SIGNATURE_PAGE')
     from math import isfinite
     page_count = int(PdfFileReader(io.BytesIO(data)).root['/Pages']['/Count'])
     seen = set()
@@ -83,23 +86,27 @@ def main(req):
             raise ValueError('INVALID_SIGNATURE_BOX')
     # Each selected page gets a genuine signed widget. No unsigned visual copies
     # are added after signing; every revision preserves all previous bytes.
-    png = base64.b64decode(req['appearancePng'].split(',', 1)[1], validate=True)
+    png = base64.b64decode(req['appearancePng'].split(',', 1)[1], validate=True) if visible else None
     from PIL import Image
     from pyhanko.pdf_utils.layout import SimpleBoxLayoutRule, AxisAlignment, Margins, InnerScaling
     layout = SimpleBoxLayoutRule(x_align=AxisAlignment.ALIGN_MID, y_align=AxisAlignment.ALIGN_MID, margins=Margins(0, 0, 0, 0), inner_content_scaling=InnerScaling.STRETCH_FILL)
     result = data
-    for widget in widgets:
+    for widget in widgets if visible else [None]:
         writer = IncrementalPdfFileWriter(io.BytesIO(result), strict=True)
         field_name = 'NodusSign_' + __import__('uuid').uuid4().hex
-        background = images.PdfImage(Image.open(io.BytesIO(png)))
         meta = signers.PdfSignatureMetadata(field_name=field_name, md_algorithm='sha256', subfilter=fields.SigSeedSubFilter.PADES, reason=req['appearance'].get('reason') or None, location=req['appearance'].get('location') or None)
-        spec = fields.SigFieldSpec(sig_field_name=field_name, on_page=widget['page'] - 1, box=tuple(widget['box']))
-        style = stamp.StaticStampStyle(background=background, background_layout=layout, background_opacity=1, border_width=0)
-        output = signers.PdfSigner(meta, signer=signer, stamp_style=style, new_field_spec=spec).sign_pdf(writer).getvalue()
+        if widget is None:
+            spec = fields.SigFieldSpec(sig_field_name=field_name)
+            output = signers.PdfSigner(meta, signer=signer, new_field_spec=spec).sign_pdf(writer).getvalue()
+        else:
+            background = images.PdfImage(Image.open(io.BytesIO(png)))
+            spec = fields.SigFieldSpec(sig_field_name=field_name, on_page=widget['page'] - 1, box=tuple(widget['box']))
+            style = stamp.StaticStampStyle(background=background, background_layout=layout, background_opacity=1, border_width=0)
+            output = signers.PdfSigner(meta, signer=signer, stamp_style=style, new_field_spec=spec).sign_pdf(writer).getvalue()
         if not output.startswith(result): raise ValueError('INCREMENTAL_UPDATE_FAILED')
         result = output
     after = inspect(result)
-    if len(after['signatures']) != len(before['signatures']) + len(widgets) or not all(s['intact'] and s['valid'] and s['modification'] in ('NONE', 'FORM_FILLING') for s in after['signatures']):
+    if len(after['signatures']) != len(before['signatures']) + (len(widgets) if visible else 1) or not all(s['intact'] and s['valid'] and s['modification'] in ('NONE', 'FORM_FILLING') for s in after['signatures']):
         raise ValueError('SIGNATURE_POST_VALIDATION_FAILED')
     return {'pdf': base64.b64encode(result).decode(), 'inspection': after}
 
