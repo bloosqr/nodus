@@ -71,7 +71,8 @@ export interface ResearchChatSidebarProps {
   notebookLocksMoves?: boolean;
   activeId: string | null;
   activeProjectId: string | null;
-  sending: boolean;
+  /** Chats still answering. They keep running while the user opens or starts other chats. */
+  runningIds?: ReadonlySet<string>;
   archivedCount: number;
   showArchived: boolean;
   onToggleArchived: () => void;
@@ -104,7 +105,7 @@ export interface ResearchChatSidebarProps {
 
 /** The research chat history: tools, search, then Projects, Notebooks, Pinned and the other chats. */
 export function ResearchChatSidebar(props: ResearchChatSidebarProps) {
-  const { conversations, projects, notebooks, supportsProjects, notebooksOn, activeId, activeProjectId, activeNotebookId, sending } = props;
+  const { conversations, projects, notebooks, supportsProjects, notebooksOn, activeId, activeProjectId, activeNotebookId, runningIds } = props;
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -245,7 +246,7 @@ export function ResearchChatSidebar(props: ResearchChatSidebarProps) {
     <>
       <div className="research-chat-history-tools">
         <div className="flex items-center gap-1">
-          <button type="button" className="research-chat-history-tool" data-testid="research-new-conversation" onClick={props.onNewConversation} disabled={sending} aria-label={t('Nueva conversación')} title={t('Nueva conversación')}><Icon name="plus" size={16} /></button>
+          <button type="button" className="research-chat-history-tool" data-testid="research-new-conversation" onClick={props.onNewConversation} aria-label={t('Nueva conversación')} title={t('Nueva conversación')}><Icon name="plus" size={16} /></button>
           {notebooksOn && props.onNewNotebook && <button type="button" className="research-chat-history-tool" data-testid="research-new-notebook" onClick={props.onNewNotebook} aria-label={t('Nuevo cuaderno')} title={t('Nuevo cuaderno')}><Icon name="notebook" size={16} /></button>}
           {supportsProjects && <button type="button" className="research-chat-history-tool" data-testid="research-new-project" onClick={newProject} aria-label={t('Nuevo proyecto')} title={t('Nuevo proyecto')}><Icon name="folderPlus" size={16} /></button>}
           {bulk && conversations.length > 0 && <button type="button" className={`research-chat-history-tool ml-auto ${selecting ? 'is-on' : ''}`} data-testid="research-chat-select-mode"
@@ -363,8 +364,9 @@ export function ResearchChatSidebar(props: ResearchChatSidebarProps) {
                 ? <RenameField value={conversation.title} onDone={title => { setRenaming(null); if (title && title !== conversation.title && props.onRenameConversation) run(() => props.onRenameConversation!(conversation, title)); }} />
                 : <button type="button" className="research-history-main" aria-current={conversation.id === activeId ? 'page' : undefined}
                   title={`${formatRelative(conversation.updated_at)} · ${tx('{n} mensaje(s)', { n: conversation.messageCount })}`}
-                  onClick={() => { if (!sending) props.onOpenConversation(conversation.id); }}>
+                  onClick={() => props.onOpenConversation(conversation.id)}>
                   <MarqueeText text={conversation.title} className={`min-w-0 flex-1 ${conversation.archived ? 'italic text-neutral-500' : ''}`} />
+                  {runningIds?.has(conversation.id) && <span className="research-history-running" role="img" aria-label={t('Generando…')} title={t('Generando…')} data-testid={`research-conversation-running-${conversation.id}`} />}
                 </button>}
               {!selecting && <span className="research-history-row-actions">
                 {supportsProjects && !conversation.archived && <button type="button" className={`research-history-action ${pinned ? 'is-on' : ''}`} aria-pressed={pinned}

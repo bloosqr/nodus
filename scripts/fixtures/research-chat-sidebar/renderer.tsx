@@ -66,7 +66,7 @@ function App() {
   return <><div style={{ display: 'flex', gap: 16 }}><aside style={{ width: 280, height: 640, display: 'flex', flexDirection: 'column' }} data-testid="research-history-sidebar" className="research-chat-history">
     <ResearchChatSidebar
       conversations={conversations} projects={projects} notebooks={notebooks}
-      supportsProjects notebooksOn activeId={null} activeProjectId={null} activeNotebookId={null} sending={false} archivedCount={0} showArchived={false}
+      supportsProjects notebooksOn activeId={null} activeProjectId={null} activeNotebookId={null} archivedCount={0} showArchived={false}
       onToggleArchived={() => log('toggleArchived')}
       onNewConversation={() => log('new')}
       onNewNotebook={() => log('newNotebook')}
@@ -148,7 +148,7 @@ function SurfaceHistory({ kind }: { kind: 'course' | 'notebook' }) {
     <ResearchChatSidebar
       conversations={conversations} projects={[project(`${kind}-p1`, 'Examen')]} notebooks={entries}
       supportsProjects notebooksOn notebookKind={kind} notebookCollections={false} notebookLocksMoves={kind !== 'course'}
-      activeId={null} activeProjectId={null} activeNotebookId={null} sending={false} archivedCount={0} showArchived={false}
+      activeId={null} activeProjectId={null} activeNotebookId={null} archivedCount={0} showArchived={false}
       onToggleArchived={() => undefined} onNewConversation={() => undefined} onNewProject={async () => null}
       onOpenConversation={id => log('open', id)} onOpenProject={id => log('openProject', id)} onOpenNotebook={id => log('notebook', id)}
       {...editing}
