@@ -1,5 +1,6 @@
 import { SIGN_TRANSLATIONS } from './i18n.sign';
 import { CHAT_ORGANIZATION_HELP_TRANSLATIONS } from './i18n.chatOrganizationHelp';
+import { RESEARCH_CHAT_SELECTION_TRANSLATIONS } from './i18n.researchChatSelection';
 import { ACADEMIC_INTERFACE_TRANSLATIONS } from './i18n.academicInterface';
 import { BACKUPS_TRANSLATIONS } from './i18n.backups';
 import { SCRIPTOR_AI_TRANSLATIONS } from './i18n.scriptorAi';
@@ -8681,6 +8682,7 @@ export const TR: Record<string, string> = {
   "Detener dictado": "Dikteyi durdur",
   ...ACADEMIC_INTERFACE_TRANSLATIONS["tr"],
   ...CHAT_ORGANIZATION_HELP_TRANSLATIONS["tr"],
+  ...RESEARCH_CHAT_SELECTION_TRANSLATIONS["tr"],
 };
 
 Object.assign(TR, SIGN_TRANSLATIONS['tr']);

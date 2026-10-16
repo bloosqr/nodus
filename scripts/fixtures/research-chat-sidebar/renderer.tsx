@@ -86,6 +86,12 @@ function App() {
       onArchiveConversation={async conversation => log('archive', conversation.id)}
       onDeleteConversation={conversation => log('delete', conversation.id)}
       onMoveConversation={folderActions.onMoveConversation}
+      onDeleteConversations={selected => log('deleteMany', selected.map(item => item.id))}
+      onArchiveConversations={async (selected, archived) => log('archiveMany', selected.map(item => item.id), archived)}
+      onMoveConversations={async (selected, projectId) => {
+        log('moveMany', selected.map(item => item.id), projectId);
+        setConversations(current => current.map(item => selected.some(chosen => chosen.id === item.id) ? { ...item, projectId, folderId: null } : item));
+      }}
       onUpdateProject={async (target, patch) => { log('updateProject', target.id, patch); setProjects(current => current.map(item => item.id === target.id ? { ...item, ...patch } : item)); }}
       onDeleteProject={async target => { log('deleteProject', target.id); setProjects(current => current.filter(item => item.id !== target.id)); }}
       folderTree={folderTree}

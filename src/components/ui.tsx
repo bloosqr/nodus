@@ -61,6 +61,7 @@ const ICON_PATHS: Record<string, string> = {
   ruler: '<path d="M3 15 15 3l6 6L9 21z"/><path d="m7 11 2 2"/><path d="m10 8 2 2"/><path d="m13 5 2 2"/>',
   mapPin: '<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/>',
   pin: '<path d="M12 17v5"/><path d="M5 17h14"/><path d="M7 17V9l-2-2V5h14v2l-2 2v8"/><path d="M9 5V2h6v3"/>',
+  listChecks: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
   crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
   eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
   trackpad: '<rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M6 14c1.5-3 3-4 4-2s2 2 3 0 2-3 5-2"/>',

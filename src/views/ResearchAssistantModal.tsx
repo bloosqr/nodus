@@ -32,6 +32,7 @@ import { matchingResearchWorkIds, normalizeResearchSourceFilter, type ResearchCo
 import { researchContextLayers, withResearchContextLayers } from '@shared/researchContextLayers';
 import { ResearchCoverage } from '../components/ResearchCoverage';
 import { ResearchEffortControl } from '../components/ResearchEffortControl';
+import { ModelPicker } from '../components/ModelPicker';
 import { ChatMarkdown } from '../components/ChatMarkdown';
 import { ChatAbortedNotice } from '../components/ChatAbortedNotice';
 import { ChatSkillsControl } from '../components/ChatSkillsControl';
@@ -47,7 +48,7 @@ import type {
   NoteSource,
   ResearchWebSearchMode,
 } from '@shared/types';
-import { Icon, modelLabel, sortModelRefs } from '../components/ui';
+import { Icon, sortModelRefs } from '../components/ui';
 import type { MarkdownCitation } from '../components/Markdown';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ChatTypingIndicator } from '../components/ChatTypingIndicator';
@@ -240,6 +241,7 @@ export function ResearchAssistantModal({
   // A notebook is read once its collections are indexed; until then it says so and waits.
   const notebookBlocked = !!activeNotebook && (!notebookPreparation || notebookPreparation.pending > 0);
   const [pendingDelete, setPendingDelete] = useState<ChatConversationSummary | null>(null);
+  const [pendingBulkDelete, setPendingBulkDelete] = useState<ChatConversationSummary[] | null>(null);
   const [citationOrigin, setCitationOrigin] = useState<{conversationId?:string;messageId?:string}>({});
   const [citation, setCitation] = useState<CitationTarget>(null);
   const [noteTarget, setNoteTarget] = useState<{ content: string; title: string; source: NoteSource } | null>(null);
@@ -574,6 +576,25 @@ export function ResearchAssistantModal({
     await refreshConversations();
   };
 
+  // The multiple selection acts on every chat, then refreshes the history once.
+  const moveConversations = async (conversations: ChatConversationSummary[], projectId: string | null) => {
+    for (const conversation of conversations) if (conversation.projectId !== projectId) await organizer!.setProject(conversation.id, projectId);
+    await refreshConversations();
+  };
+  const archiveConversations = async (conversations: ChatConversationSummary[], archived: boolean) => {
+    for (const conversation of conversations) if (!!conversation.archived !== archived) await api.archiveConversation?.(conversation.id, archived);
+    await refreshConversations();
+  };
+  const confirmBulkDelete = async () => {
+    const deleting = pendingBulkDelete ?? [];
+    setPendingBulkDelete(null);
+    for (const conversation of deleting) {
+      await api.deleteConversation(conversation.id);
+      await window.nodus.selectResearchSystemPrompt(`${adapter?.id ?? 'research'}:${conversation.id}`, null);
+    }
+    if (deleting.some(conversation => conversation.id === activeId)) startNewConversation();
+    await refreshConversations();
+  };
   const archiveConversation = async (conversation: ChatConversationSummary) => {
     await api.archiveConversation?.(conversation.id, !conversation.archived);
     await refreshConversations();
@@ -925,7 +946,6 @@ export function ResearchAssistantModal({
     void api.cancelResearchChat();
   };
 
-  const serializedModel = selectedModel ? serializeModel(selectedModel) : '';
   const visibleConversations = conversations.filter((c) => showArchived || !c.archived);
   const archivedCount = conversations.filter((c) => c.archived).length;
   const lastMessageId = messages.length ? messages[messages.length - 1].id : null;
@@ -944,20 +964,12 @@ export function ResearchAssistantModal({
     setCitation({ kind: c.kind, id: c.id });
   }, []);
 
-  const chatModelControl = (<select
-            className="input text-xs py-1 max-w-xs"
-            title={concilium ? t('Chairman') : t('Modelo del chat')}
-            disabled={sending || !!concilium}
-            value={serializedModel}
-            onChange={(e) => setSelectedModel(e.target.value ? parseModel(e.target.value) : null)}
-          >
-            {!selectedModel && <option value="">{t('Sin modelo seleccionado')}</option>}
-            {availableModels.map((model) => (
-              <option key={serializeModel(model)} value={serializeModel(model)}>
-                {modelLabel(model)}
-              </option>
-            ))}
-          </select>);
+  // The same searchable picker as the rest of the app, over this chat's own list.
+  const chatModelControl = (<div className="max-w-xs min-w-[11rem]" data-testid="research-chat-model">
+    <ModelPicker settings={settings} value={selectedModel} models={availableModels} onChange={setSelectedModel}
+      compact menu triggerModelOnly allowEmpty={!selectedModel} disabled={sending || !!concilium}
+      ariaLabel={concilium ? t('Chairman') : t('Modelo del chat')} />
+  </div>);
   return (
     <div className={embedded ? "research-chat-surface research-chat-view h-full min-h-0 flex flex-col" : "research-chat-surface fixed inset-0 z-50 bg-black/70 p-4 flex items-center justify-center"} data-testid={embedded ? "research-chat-view" : undefined}>
       <div
@@ -1063,6 +1075,9 @@ export function ResearchAssistantModal({
               onArchiveConversation={api.archiveConversation ? archiveConversation : undefined}
               onDeleteConversation={setPendingDelete}
               onMoveConversation={moveConversation}
+              onDeleteConversations={setPendingBulkDelete}
+              onArchiveConversations={api.archiveConversation ? archiveConversations : undefined}
+              onMoveConversations={supportsProjects ? moveConversations : undefined}
               onUpdateProject={updateProject}
               onEditProjectInstructions={setEditingProjectInstructions}
               onDeleteProject={deleteProject}
@@ -1424,6 +1439,17 @@ export function ResearchAssistantModal({
         />
       )}
 
+      {pendingBulkDelete && (
+        <ConfirmModal
+          title={t('Eliminar conversaciones')}
+          message={tx('Se eliminarán {n} conversaciones y todo su historial de mensajes y archivos adjuntos. Esta acción no se puede deshacer.', { n: pendingBulkDelete.length })}
+          confirmLabel={t('Eliminar')}
+          danger
+          onConfirm={() => void confirmBulkDelete()}
+          onCancel={() => setPendingBulkDelete(null)}
+        />
+      )}
+
       {citation && (
         <SourceCitationModal learningOrigin={citationOrigin}
           target={citation}
@@ -1480,15 +1506,6 @@ function ContextLayerSwitch({ testId, icon, label, description, checked, disable
     <span><strong>{label}</strong><small>{description}</small></span>
     <span className="research-context-switch" aria-hidden="true"><span /></span>
   </button>;
-}
-
-function serializeModel(model: ModelRef): string {
-  return `${model.provider}::${model.model}`;
-}
-
-function parseModel(value: string): ModelRef {
-  const [provider, model] = value.split('::');
-  return { provider: provider as ModelRef['provider'], model };
 }
 
 function sameModelRef(a: ModelRef, b: ModelRef): boolean {

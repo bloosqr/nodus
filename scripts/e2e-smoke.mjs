@@ -960,7 +960,7 @@ try {
   }
   await page.locator('header').getByRole('button', { name: 'Research chat', exact: true }).click();
   await page.getByTestId('research-chat-view').waitFor({ timeout: 30_000 });
-  assert.equal(await page.locator('select[title="Modelo del chat"]').inputValue(), 'openrouter::smoke-chat-model');
+  assert.match(await page.getByTestId('research-chat-model').locator('.model-picker-trigger').getAttribute('aria-label'), /^Modelo del chat: .*smoke-chat-model/);
   await page.locator('[data-tour="nav-settings"]').click();
   console.log('[e2e] header has no global model selector');
 

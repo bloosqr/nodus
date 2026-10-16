@@ -1,5 +1,6 @@
 import { SIGN_TRANSLATIONS } from './i18n.sign';
 import { CHAT_ORGANIZATION_HELP_TRANSLATIONS } from './i18n.chatOrganizationHelp';
+import { RESEARCH_CHAT_SELECTION_TRANSLATIONS } from './i18n.researchChatSelection';
 import { ACADEMIC_INTERFACE_TRANSLATIONS } from './i18n.academicInterface';
 import { BACKUPS_TRANSLATIONS } from './i18n.backups';
 import { SCRIPTOR_AI_TRANSLATIONS } from './i18n.scriptorAi';
@@ -7937,6 +7938,7 @@ export const ZH_TW: Record<string, string> = {
   "Detener dictado": "停止聽寫",
   ...ACADEMIC_INTERFACE_TRANSLATIONS["zh-TW"],
   ...CHAT_ORGANIZATION_HELP_TRANSLATIONS["zh-TW"],
+  ...RESEARCH_CHAT_SELECTION_TRANSLATIONS["zh-TW"],
 };
 
 Object.assign(ZH_TW, SIGN_TRANSLATIONS['zh-TW']);
