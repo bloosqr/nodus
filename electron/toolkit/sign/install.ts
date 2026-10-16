@@ -25,7 +25,8 @@ const basePythonAt = (root: string) => path.join(root, 'python', process.platfor
 export class SignInstaller {
   private controller: AbortController | null = null;
   constructor(readonly root: string, readonly assets: string, readonly bundledRuntime: string,
-    private findPython = () => findSystemPython('3.12'),
+    // The lock ships wheels for 3.12-3.14, so a newer default python3 does not hide a supported python3.N.
+    private findPython = () => findSystemPython('3.12', minor => /^3\.(12|13|14)$/.test(minor)),
     private host: { platform: NodeJS.Platform; arch: string } = { platform: process.platform, arch: process.arch }) {}
   cancel() { this.controller?.abort(); }
   async install(progress: (event: SignInstallProgress) => void): Promise<string> {
