@@ -31,6 +31,8 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,8 +41,20 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const source = await readFile(path.join(repoRoot, 'shared/routeRules.ts'), 'utf8');
 
 /** Exemplar SMILES whose configuration has been checked with a toolkit, exactly as written in
- *  routeRules.ts. Empty because the contract shows no stereocentre today. */
-const VALIDATED = [];
+ *  routeRules.ts. Each is in the SAME atom order the contract uses: `[C@@H]` is L in one ordering
+ *  and D in another, so the tag alone says nothing and two strings cannot be compared by eye. The
+ *  chemistry plugin's own reference table writes L-Lys as `…NCCCC[C@@H](C(=O)O)…` — the opposite
+ *  tag, the same molecule.
+ *
+ *  These two are local: they belong to the held species and domain rules, so upstream's copy of
+ *  this list is empty and should stay that way. */
+const VALIDATED = [
+  // Fmoc-Lys(Boc)-OH, (S). Appears twice in the contract, once per arm. Canonicalises identically
+  // to the chemistry plugin's peptideBuildingBlocks.ts entry, which is how it was confirmed.
+  'O=C(O)[C@H](CCCCNC(=O)OC(C)(C)C)NC(=O)OCC1c2ccccc2-c2ccccc21',
+  // A support-bound alanine, (S). `*` is the solid support at the attachment atom.
+  '*OC(=O)[C@H](C)N',
+];
 
 /** A tetrahedral stereocentre in SMILES, with enough trailing context for the failure message to
  *  show which exemplar it came from. */
@@ -77,4 +91,20 @@ test('the allow-list mechanism actually suppresses a match', () => {
   assert.deepEqual(sample.match(STEREOCENTRE) ?? [], ['[C@H](C)N'], 'the pattern should match a stereocentre');
   const stripped = sample.split('O=C(O)[C@H](C)N').join('');
   assert.deepEqual(stripped.match(STEREOCENTRE) ?? [], [], 'stripping a validated exemplar should remove its match');
+});
+
+test('RDKit agrees with the allow-list, when the index venv is available', t => {
+  // What makes VALIDATED trustworthy rather than merely stable: the list above cannot read
+  // chemistry, it only holds the strings still. This parses each one and assigns the CIP label.
+  // Skipped rather than failed without the venv, because a unit gate that needs a local
+  // cheminformatics install gets turned off, and the dependency-free guard goes with it.
+  const venv = path.join(repoRoot, '..', 'ord-index', '.venv', 'bin', 'python');
+  const checker = path.join(repoRoot, '..', 'tools', 'check-prompt-stereo.py');
+  if (!existsSync(venv) || !existsSync(checker)) {
+    t.skip('ord-index/.venv or tools/check-prompt-stereo.py not present; the allow-list check still ran');
+    return;
+  }
+  const out = execFileSync(venv, ['-I', checker], { cwd: path.join(repoRoot, '..'), encoding: 'utf8' });
+  assert.match(out, /every amino-acid exemplar is the L form/, `check-prompt-stereo.py did not pass:\n${out}`);
+  assert.match(out, /checked [1-9]\d* amino-acid exemplar/, `the checker found nothing to check:\n${out}`);
 });

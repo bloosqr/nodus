@@ -12,6 +12,7 @@ export const ROUTE_LABEL_LINES = [
 
 /** How species are named and assigned to roles, how a step is shaped, and when prose may change. */
 export const ROUTE_SPECIES_RULES = [
+  'Give every protected or non-natural amino acid as its SMILES with the structure fallback (for example `Fmoc-Lys(Boc)-OH — `O=C(O)[C@H](CCCCNC(=O)OC(C)(C)C)NC(=O)OCC1c2ccccc2-c2ccccc21``): names like `Fmoc-Cys(Trt)-OH` do not resolve, and a non-natural residue has no resolvable name at all. A plain unprotected proteinogenic amino acid (glycine, L-alanine) may be named.',
   'Give each species as its systematic IUPAC name ONLY, separated by semicolons. Do not write SMILES, a formula, backticks, a reaction string or a `reactants>agents>products` line anywhere, except in the single structure fallback below: the application derives every structure from your names and solves every balanced equation itself.',
   'If, and only if, you cannot give a systematic name a reference service will resolve — an exotic fused cage or a named literature intermediate — write that species as its name followed by its isomeric SMILES in backticks, for example `the photodimer — `C1=CC2(C=C1)OCCO2``. The application takes the SMILES as the structure and checks it with RDKit. Never use this fallback for a species you can name. A common salt — a hydrochloride, a sodium or potassium salt, an ammonium salt — resolves by name, so name it (for example `aniline hydrochloride`, `sodium phenoxide`) rather than using the SMILES fallback.',
   'A species attached to a solid support (a resin, in a solid-phase synthesis) has no systematic name: write it with the structure fallback, the support as one `*` at its attachment atom — the `*` stands for the resin with its linker — for example `glycine on the resin — `*OC(=O)CN``. Keep the same `*` through every step. The support is never made or consumed: a loading step lists the free support (for example `the resin — `*Cl``) under Reactants, and a cleavage step lists the released support (for example `the resin — `*O``) under Byproducts.',
@@ -110,10 +111,18 @@ const ROUTE_PROGRAM_RULES = [
   'A line beginning with # is a comment and is ignored.',
 ];
 
-/** Subject-naming rules for program mode: which FORM to write a species of a particular
- *  research domain in, appended after the generic grammar by routeProgramRules(). Empty here,
- *  as ROUTE_SPECIES_RULES carries no domain rule either; a deployment that needs one adds it. */
-export const ROUTE_PROGRAM_DOMAIN_RULES: string[] = [];
+/** The two subject-naming rules program mode needs, the counterparts of the two in
+ *  ROUTE_SPECIES_RULES. They say which FORM to write, not how to make anything work: both cases
+ *  already execute correctly (verified 2026-10-13 against the shipped transformations — a
+ *  side-chain-protected reagent and a support-bound molecule each give exactly one outcome, and
+ *  one operation can carry both at once). Every SMILES below was parsed and run before it was
+ *  written here.
+ *
+ *  Held out of upstream pull requests, as their names-first counterparts are. */
+export const ROUTE_PROGRAM_DOMAIN_RULES: string[] = [
+  'Give a protected or non-natural monomer as its SMILES, never as a shorthand or trade name: those do not resolve. Write every protecting group explicitly and keep the stereocentre — for example `M2 = apply(M1, named="amide-formation", reagents=[smiles="O=C(O)[C@H](CCCCNC(=O)OC(C)(C)C)NC(=O)OCC1c2ccccc2-c2ccccc21"])`. The application carries protecting groups through untouched: add or remove one only as its own operation, with the transformation that does it.',
+  'A species on a solid support has no name: write it as SMILES with the support as a single `*` at the attachment atom, and keep that `*` through every later operation — for example `M1 = start(smiles="*OC(=O)[C@H](C)N")`. The `*` is one atom standing for the support and is carried unchanged. Release the molecule with the transformation that cleaves it, never by deleting the `*`.',
+];
 
 /** Whether this run answers with a route program instead of names-first equations. Read
  *  defensively: these rules are assembled in the renderer as well as in the main process. */

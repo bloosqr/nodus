@@ -427,6 +427,17 @@ test('the program vocabulary stays generic, and a domain rule is appended whole'
   }
 });
 
+// Local only, and held out of upstream pull requests with the rules it checks. The test above is
+// deliberately generic — it passes on an empty hook — so with the hook filled nothing would notice
+// a rule being dropped or reworded. These are the two rules this deployment actually needs.
+test('local: both domain rules are present and say which form to write', async () => {
+  const on = await load('on', 'domain-content');
+  assert.equal(on.ROUTE_PROGRAM_DOMAIN_RULES.length, 2, 'the monomer rule and the support rule');
+  const domain = on.ROUTE_PROGRAM_DOMAIN_RULES.join(' ');
+  assert.match(domain, /as its SMILES, never as a shorthand or trade name/);
+  assert.match(domain, /a single `\*` at the attachment atom/);
+});
+
 // A program failure has to come back as a fix CHIP, not only as report prose. Before this, the
 // program report path returned the audit and nothing else, so `no fix chip in the answer` ended
 // the run at turn 0 with every fix round unspent — twice on 2026-10-14, on messages that named
