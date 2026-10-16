@@ -26,7 +26,7 @@ async function bundle(entry) {
 const { signatureReview } = await bundle("src/sign/validation.ts");
 const { SignStore } = await bundle("electron/toolkit/sign/library.ts");
 const { resolveSignPages, applyPlacementPages } = await bundle("src/sign/pages.ts");
-const { resizeSignBox, adjustSignBox } = await bundle("src/sign/geometry.ts");
+const { resizeFromHandle, SIGN_HANDLES, adjustSignBox } = await bundle("src/sign/geometry.ts");
 const { exportVisualPdf, inspectVisualPdf } = await bundle(
   "electron/toolkit/sign/visual.ts",
 );
@@ -53,13 +53,29 @@ async function pdf(pages = 1, rotation = 0) {
   return doc.save();
 }
 let signedBytes;
-test('rotated resize keeps the opposite corner fixed', () => {
+test('every handle resizes in the rotated frame and keeps the opposite side fixed', () => {
   const box={x:.3,y:.3,w:.2,h:.1}; const width=500,height=700;
-  for (const angle of [0,45,90,180,-45]) {
-    const after=resizeSignBox(box,20,15,width,height,angle);
-    const corner=b=>{ const a=angle*Math.PI/180,c=Math.cos(a),s=Math.sin(a); return [(b.x+b.w/2)*width-c*b.w*width/2+s*b.h*height/2,(b.y+b.h/2)*height-s*b.w*width/2-c*b.h*height/2]; };
-    const p=corner(box),q=corner(after);assert.ok(Math.abs(p[0]-q[0])<1e-8);assert.ok(Math.abs(p[1]-q[1])<1e-8);
+  // The point of the box at local offset (u,v), u and v in -1..1, in page pixels.
+  const at=(b,angle,u,v)=>{ const a=angle*Math.PI/180,c=Math.cos(a),s=Math.sin(a),lx=u*b.w*width/2,ly=v*b.h*height/2;
+    return [(b.x+b.w/2)*width+c*lx-s*ly,(b.y+b.h/2)*height+s*lx+c*ly]; };
+  for (const angle of [0,45,90,180,-45]) for (const handle of SIGN_HANDLES) {
+    const sx=handle.includes('e')?1:handle.includes('w')?-1:0, sy=handle.includes('s')?1:handle.includes('n')?-1:0;
+    const after=resizeFromHandle(box,handle,12,9,width,height,angle,false);
+    const p=at(box,angle,-sx,-sy),q=at(after,angle,-sx,-sy);
+    assert.ok(Math.hypot(p[0]-q[0],p[1]-q[1])<1e-8,`${handle} at ${angle}°`);
+    if(!sx) assert.equal(after.w,box.w); if(!sy) assert.equal(after.h,box.h);
   }
+  // Corners keep the proportions unless freed; growing outward grows the box.
+  const grown=resizeFromHandle(box,'se',40,5,width,height);
+  assert.ok(Math.abs(grown.w*width/(grown.h*height)-box.w*width/(box.h*height))<1e-9);
+  assert.ok(grown.w>box.w);
+  const shrunk=resizeFromHandle(box,'nw',30,30,width,height);
+  assert.ok(shrunk.w<box.w && Math.abs(shrunk.x+shrunk.w-(box.x+box.w))<1e-9 && Math.abs(shrunk.y+shrunk.h-(box.y+box.h))<1e-9);
+  // Never below the minimum or outside the page.
+  const tiny=resizeFromHandle(box,'e',-1e4,0,width,height);
+  assert.ok(tiny.w>=.04-1e-12);
+  const huge=resizeFromHandle(box,'se',1e4,1e4,width,height);
+  assert.ok(huge.x>=0 && huge.y>=0 && huge.x+huge.w<=1+1e-12 && huge.y+huge.h<=1+1e-12);
 });
 test('page selection accepts current, all and strict custom ranges', () => {
   assert.deepEqual(resolveSignPages({mode:'current', range:''},2,5),[2]);
@@ -325,6 +341,18 @@ test('multi-page real signatures preserve an earlier signature and reject invali
   for(const widgets of [[],[{page:4,box:req.box}],[{page:1,box:req.box},{page:1,box:req.box}]])
     await assert.rejects(()=>engine.run({...req,widgets}),/INVALID_SIGNATURE_PAGE/);
   await assert.rejects(()=>engine.run({...req,widgets:[{page:1,box:[20,20,10,10]}]}),/INVALID_SIGNATURE_BOX/);
+});
+test('a signature without appearance adds one valid signature and draws nothing on any page', cryptoOptions, async () => {
+  const original=Buffer.from(signedBytes);
+  const result=await engine.run({op:'sign',pdf:original.toString('base64'),certificate:path.join(temp,'test.p12'),password:'test-only',appearance,appearancePng:'',visible:false,widgets:[],page:1,box:[0,0,0,0]});
+  const bytes=Buffer.from(result.pdf,'base64');
+  assert.deepEqual(bytes.subarray(0,original.length),original);
+  assert.equal(result.inspection.signatures.length,3);
+  assert.ok(result.inspection.signatures.every(s=>s.valid && s.intact));
+  // The new field's widget is zero-sized: PDF readers list it, no page shows it.
+  const update=bytes.subarray(original.length).toString('latin1');
+  assert.match(update,/\/Rect\s*\[\s*0\s+0\s+0\s+0\s*\]/);
+  assert.doesNotMatch(update,/\/Subtype\s*\/Image/);
 });
 test(
   "tampering and expired signing are rejected, no output presented as valid",

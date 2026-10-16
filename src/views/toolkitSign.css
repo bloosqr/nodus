@@ -225,19 +225,32 @@ html.theme-active.dark :is(.sign-workspace, .sign-dialog) {
 }
 .sign-resize {
   position: absolute;
-  bottom: -5px;
-  right: -5px;
   width: 12px;
   height: 12px;
+  margin: -6px 0 0 -6px;
   background: var(--sign-accent);
   border: 2px solid white;
-  border-radius: 2px;
-  cursor: nwse-resize;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px #0002;
   display: none;
   touch-action: none;
+  z-index: 1;
 }
+.sign-resize[data-handle="n"], .sign-resize[data-handle="s"] { width: 18px; height: 8px; margin: -4px 0 0 -9px; }
+.sign-resize[data-handle="e"], .sign-resize[data-handle="w"] { width: 8px; height: 18px; margin: -9px 0 0 -4px; }
+.sign-resize[data-handle$="w"] { left: 0; }
+.sign-resize[data-handle="n"], .sign-resize[data-handle="s"] { left: 50%; }
+.sign-resize[data-handle$="e"] { left: 100%; }
+.sign-resize[data-handle^="n"] { top: 0; }
+.sign-resize[data-handle="e"], .sign-resize[data-handle="w"] { top: 50%; }
+.sign-resize[data-handle^="s"] { top: 100%; }
+.sign-resize[data-handle="nw"], .sign-resize[data-handle="se"] { cursor: nwse-resize; }
+.sign-resize[data-handle="ne"], .sign-resize[data-handle="sw"] { cursor: nesw-resize; }
+.sign-resize[data-handle="n"], .sign-resize[data-handle="s"] { cursor: ns-resize; }
+.sign-resize[data-handle="e"], .sign-resize[data-handle="w"] { cursor: ew-resize; }
 .is-selected > .sign-resize,
-.sign-crypto > .sign-resize {
+.sign-crypto > .sign-resize,
+.sign-crop[data-editing] > .sign-resize {
   display: block;
 }
 .sign-crypto {
@@ -556,6 +569,94 @@ html.theme-active.dark :is(.sign-workspace, .sign-dialog) {
     transparent 76%
   );
 }
+.sign-dialog .sign-drawing {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sign-dialog .sign-drawing[data-trackpad] canvas {
+  border-color: var(--sign-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sign-accent) 30%, transparent);
+}
+.sign-dialog .sign-drawing[data-cropping] canvas {
+  cursor: default;
+}
+/* The trackpad to scale: everything outside it is out of the finger's reach. */
+.sign-dialog .sign-trackpad-area {
+  position: absolute;
+  border: 2px solid var(--sign-accent);
+  border-radius: 12px;
+  box-shadow: 0 0 0 100vmax #17202d1f;
+  pointer-events: none;
+}
+/* What will be saved. Outside the frame is dimmed; while editing, the frame moves and resizes. */
+.sign-dialog .sign-crop {
+  position: absolute;
+  border: 1.5px dashed var(--sign-accent);
+  box-shadow: 0 0 0 100vmax #17202d2e;
+  pointer-events: none;
+}
+.sign-dialog .sign-crop[data-editing] {
+  border-style: solid;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+/* Where the finger or the locked cursor would draw. */
+.sign-dialog .sign-pen {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sign-accent);
+  pointer-events: none;
+}
+.sign-dialog .sign-pen[data-down="true"] {
+  background: var(--sign-accent);
+}
+.sign-dialog .sign-trackpad-hint {
+  margin: -8px 0 0;
+  text-align: center;
+  color: var(--sign-ink);
+}
+.sign-dialog .sign-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.sign-dialog .sign-tool {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+.sign-dialog .sign-tool[aria-pressed="true"] {
+  color: var(--sign-accent);
+  background: color-mix(in srgb, var(--sign-accent) 14%, transparent);
+}
+.sign-dialog .sign-color {
+  cursor: pointer;
+}
+.sign-dialog .sign-color input[type="color"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--sign-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.sign-dialog .sign-tool-gap {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--sign-border);
+}
 .sign-dialog .sign-row {
   font-size: 0.75rem;
 }
@@ -683,6 +784,9 @@ html.theme-active.dark :is(.sign-workspace, .sign-dialog) {
 }
 .sign-placement-controls legend,
 .sign-page-target legend { font-weight: 600; padding: 0 4px; }
+.sign-precise { display: flex; flex-direction: column; gap: 10px; }
+.sign-precise summary { cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+.sign-precise[open] summary { margin-bottom: 2px; }
 .sign-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .sign-dimensions input { width: 100%; }
 .sign-panel-content .btn { min-height: 36px; height: auto; white-space: normal; line-height: 1.4; padding-top: 8px; padding-bottom: 8px; }

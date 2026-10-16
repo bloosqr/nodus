@@ -32,6 +32,17 @@ export const toolkitApi: ToolkitApi = {
   inspectSignDocument: id => ipcRenderer.invoke('sign:document:inspect', id),
   signWithCertificate: request => ipcRenderer.invoke('sign:crypto:sign', request),
   cancelSignOperation: () => ipcRenderer.invoke('sign:operation:cancel'),
+  startSignTrackpad: async onFrame => {
+    ipcRenderer.removeAllListeners('sign:trackpad:frame');
+    ipcRenderer.on('sign:trackpad:frame', (_e, frame: Parameters<typeof onFrame>[0]) => onFrame(frame));
+    const surface = await ipcRenderer.invoke('sign:trackpad:start');
+    if (!surface) ipcRenderer.removeAllListeners('sign:trackpad:frame');
+    return surface;
+  },
+  stopSignTrackpad: async () => {
+    ipcRenderer.removeAllListeners('sign:trackpad:frame');
+    await ipcRenderer.invoke('sign:trackpad:stop');
+  },
   getBackupCatalog: ids => ipcRenderer.invoke('backups:catalog', ids),
   getBackupCatalogRecords: query => ipcRenderer.invoke('backups:records', query),
   previewOpenBackup: options => ipcRenderer.invoke('backups:preview', options),

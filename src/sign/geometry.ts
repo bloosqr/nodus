@@ -17,14 +17,35 @@ export function adjustSignBox(box: SignBox, key: keyof SignBox, value: number, p
   return next;
 }
 
-/** Resize in the annotation's rotated coordinate system, keeping its opposite corner fixed. */
-export function resizeSignBox<T extends { x: number; y: number; w: number; h: number }>(box: T, dx: number, dy: number, width: number, height: number, angle = 0): T {
+export type SignHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+export const SIGN_HANDLES: SignHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+/** Resize from any corner or edge, in the box's rotated coordinate system,
+ * keeping the opposite corner or edge fixed. Corners keep the proportions
+ * unless `proportional` is false; edges change one dimension. */
+export function resizeFromHandle<T extends SignBox>(box: T, handle: SignHandle, dx: number, dy: number, width: number, height: number,
+  angle = 0, proportional = handle.length === 2, min = { w: .04, h: .025 }): T {
+  const sx = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0;
+  const sy = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0;
   const a = angle * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
-  const w = Math.max(.04, Math.min(1, box.w + (c * dx + s * dy) / width));
-  const h = Math.max(.025, Math.min(1, box.h + (-s * dx + c * dy) / height));
-  const dw = w - box.w, dh = h - box.h;
-  return { ...box, w, h,
-    x: Math.max(0, Math.min(1 - w, box.x + (c - 1) * dw / 2 - s * dh * height / width / 2)),
-    y: Math.max(0, Math.min(1 - h, box.y + s * dw * width / height / 2 + (c - 1) * dh / 2)),
+  const lx = c * dx + s * dy, ly = -s * dx + c * dy;
+  const w0 = box.w * width, h0 = box.h * height;
+  let w = sx ? w0 + sx * lx : w0, h = sy ? h0 + sy * ly : h0;
+  if (proportional && sx && sy) {
+    const lowest = Math.max(min.w * width / w0, min.h * height / h0);
+    const highest = Math.min(width / w0, height / h0);
+    const scale = Math.max(lowest, Math.min(highest, Math.max(w / w0, h / h0)));
+    w = w0 * scale; h = h0 * scale;
+  } else {
+    w = Math.max(min.w * width, Math.min(width, w));
+    h = Math.max(min.h * height, Math.min(height, h));
+  }
+  const ox = sx * (w - w0) / 2, oy = sy * (h - h0) / 2;
+  const cx = (box.x + box.w / 2) * width + c * ox - s * oy;
+  const cy = (box.y + box.h / 2) * height + s * ox + c * oy;
+  const nw = w / width, nh = h / height;
+  return { ...box, w: nw, h: nh,
+    x: Math.max(0, Math.min(1 - nw, cx / width - nw / 2)),
+    y: Math.max(0, Math.min(1 - nh, cy / height - nh / 2)),
   };
 }

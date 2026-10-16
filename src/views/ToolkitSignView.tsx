@@ -1,6 +1,7 @@
 import { PlacementControls, PageTargetControls } from "../sign/PlacementControls";
 import { applyPlacementPages, resolveSignPages, type SignPageTarget } from "../sign/pages";
-import { resizeSignBox } from '../sign/geometry';
+import { resizeFromHandle, type SignHandle } from '../sign/geometry';
+import { ResizeHandles } from '../sign/ResizeHandles';
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
@@ -89,6 +90,8 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
   const [inspection, setInspection] = useState<SignInspection | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [showCrypto, setShowCrypto] = useState(true);
+  // A certificate signature need not draw anything: PDF readers list it in their signatures panel.
+  const [cryptoVisible, setCryptoVisible] = useState(true);
   const [visualTarget, setVisualTarget] = useState<SignPageTarget>({ mode: "current", range: "" });
   const [cryptoTarget, setCryptoTarget] = useState<SignPageTarget>({ mode: "current", range: "" });
   const cryptoPages = resolveSignPages(cryptoTarget, page, pdf?.numPages ?? 0);
@@ -145,7 +148,7 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
       live = false;
     };
   }, [profile, library.signatures, certificate, language]);
-  useEffect(() => { setAuthorized(false); }, [profile, page, cryptoTarget, cryptoBox, language]);
+  useEffect(() => { setAuthorized(false); }, [profile, page, cryptoTarget, cryptoBox, cryptoVisible, language]);
   useEffect(() => {
     setSelected(current => {
       const old = placements.find(p => p.id === current);
@@ -264,7 +267,7 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
   const drag = (
     e: PointerEvent<HTMLElement>,
     p: SignPlacement | "crypto",
-    resize = false,
+    handle?: SignHandle,
   ) => {
     if (preview || busy) return;
     setAuthorized(false);
@@ -280,8 +283,10 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
     const move = (event: globalThis.PointerEvent) => {
       const dx = (event.clientX - origin.clientX) / paper.width,
         dy = (event.clientY - origin.clientY) / paper.height;
-      const next = resize
-        ? resizeSignBox(start, event.clientX-origin.clientX, event.clientY-origin.clientY, paper.width, paper.height, p === "crypto" ? 0 : p.angle)
+      // Corners keep the signature's proportions; Shift frees them.
+      const next = handle
+        ? resizeFromHandle(start, handle, event.clientX - origin.clientX, event.clientY - origin.clientY, paper.width, paper.height,
+            p === "crypto" ? 0 : p.angle, handle.length === 2 && !event.shiftKey)
         : {
             ...start,
             x: Math.max(0, Math.min(1 - start.w, start.x + dx)),
@@ -341,8 +346,8 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
         throw new Error("Confirma la operación antes de firmar.");
       let doc = source;
       if (placements.length) doc = await prepare();
-      if (!cryptoPages.length) throw new Error("Indica páginas válidas, por ejemplo: 1, 3-5.");
-      const widgets = await Promise.all(cryptoPages.map(async (n) => {
+      if (cryptoVisible && !cryptoPages.length) throw new Error("Indica páginas válidas, por ejemplo: 1, 3-5.");
+      const widgets = !cryptoVisible ? [] : await Promise.all(cryptoPages.map(async (n) => {
         const p = await pdf.getPage(n);
         const viewport = p.getViewport({ scale: 1 });
         const a = viewport.convertToPdfPoint(cryptoBox.x * viewport.width, cryptoBox.y * viewport.height);
@@ -357,10 +362,11 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
         certificateToken: certFile.token,
         password: secret,
         appearance: profile,
-        page: widgets[0].page,
-        box: widgets[0].box,
+        page: widgets[0]?.page ?? 1,
+        box: widgets[0]?.box ?? [0, 0, 0, 0],
         widgets,
-        appearancePng: appearance,
+        visible: cryptoVisible,
+        appearancePng: cryptoVisible ? appearance : "",
         confirmed: true,
       });
       await load(copy);
@@ -637,16 +643,10 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       }}
                     >
                       <img src={p.png} draggable={false} alt="" />
-                      <span
-                        className="sign-resize"
-                        role="button"
-                        tabIndex={-1}
-                        aria-label={t("Redimensionar firma")}
-                        onPointerDown={(e) => drag(e, p, true)}
-                      />
+                      <ResizeHandles onPointerDown={(e, handle) => drag(e, p, handle)} />
                     </div>
                   ))}
-                {mode === "certificate" && appearance && showCrypto && cryptoPages.includes(page) && (
+                {mode === "certificate" && appearance && showCrypto && cryptoVisible && cryptoPages.includes(page) && (
                   <div
                     role="button"
                     tabIndex={0}
@@ -675,12 +675,7 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       draggable={false}
                       alt={t("Apariencia de la firma")}
                     />
-                    <span
-                      className="sign-resize"
-                      role="button"
-                      aria-label={t("Redimensionar firma")}
-                      onPointerDown={(e) => drag(e, "crypto", true)}
-                    />
+                    <ResizeHandles onPointerDown={(e, handle) => drag(e, "crypto", handle)} />
                   </div>
                 )}
               </div>
@@ -1101,7 +1096,24 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       {t("Preparar otra firma")}
                     </button>
                   )}
-                  <h3>{t("Apariencia y perfiles")}</h3>
+                  <label className="sign-check">
+                    <input
+                      type="checkbox"
+                      data-testid="sign-crypto-visible"
+                      checked={cryptoVisible}
+                      disabled={busy || !showCrypto}
+                      onChange={(e) => setCryptoVisible(e.target.checked)}
+                    />
+                    {t("Mostrar la firma en el documento")}
+                  </label>
+                  {!cryptoVisible && (
+                    <p className="sign-multipage-note">
+                      {t(
+                        "La firma se incorpora al PDF sin ninguna marca en las páginas. Los lectores de PDF la muestran en su panel de firmas.",
+                      )}
+                    </p>
+                  )}
+                  <h3>{t(cryptoVisible ? "Apariencia y perfiles" : "Datos de la firma")}</h3>
                   <select
                     aria-label={t("Perfil de apariencia")}
                     value={profile.id}
@@ -1130,16 +1142,16 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       }
                     />
                   </label>
-                  {(["signer", "reason", "location", "text"] as const).map(
-                    (key, i) => (
+                  {(cryptoVisible ? (["signer", "reason", "location", "text"] as const) : (["reason", "location"] as const)).map(
+                    (key) => (
                       <label key={key}>
                         {t(
-                          [
-                            "Nombre visible",
-                            "Motivo",
-                            "Ubicación",
-                            "Texto personalizado",
-                          ][i],
+                          {
+                            signer: "Nombre visible",
+                            reason: "Motivo",
+                            location: "Ubicación",
+                            text: "Texto personalizado",
+                          }[key],
                         )}
                         <input
                           value={profile[key]}
@@ -1155,6 +1167,7 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       </label>
                     ),
                   )}
+                  {cryptoVisible && (<>
                   <div className="sign-row">
                     <label>
                       {t("Familia tipográfica")}
@@ -1237,6 +1250,7 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       ))}
                     </select>
                   </label>
+                  </>)}
                   <div className="sign-row">
                     <button
                       className="btn btn-secondary"
@@ -1275,9 +1289,9 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                       </button>
                     )}
                   </div>
-                  <PlacementControls box={cryptoBox} onChange={changeCryptoBox} disabled={busy || preview || !showCrypto} />
-                  <PageTargetControls target={cryptoTarget} onChange={target => { setCryptoTarget(target); setAuthorized(false); }} page={page} count={pdf?.numPages ?? 0} disabled={busy || !showCrypto} />
-                  {cryptoPages.length > 1 && <p className="sign-multipage-note">{t("Se aplicará una firma criptográfica por página seleccionada, conservando las anteriores mediante actualizaciones incrementales.")}</p>}
+                  {cryptoVisible && <PlacementControls box={cryptoBox} onChange={changeCryptoBox} disabled={busy || preview || !showCrypto} />}
+                  {cryptoVisible && <PageTargetControls target={cryptoTarget} onChange={target => { setCryptoTarget(target); setAuthorized(false); }} page={page} count={pdf?.numPages ?? 0} disabled={busy || !showCrypto} />}
+                  {cryptoVisible && cryptoPages.length > 1 && <p className="sign-multipage-note">{t("Se aplicará una firma criptográfica por página seleccionada, conservando las anteriores mediante actualizaciones incrementales.")}</p>}
                   <label className="sign-check">
                     <input
                       type="checkbox"
@@ -1294,7 +1308,7 @@ export function ToolkitSignView({ onBack }: { onBack: () => void }) {
                     data-testid="sign-crypto-submit"
                     disabled={
                       !authorized ||
-                      !cryptoPages.length ||
+                      (cryptoVisible && !cryptoPages.length) ||
                       !showCrypto ||
                       !certificate?.usable ||
                       !source ||
