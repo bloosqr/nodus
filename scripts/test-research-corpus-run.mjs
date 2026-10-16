@@ -167,6 +167,45 @@ try {
   assert.deepEqual([nothing.result.ideas, nothing.result.passages], [[], []], 'with every layer off nothing is read');
   assert.equal(nothing.layersRead.size, 0, 'with every layer off no activity layer runs');
   assert.equal(nothing.embeds + nothing.sharedReads, 0, 'with every layer off no provider or store is called');
+  // Indexed texts only: one search of the passage index, nothing derived from it and no agent.
+  {
+    const sourceScope = load('electron/ai/researchSourceScope.ts');
+    const coordinator = load('electron/ai/researchActionCoordinator.ts');
+    const realQuotes = sourceScope.scopedIdeaEvidencePassages;
+    const realDeepen = coordinator.deepenResearch;
+    let quoteReads = 0; let deepened = 0; const sharedRounds = [];
+    sourceScope.scopedIdeaEvidencePassages = (...args) => { quoteReads++; return realQuotes(...args); };
+    coordinator.deepenResearch = async () => { deepened++; };
+    const sharedBudgets = [];
+    const instrument = () => { preparation.retrieveSharedDocumentaryEvidence = async (requested, query, settings, ...rest) => { sharedRounds.push(settings.rounds); sharedBudgets.push(settings.evidenceTokens); return realShared(requested, query, settings, ...rest); }; };
+    try {
+      const indexed = await layered({ ideas: false, documents: true, indexedOnly: true });
+      assert.ok(indexed.result.passages.length > 0, 'indexed texts only reads the passages of the index');
+      assert.match(indexed.result.passages[0].summary, /measure inside evidence/, 'the passage is the indexed text itself');
+      assert.deepEqual([indexed.result.ideas, indexed.result.themes, indexed.result.gaps, indexed.result.contradictions], [[], [], [], []], 'indexed texts only reads no idea and no graph');
+      for (const layer of ['ideas', 'profiles', 'graph', 'context']) assert.ok(!indexed.layersRead.has(layer), `indexed texts only does not consult ${layer}`);
+      assert.ok(indexed.layersRead.has('nodus'), 'the passage index is searched');
+      assert.equal(quoteReads, 0, 'the quotes of analysed ideas are not read as indexed text');
+      assert.equal(indexed.sharedReads, 1, 'the documentary index is searched once');
+      // As Research Chat runs it: an agent with a plan of several queries, which this mode ignores.
+      const chatRun = new ResearchCorpusRun(scope, RETRIEVAL_PRESETS.balanced);
+      chatRun.layers = { ideas: false, documents: true, indexedOnly: true };
+      chatRun.agent = { plan: { goal: 'measure', queries: ['measure', 'other words', 'third query'], authors: [], titles: [], explicitLibrary: false, kind: 'other', needsSources: true, planned: true }, question: 'measure', compact: false, minSources: 2 };
+      instrument();
+      await chatRun.investigate('measure');
+      assert.deepEqual(sharedRounds, [1], 'one search, with the message only, not the plan’s queries, and without widening to neighbours');
+      assert.equal(sharedBudgets[0], chatRun.budget.evidenceTokenLimit, 'with no supervisor to leave room for, the search may spend the whole evidence budget');
+      assert.equal(chatRun.traversal.length, 1);
+      assert.equal(deepened, 0, 'the supervisor never runs');
+      assert.ok(chatRun.evidence.size > 0);
+      chatRun.layers = { ideas: false, documents: true };
+      await chatRun.investigate('measure');
+      assert.equal(deepened, 1, 'with the documents layer the supervisor still runs');
+    } finally {
+      sourceScope.scopedIdeaEvidencePassages = realQuotes;
+      coordinator.deepenResearch = realDeepen;
+    }
+  }
   preparation.retrieveSharedDocumentaryEvidence = realShared;
   const { researchContextLayers, withResearchContextLayers } = load('shared/researchContextLayers.ts');
   const legacySelection = { ideas: false, themes: true, contradictions: false, gaps: false, readingPath: false, authors: false, graph: false, documents: false, passages: false };
@@ -175,6 +214,15 @@ try {
   const chosen = withResearchContextLayers(legacySelection, { ideas: false, documents: true });
   assert.deepEqual(researchContextLayers(chosen, true), { ideas: false, documents: true });
   assert.equal(chosen.themes || chosen.graph || chosen.graphParts.ideaEdges, false, 'the sections follow the chosen layers');
+  const both = withResearchContextLayers(legacySelection, { ideas: true, documents: true });
+  const indexedSelection = withResearchContextLayers(both, { ...both.layers, indexedOnly: true });
+  assert.deepEqual(researchContextLayers(indexedSelection, true), { ideas: false, documents: true, indexedOnly: true }, 'indexed texts only reads the documents and no ideas');
+  assert.deepEqual(indexedSelection.layers, { ideas: true, documents: true, indexedOnly: true }, 'the choice it replaces is kept');
+  assert.equal(indexedSelection.ideas || indexedSelection.themes || indexedSelection.graph || indexedSelection.documents, false, 'its sections are the passages alone');
+  assert.equal(indexedSelection.passages, true);
+  const restored = withResearchContextLayers(indexedSelection, { ...indexedSelection.layers, indexedOnly: false });
+  assert.deepEqual(researchContextLayers(restored, true), { ideas: true, documents: true }, 'switching it off gives the previous layers back');
+  assert.equal(restored.layers.indexedOnly, undefined);
 
   const conversation = load('electron/db/chatRepo.ts').createConversation({ title: 'Scoped history' });
   const request = { conversationId: conversation.id, selection: { notebookId: notebook.id }, messages: [{ role: 'user', content: 'measure?' }] };

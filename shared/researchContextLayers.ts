@@ -8,8 +8,10 @@ import type { ResearchContextLayers, ResearchContextSelection } from './types';
  */
 
 /** The layers a selection chooses. One saved before layers existed is read from its
- * sections; in an academic vault its documents were always read, so they stay on. */
+ * sections; in an academic vault its documents were always read, so they stay on.
+ * Indexed texts only reads the passages of the documents and nothing of the ideas. */
 export function researchContextLayers(selection: ResearchContextSelection, academic = false): ResearchContextLayers {
+  if (selection.layers?.indexedOnly) return { ideas: false, documents: true, indexedOnly: true };
   if (selection.layers) return { ideas: !!selection.layers.ideas, documents: !!selection.layers.documents };
   return {
     ideas: selection.ideas || selection.themes || selection.contradictions || selection.gaps || selection.readingPath || selection.authors || selection.graph,
@@ -17,16 +19,19 @@ export function researchContextLayers(selection: ResearchContextSelection, acade
   };
 }
 
-/** A selection choosing exactly these layers, with its sections set to match. */
+/** A selection choosing exactly these layers, with its sections set to match. With indexed
+ * texts only, the sections are its own (the passages, nothing else) and the layers keep the
+ * choice it replaces, so switching it off gives that choice back. */
 export function withResearchContextLayers(selection: ResearchContextSelection, layers: ResearchContextLayers): ResearchContextSelection {
-  const ideas = !!layers.ideas;
-  const documents = !!layers.documents;
+  const indexedOnly = !!layers.indexedOnly;
+  const ideas = !indexedOnly && !!layers.ideas;
+  const documents = !indexedOnly && !!layers.documents;
   return {
     ...selection,
-    layers: { ideas, documents },
+    layers: { ideas: !!layers.ideas, documents: !!layers.documents, ...(indexedOnly ? { indexedOnly } : {}) },
     ideas, themes: ideas, contradictions: ideas, gaps: ideas, readingPath: ideas, authors: ideas, graph: ideas,
     graphParts: { ideaNodes: ideas, themeNodes: ideas, ideaEdges: ideas, authorGraph: ideas },
-    documents, passages: documents,
+    documents, passages: indexedOnly || documents,
   };
 }
 

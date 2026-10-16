@@ -369,7 +369,10 @@ export function ResearchAssistantModal({
   // What the balloon offers: the corpus layers and the web. A selection saved before layers
   // existed is read from its sections, as the backend reads it.
   const contextLayers = useMemo(() => researchContextLayers(selection, isAcademic), [selection, isAcademic]);
-  const selectedCount = Number(contextLayers.ideas) + Number(contextLayers.documents) + Number(webSearch !== 'off');
+  // Indexed texts only replaces the other layers and the web: it is the one thing consulted.
+  const indexedOnly = !!contextLayers.indexedOnly;
+  const turnWebSearch: ResearchWebSearchMode = indexedOnly ? 'off' : webSearch;
+  const selectedCount = indexedOnly ? 1 : Number(contextLayers.ideas) + Number(contextLayers.documents) + Number(webSearch !== 'off');
   const sourceFilterOn = !!selection.sourceFilter?.enabled && !selection.notebookId;
   // The works the Library tab authorizes, counted for the Focus tab's summary while it is open.
   const [contextSources, setContextSources] = useState<ResearchContextSources | null>(null);
@@ -388,6 +391,9 @@ export function ResearchAssistantModal({
 
   const setContextLayer = (layer: (typeof CONTEXT_LAYERS)[number]['id'], on: boolean) =>
     setSelection(current => withResearchContextLayers(current, { ...researchContextLayers(current, isAcademic), [layer]: on }));
+  // Switching indexed texts off gives back the layers chosen before it, which the selection keeps.
+  const setIndexedOnly = (on: boolean) =>
+    setSelection(current => withResearchContextLayers(current, { ...(current.layers ?? researchContextLayers(current, isAcademic)), indexedOnly: on }));
 
   const startNewConversation = () => {
     if (attachmentBusyRef.current) return;
@@ -694,7 +700,7 @@ export function ResearchAssistantModal({
     try {
       await persist(conversationId, [...priorMessages, userMessage], false);
       const response = await api.researchChatStream(
-        { attachmentIds: [...new Set([...priorMessages, userMessage].flatMap(message => message.attachments?.map(file => file.id) ?? []))], messages: requestMessages, selection, model: selectedModel, conversationId, thinkingEffort, ...(!adapter ? { webSearch } : {}), systemPromptId: systemPrompts.selectedId, concilium: !adapter ? concilium ?? undefined : undefined, ...(skillsEnabled && skills.length ? { skillIds: skills.map(skill => skill.id) } : {}) },
+        { attachmentIds: [...new Set([...priorMessages, userMessage].flatMap(message => message.attachments?.map(file => file.id) ?? []))], messages: requestMessages, selection, model: selectedModel, conversationId, thinkingEffort, ...(!adapter ? { webSearch: turnWebSearch } : {}), systemPromptId: systemPrompts.selectedId, concilium: !adapter ? concilium ?? undefined : undefined, ...(skillsEnabled && skills.length ? { skillIds: skills.map(skill => skill.id) } : {}) },
         {
           // A terminal event may arrive after the turn settled (it travels on another IPC pipe
           // than the reply); it then replaces the placeholder the settlement wrote.
@@ -1094,7 +1100,7 @@ export function ResearchAssistantModal({
           }} />}
             {simpleInterface && <ResearchEffortControl model={selectedModel} value={thinkingEffort} onChange={setThinkingEffort} disabled={sending} />}
           </AcademicSecondary>
-          {simpleInterface && <span className="research-simple-context text-xs text-neutral-500" title={authorizedSourcesSummary}>{[contextLayers.ideas ? t('Ideas') : null, contextLayers.documents ? t('Documentos') : null, webSearch !== 'off' ? t('Búsqueda web') : null].filter(Boolean).join(' · ')}</span>}
+          {simpleInterface && <span className="research-simple-context text-xs text-neutral-500" title={authorizedSourcesSummary}>{indexedOnly ? t('Textos indexados') : [contextLayers.ideas ? t('Ideas') : null, contextLayers.documents ? t('Documentos') : null, webSearch !== 'off' ? t('Búsqueda web') : null].filter(Boolean).join(' · ')}</span>}
 
 
           </div>
@@ -1163,7 +1169,7 @@ export function ResearchAssistantModal({
               <button type="button" className="btn btn-ghost text-xs" onClick={() => setEditingProjectInstructions(activeProject)}><Icon name="brain" size={14} />{t('Instrucciones del proyecto')}</button>
             </header>}
             <div className="relative flex-1 min-h-0">
-              {!adapter && !isGenealogy && activityRun?.conversationId === activeId && <ResearchActivityPanel key={activityRun.turnId} activities={activityRun.activities} outcome={activityRun.outcome} webDisabled={webSearch === 'off'} disabledLayers={[...(contextLayers.ideas ? [] : ['ideas', 'graph'] as const), ...(contextLayers.documents ? [] : ['profiles', 'nodus', 'zotero', 'context'] as const)]} />}
+              {!adapter && !isGenealogy && activityRun?.conversationId === activeId && <ResearchActivityPanel key={activityRun.turnId} activities={activityRun.activities} outcome={activityRun.outcome} webDisabled={turnWebSearch === 'off'} disabledLayers={[...(contextLayers.ideas ? [] : ['ideas', 'graph'] as const), ...(!contextLayers.documents ? ['profiles', 'nodus', 'zotero', 'context'] as const : indexedOnly ? ['profiles', 'zotero', 'context'] as const : [])]} />}
               <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3">
                 {conversationNotice && (
                   <div role="status" className="mx-auto max-w-xl rounded-lg border border-amber-800/70 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
@@ -1381,7 +1387,7 @@ export function ResearchAssistantModal({
                     }
                   }}
                 />
-                {!adapter && !isGenealogy && <ResearchWebSearchControl value={webSearch} onChange={setWebSearch} disabled={sending} />}
+                {!adapter && !isGenealogy && <ResearchWebSearchControl value={turnWebSearch} onChange={setWebSearch} disabled={sending || indexedOnly} />}
                 {!simpleInterface && <ResearchEffortControl model={selectedModel} value={thinkingEffort} onChange={setThinkingEffort} disabled={sending} />}
                 {sending ? (
                   <button
@@ -1456,10 +1462,13 @@ export function ResearchAssistantModal({
           <div className="context-tab-scroll">
             <p className="research-context-intro">{t('Elige qué consulta el asistente antes de responder.')}</p>
             <div className="research-context-layers" data-testid="research-context-layers">
+              <ContextLayerSwitch testId="research-context-layer-indexed" icon="fileText" label={t('Textos indexados')}
+                description={t('Solo pasajes del texto indexado, recuperados por búsqueda. Sin ideas, perfiles, agente ni web.')} checked={indexedOnly} disabled={sending}
+                onChange={setIndexedOnly} />
               {CONTEXT_LAYERS.map(layer => <ContextLayerSwitch key={layer.id} testId={`research-context-layer-${layer.id}`} icon={layer.icon} label={t(layer.label)}
-                description={t(layer.description)} checked={contextLayers[layer.id]} disabled={sending} onChange={on => setContextLayer(layer.id, on)} />)}
+                description={t(layer.description)} checked={!indexedOnly && contextLayers[layer.id]} disabled={sending || indexedOnly} onChange={on => setContextLayer(layer.id, on)} />)}
               <ContextLayerSwitch testId="research-context-layer-web" icon="globe" label={t('Búsqueda web')}
-                description={t('Páginas públicas de Internet, cuando la biblioteca no basta o se lo pides.')} checked={webSearch !== 'off'} disabled={sending}
+                description={t('Páginas públicas de Internet, cuando la biblioteca no basta o se lo pides.')} checked={turnWebSearch !== 'off'} disabled={sending || indexedOnly}
                 onChange={on => setWebSearch(on ? 'auto' : 'off')} />
             </div>
             {selection.notebookId ? <div className="research-context-sources" data-testid="research-context-sources">

@@ -26,7 +26,9 @@ try {
     // Layers replace the modes and the per-section checkboxes.
     for (const gone of ['Síntesis', 'Huecos', 'Ideas generadas', 'Grafo de autores', 'Todo', 'Nada']) assert.equal(await panel.getByText(gone, { exact: true }).count(), 0, `${gone} is no longer offered`);
     assert.equal(await panel.locator('input[type=checkbox]').count(), 0);
-    assert.deepEqual(await panel.getByRole('switch').evaluateAll(items => items.map(item => [item.textContent.split(/(?=[A-ZÁÉÍÓÚ][a-záéíóú]+ )/)[0].trim(), item.getAttribute('aria-checked')])).then(rows => rows.map(([, on]) => on)), ['true', 'true', 'true']);
+    assert.deepEqual(await panel.getByRole('switch').evaluateAll(items => items.map(item => [item.textContent.split(/(?=[A-ZÁÉÍÓÚ][a-záéíóú]+ )/)[0].trim(), item.getAttribute('aria-checked')])).then(rows => rows.map(([, on]) => on)), ['false', 'true', 'true', 'true']);
+    assert.match(await layer('indexed').innerText(), /^Textos indexados\n/);
+    assert.ok(await layer('indexed').evaluate((element, ideas) => element.compareDocumentPosition(ideas) & Node.DOCUMENT_POSITION_FOLLOWING, await layer('ideas').elementHandle()), 'indexed texts sits above Ideas');
     assert.match(await layer('ideas').innerText(), /^Ideas\n/);
     assert.match(await layer('documents').innerText(), /^Documentos\n.*Zotero/s);
     assert.match(await layer('web').innerText(), /^Búsqueda web\n/);
@@ -84,6 +86,43 @@ try {
     assert.equal(empty.webSearch, 'off');
     for (const off of ['ideas', 'graph', 'nodus', 'web']) assert.equal(await activity.locator(`li[data-layer="${off}"][data-off]`).count(), 1, `${off} reads as switched off`);
 
+    // Indexed texts only: the one thing consulted. The other switches turn off and lock, the
+    // turn asks for the passage index alone and no web, and switching it off gives them back.
+    await trigger.click();
+    await layer('ideas').click();
+    await layer('documents').click();
+    const updatesBefore = await page.evaluate(() => window.updates.length);
+    await layer('indexed').click();
+    assert.equal(await layer('indexed').getAttribute('aria-checked'), 'true');
+    assert.equal(await count(), '1');
+    for (const id of ['ideas', 'documents', 'web']) {
+      assert.equal(await layer(id).getAttribute('aria-checked'), 'false', `${id} reads as off`);
+      assert.equal(await layer(id).isDisabled(), true, `${id} is locked while indexed texts only is on`);
+    }
+    assert.equal(await page.getByTestId('research-web-toggle').isDisabled(), true, 'the composer’s web button is locked too');
+    assert.equal(await panel.getByTestId('research-context-empty').count(), 0, 'indexed texts is a source');
+    await page.waitForTimeout(300); // the switches' colour transition
+    await page.screenshot({ path: `${output}/context-layers-indexed-${theme}.png` });
+    await panel.getByRole('button', { name: 'Listo', exact: true }).click();
+    await page.evaluate(() => { window.activityScript = [{ id: 'nodus', layer: 'nodus', operation: 'search', status: 'completed', count: 6 }]; });
+    await input.fill(`Textos indexados ${theme}`);
+    await input.press('Enter');
+    await page.waitForFunction(text => window.requests.at(-1)?.messages.at(-1)?.content === text, `Textos indexados ${theme}`);
+    const indexed = await page.evaluate(() => window.requests.at(-1));
+    assert.deepEqual(indexed.selection.layers, { ideas: true, documents: true, indexedOnly: true });
+    assert.equal(indexed.selection.passages, true);
+    assert.equal(indexed.selection.ideas || indexed.selection.documents || indexed.selection.graph, false, 'its sections are the passages alone');
+    assert.equal(indexed.webSearch, 'off');
+    for (const off of ['ideas', 'graph', 'profiles', 'zotero', 'context', 'web']) assert.equal(await activity.locator(`li[data-layer="${off}"][data-off]`).count(), 1, `${off} reads as switched off`);
+    assert.equal(await activity.locator('li[data-layer="nodus"][data-off]').count(), 0, 'the passage index is the layer that runs');
+    await trigger.click();
+    await layer('indexed').click();
+    assert.equal(await count(), '2', 'switching it off gives the previous layers back');
+    for (const id of ['ideas', 'documents']) assert.equal(await layer(id).getAttribute('aria-checked'), 'true');
+    assert.equal(await layer('web').getAttribute('aria-checked'), 'false', 'the web keeps its own setting');
+    assert.equal(await page.evaluate(() => window.updates.length), updatesBefore, 'the mode never changes the saved web setting');
+    await panel.getByRole('button', { name: 'Listo', exact: true }).click();
+
     // The authorized sources row opens the Library tab.
     await trigger.click();
     await panel.getByTestId('research-context-sources').click();
@@ -92,5 +131,5 @@ try {
     await page.keyboard.press('Escape');
   }
   assert.deepEqual(errors, []);
-  console.log('Context layers: three switches in place of modes and sections, keyboard toggling, the request carries the chosen layers, the web switch shares the composer setting, the no-sources note, the authorized-sources row and a compact activity balloon that marks switched-off layers, in light and dark. No paid calls.');
+  console.log('Context layers: indexed texts only above three switches in place of modes and sections, keyboard toggling, the request carries the chosen layers, the web switch shares the composer setting, the no-sources note, the authorized-sources row and a compact activity balloon that marks switched-off layers, in light and dark. No paid calls.');
 } finally { await browser.close(); }
