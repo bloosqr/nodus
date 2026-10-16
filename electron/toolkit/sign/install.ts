@@ -13,12 +13,20 @@ const run = promisify(execFile);
 const pythonAt = (root: string) => path.join(root, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 const basePythonAt = (root: string) => path.join(root, 'python', process.platform === 'win32' ? 'python.exe' : 'bin/python3');
 
-/** Optional, app-private installation. Uses Nodus' bundled Python first, never
- * modifies a system interpreter, and publishes only after a real engine check. */
+/** Optional, app-private installation. Never modifies a system interpreter and
+ * publishes only after a real engine check.
+ *
+ * The bundled Python is the base only outside macOS. There it is signed with
+ * Nodus' team ID under the hardened runtime, so library validation refuses every
+ * native wheel pip downloads (cryptography, lxml, Pillow…) and the engine check
+ * fails with ImportError. macOS starts from a supported system Python or the
+ * pinned standalone download instead; Intel Macs always take the download,
+ * because they reuse the bundled cryptography build made for that exact Python. */
 export class SignInstaller {
   private controller: AbortController | null = null;
   constructor(readonly root: string, readonly assets: string, readonly bundledRuntime: string,
-    private findPython = () => findSystemPython('3.12')) {}
+    private findPython = () => findSystemPython('3.12'),
+    private host: { platform: NodeJS.Platform; arch: string } = { platform: process.platform, arch: process.arch }) {}
   cancel() { this.controller?.abort(); }
   async install(progress: (event: SignInstallProgress) => void): Promise<string> {
     if (this.controller) throw new Error('SIGN_INSTALL_BUSY');
@@ -40,10 +48,14 @@ export class SignInstaller {
         try { await verify(previous.python); progress({ phase: 'ready', fraction: 1 }); return previous.python; } catch { /* repair */ }
       }
       signal.throwIfAborted();
-      let base = basePythonAt(this.bundledRuntime);
-      let bundled = true;
-      try { await fs.access(base); } catch {
-        bundled = false;
+      const mac = this.host.platform === 'darwin';
+      const intelMac = mac && this.host.arch === 'x64';
+      let base = '';
+      if (!mac) {
+        const bundled = basePythonAt(this.bundledRuntime);
+        try { await fs.access(bundled); base = bundled; } catch { /* no bundled runtime */ }
+      }
+      if (!base && !intelMac) {
         const system = await this.findPython();
         base = system && /^3\.(12|13|14)\./.test(system.version) ? system.path : '';
       }
@@ -53,11 +65,11 @@ export class SignInstaller {
       await run(base, ['-I', '-m', 'venv', staging], { signal, timeout: 300_000, windowsHide: true });
       const python = pythonAt(staging);
       let requirements = lock;
-      if (process.platform === 'darwin' && process.arch === 'x64') {
+      if (intelMac) {
         // Upstream cryptography no longer publishes Intel Mac wheels. Nodus
         // already ships a hash-verified native build for its bundled Python.
-        if (!bundled) throw new Error('SIGN_INSTALL_BUNDLED_RUNTIME_REQUIRED');
         const dependencies = path.join(this.bundledRuntime, 'dependencies');
+        try { await fs.access(dependencies); } catch { throw new Error('SIGN_INSTALL_BUNDLED_RUNTIME_REQUIRED'); }
         const { stdout } = await run(python, ['-I', '-c', 'import sysconfig;print(sysconfig.get_path("purelib"))'], { signal });
         await fs.writeFile(path.join(stdout.trim(), 'nodus-native.pth'), `${dependencies}\n`, { mode: 0o600 });
         const { stdout: version } = await run(python, ['-I', '-c', 'import cryptography;print(cryptography.__version__)'], { signal });
