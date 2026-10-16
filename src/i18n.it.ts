@@ -1,5 +1,6 @@
 import { SIGN_TRANSLATIONS } from './i18n.sign';
 import { CHAT_ORGANIZATION_HELP_TRANSLATIONS } from './i18n.chatOrganizationHelp';
+import { RESEARCH_CHAT_SELECTION_TRANSLATIONS } from './i18n.researchChatSelection';
 import { ACADEMIC_INTERFACE_TRANSLATIONS } from './i18n.academicInterface';
 import { BACKUPS_TRANSLATIONS } from './i18n.backups';
 import { SCRIPTOR_AI_TRANSLATIONS } from './i18n.scriptorAi';
@@ -8336,6 +8337,7 @@ export const IT: Record<string, string> = {
   "Detener dictado": "Ferma dettatura",
   ...ACADEMIC_INTERFACE_TRANSLATIONS["it"],
   ...CHAT_ORGANIZATION_HELP_TRANSLATIONS["it"],
+  ...RESEARCH_CHAT_SELECTION_TRANSLATIONS["it"],
 };
 
 Object.assign(IT, SIGN_TRANSLATIONS['it']);
