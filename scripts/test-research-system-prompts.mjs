@@ -70,6 +70,38 @@ try {
   await load('electron/ai/researchAssistant.ts').streamResearchChat({ ...request, selection: layeredSelection({ ideas: true, documents: false }) }, () => {});
   assert.match(JSON.stringify(captured[0]), /switched off every source.*general knowledge/, 'with every layer off the model is told to answer from general knowledge and say so');
   assert.doesNotMatch(JSON.stringify(captured[1]), /switched off every source/, 'a single layer left on is not a general-knowledge answer');
+  // Indexed texts only: no planner call, the answer is bound to the retrieved passages.
+  {
+    const planner = load('electron/ai/researchTurnPlanner.ts');
+    const realPlan = planner.planResearchTurn;
+    let plans = 0;
+    planner.planResearchTurn = async (...args) => { plans++; return realPlan(...args); };
+    try {
+      captured.length = 0;
+      const indexedSelection = layeredSelection({ ideas: true, documents: true, indexedOnly: true });
+      await load('electron/ai/researchAssistant.ts').streamResearchChat({ ...request, webSearch: 'auto', selection: indexedSelection }, () => {});
+      const sent = captured.at(-1);
+      assert.match(sent.system, /Indexed texts only: answer exclusively from the retrieved passages/, 'the system prompt binds the answer to the passages');
+      assert.match(JSON.stringify(sent), /chose indexed texts only/, 'the context tells the model what was searched');
+      assert.doesNotMatch(JSON.stringify(sent), /research_log|switched off every source/, 'no agent log and not a general-knowledge answer');
+      const context = JSON.parse(sent.user).contexto_modular_seleccionado;
+      assert.deepEqual([context.ideas_generadas ?? [], context.temas_principales ?? [], context.huecos ?? [], context.contradicciones ?? []], [[], [], [], []], 'no ideas and no graph');
+      assert.equal(context.orientacion_documental, undefined, 'no document profiles');
+      assert.equal(context.pasajes_web, undefined, 'no web, even with the web step left on');
+      assert.equal(plans, 0, 'the turn planner is never asked');
+      captured.length = 0;
+      await load('electron/ai/researchAssistant.ts').streamResearchChat({ ...request, selection: layeredSelection({ ideas: true, documents: true }) }, () => {});
+      assert.doesNotMatch(captured.at(-1).system, /Indexed texts only/, 'the rule belongs to the mode alone');
+      assert.ok(plans > 0, 'outside the mode the turn is planned, so the count above is a real absence');
+      const { indexedTextsQuery } = load('electron/ai/researchAssistant.ts');
+      const first = 'define libro de viaje vs relato de viaje vs literatura de viaje';
+      assert.equal(indexedTextsQuery([{ role: 'user', content: first }]), first, 'a first message is searched as it is');
+      assert.equal(indexedTextsQuery([{ role: 'user', content: first }, { role: 'assistant', content: 'Respuesta.' }, { role: 'user', content: '¿y qué más dice sobre eso?' }]),
+        `${first}\n¿y qué más dice sobre eso?`, 'a short follow-up searches the topic it continues');
+      const standalone = 'Compara cómo definen el relato de viaje los estudios hispánicos de los años noventa frente a los publicados después de dos mil diez';
+      assert.equal(indexedTextsQuery([{ role: 'user', content: first }, { role: 'assistant', content: 'Respuesta.' }, { role: 'user', content: standalone }]), standalone, 'a full new question is searched on its own');
+    } finally { planner.planResearchTurn = realPlan; }
+  }
   load('electron/db/database.ts').closeDb();
   const vaults =load('electron/vaults/vaultRegistry.ts');
   const previousVault = vaults.getActiveVault().id;

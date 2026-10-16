@@ -336,6 +336,22 @@ const contextLayerTranslations: Record<string, string[]> = {
     'ソースなし：アシスタントは一般的な知識で回答し、その旨を回答で伝えます。'],
 };
 for (const [language, values] of Object.entries(contextLayerTranslations)) translations[language].push(...values);
+// The Focus tab's indexed-texts mode: the passage index alone, as NotebookLM works.
+keys.push('Textos indexados', 'Solo pasajes del texto indexado, recuperados por búsqueda. Sin ideas, perfiles, agente ni web.');
+const indexedTextsTranslations: Record<string, string[]> = {
+  en: ['Indexed texts', 'Only passages of the indexed text, found by search. No ideas, profiles, agent or web.'],
+  fr: ['Textes indexés', 'Uniquement des passages du texte indexé, trouvés par recherche. Sans idées, profils, agent ni web.'],
+  de: ['Indexierte Texte', 'Nur Passagen des indexierten Texts, per Suche gefunden. Ohne Ideen, Profile, Agent oder Web.'],
+  pt: ['Textos indexados', 'Só passagens do texto indexado, encontradas por pesquisa. Sem ideias, perfis, agente nem web.'],
+  'pt-BR': ['Textos indexados', 'Só trechos do texto indexado, encontrados por busca. Sem ideias, perfis, agente nem web.'],
+  it: ['Testi indicizzati', 'Solo passi del testo indicizzato, trovati con la ricerca. Niente idee, profili, agente né web.'],
+  tr: ['Dizinlenmiş metinler', 'Yalnızca dizinlenmiş metnin aramayla bulunan pasajları. Fikir, profil, ajan ya da web yok.'],
+  'zh-CN': ['已索引文本', '只使用检索到的已索引文本段落。不用观点、概况、智能体或网页。'],
+  'zh-TW': ['已索引文字', '只使用檢索到的已索引文字段落。不用觀點、概況、代理或網頁。'],
+  ko: ['색인된 텍스트', '검색으로 찾은 색인된 텍스트의 구절만 사용합니다. 아이디어, 프로필, 에이전트, 웹은 쓰지 않습니다.'],
+  ja: ['索引済みテキスト', '検索で見つけた索引済みテキストの一節だけを使います。アイデア、プロファイル、エージェント、Web は使いません。'],
+};
+for (const [language, values] of Object.entries(indexedTextsTranslations)) translations[language].push(...values);
 keys.push(...["Instrucciones del proyecto", "Se aplican a todos los chats de este proyecto desde el siguiente mensaje. El prompt de cada chat puede concretarlas. Déjalo vacío para desactivarlas.", "Las instrucciones del proyecto admiten hasta 12.000 caracteres."]);
 const projectInstructionTranslations: Record<string, string[]> = {
   "en": [

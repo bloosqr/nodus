@@ -5974,6 +5974,11 @@ export interface ResearchGraphPartsSelection {
 export interface ResearchContextLayers {
   ideas: boolean;
   documents: boolean;
+  /** Indexed texts only, as NotebookLM works: one search of the passage index and an answer
+   * from those passages alone. No ideas, profiles, planner, supervisor, catalogue or web.
+   * In a saved selection the two layers above keep the user's choice, restored when this is
+   * switched off; read through `researchContextLayers` they are the effective ones. */
+  indexedOnly?: boolean;
 }
 
 export interface ResearchContextSelection {
