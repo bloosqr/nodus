@@ -1,4 +1,4 @@
-import { findSystemPython } from '../systemPython';
+import { findSystemPython, type SystemPython } from '../systemPython';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -115,6 +115,9 @@ export interface EnsureRuntimeContext {
    *  resolved something for you" into "this package does not support your Python", which
    *  is the honest answer and the one a user can act on. */
   selectLock: (pythonVersion: string) => RuntimeLock | null;
+  /** The `major.minor` versions the package ships a lock for, when it can say; only used to
+   *  tell the user what would work. */
+  supportedVersions?: string[];
   signal: AbortSignal;
 }
 
@@ -134,12 +137,21 @@ export async function ensurePythonRuntime(runtime: TrustedWorkerRuntime, runtime
     catch { /* rebuilt or removed: check in full */ }
   }
 
-  const python = await findSystemPython(context.minVersion);
-  if (!python) return { ready: false, detail: `Python ${context.minVersion} or newer was not found on this machine.` };
+  const seen: SystemPython[] = [];
+  const python = await findSystemPython(context.minVersion, minor => context.selectLock(minor) !== null, seen);
+  const found = seen.length ? seen.map(entry => `${entry.version} (${entry.path})`).join(', ') : 'none';
+  const target = `${process.platform}-${process.arch}`;
+  if (!python) {
+    const [minMajor, minMinor] = context.minVersion.split('.').map(Number);
+    const recentEnough = seen.some(entry => { const [major, minor] = entry.version.split('.').map(Number); return major > minMajor || major === minMajor && minor >= minMinor; });
+    if (!recentEnough) return { ready: false, detail: `Python ${context.minVersion} or newer was not found on this machine. Found: ${found}.` };
+    const supported = context.supportedVersions?.length ? `Python ${context.supportedVersions.join(', ')}` : 'other Python versions';
+    return { ready: false, detail: `This package supports ${supported} on ${target}; none of the interpreters found is one of them. Found: ${found}.` };
+  }
 
   const minor = python.version.split('.').slice(0, 2).join('.');
   const lock = context.selectLock(minor);
-  if (!lock) return { ready: false, detail: `This package publishes no pinned dependency set for Python ${minor} on ${process.platform}-${process.arch}.` };
+  if (!lock) return { ready: false, detail: `This package publishes no pinned dependency set for Python ${minor} on ${target}.` };
   const lockDigest = createHash('sha256').update(JSON.stringify(lock)).digest('hex');
   const root = sharedRuntimeDir(lockDigest);
   return withRuntimeLock(root, () => provisionPythonRuntime(pointer, root, lockDigest, lock, python, context), context.signal);
