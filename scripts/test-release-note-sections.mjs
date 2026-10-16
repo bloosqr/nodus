@@ -27,12 +27,15 @@ test('the modal covers every language available in the interface', async () => {
 test('the current release covers the final changes in twelve languages and three sections', () => {
   assert.equal(current.version, pkg.version);
   assert.equal(current.date, pkg.releaseMetadata.dateReleased);
-  assert.equal(current.version, '5.11.0');
-  assert.equal(current.highlights.length, 5);
-  assert.deepEqual(current.highlights.map(h => h.category), ['new','enhancement','fix','fix','fix']);
-  assert.deepEqual(current.highlights.map(h => h.scope), ['toolkit','connector','general','general','connector']);
-  assert.match(current.highlights[0].en, /^Nodus Sign is a new tool/);
-  assert.equal(current.highlights.filter(highlight => /Nodus Sign/.test(highlight.en)).length, 1, 'Nodus Sign appears once with its final behavior');
+  assert.equal(current.version, '5.11.1');
+  assert.equal(current.highlights.length, 4);
+  assert.deepEqual(current.highlights.map(h => h.category), ['enhancement','enhancement','fix','fix']);
+  assert.deepEqual(current.highlights.map(h => h.scope), ['toolkit','toolkit','toolkit','plugin']);
+  assert.match(current.highlights[0].en, /^In Nodus Sign you can draw your handwritten signature with a finger on the trackpad/);
+  assert.equal(current.highlights.filter(highlight => /trackpad/.test(highlight.en)).length, 1, 'trackpad drawing appears once with its final behavior');
+  assert.equal(current.highlights.filter(highlight => /eight handles/.test(highlight.en)).length, 1, 'mouse placement appears once with its final behavior');
+  // 5.11.0 introduced Nodus Sign. Its note stays as published.
+  assert.match(RELEASE_NOTES.find(note => note.version === '5.11.0').highlights[0].en, /^Nodus Sign is a new tool/);
   for (const lang of languages) for (const highlight of current.highlights) {
     assert.ok(highlight[lang].length > 30, `${lang}: complete note`);
     if (lang !== 'en') assert.notEqual(highlight[lang], highlight.en, `${lang}: native translation`);
@@ -82,9 +85,11 @@ test('scope ordering stays inside each section, with stable ties', () => {
 });
 
 test('the generated description is exactly the English modal text in displayed order and rejects drift', async () => {
-  const expected = `# Nodus ${pkg.version}\n\n` + ['New features','Enhancements','Fixes'].map((title, i) =>
-    `## ${title}\n\n` + current.highlights.slice([0,1,2][i], [1,2,5][i]).map(h => `- ${h.en}`).join('\n\n')
-  ).join('\n\n') + '\n';
+  // 5.11.1 has no new features: that section states it has no changes.
+  const expected = `# Nodus ${pkg.version}\n\n` + ['New features','Enhancements','Fixes'].map((title, i) => {
+    const entries = current.highlights.slice([0,0,2][i], [0,2,4][i]);
+    return `## ${title}\n\n` + (entries.length ? entries.map(h => `- ${h.en}`).join('\n\n') : RELEASE_EMPTY_SECTION.en);
+  }).join('\n\n') + '\n';
   assert.equal(await generateReleaseNotes(`v${pkg.version}`), expected);
   await assert.rejects(generateReleaseNotes('v99.0.0'), /does not match/);
   const dir = await mkdtemp(path.join(os.tmpdir(), 'nodus-release-description-'));

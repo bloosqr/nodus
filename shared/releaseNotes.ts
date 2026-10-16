@@ -15,6 +15,7 @@ import { RELEASE_5_4_5_HIGHLIGHTS } from './releaseNotes545';
 import { RELEASE_5_6_0_HIGHLIGHTS } from './releaseNotes560';
 import { RELEASE_5_7_0_HIGHLIGHTS } from './releaseNotes570';
 import { RELEASE_5_7_2_HIGHLIGHTS } from './releaseNotes572';
+import { RELEASE_5_11_1_HIGHLIGHTS } from './releaseNotes5111';
 import { RELEASE_5_11_0_HIGHLIGHTS } from './releaseNotes5110';
 import { RELEASE_5_10_0_HIGHLIGHTS } from './releaseNotes5100';
 import { RELEASE_5_9_0_HIGHLIGHTS } from './releaseNotes590';
@@ -3115,6 +3116,11 @@ const RELEASE_5_2_2_HIGHLIGHTS: RawReleaseHighlight[] = [
 ];
 
 const RAW_RELEASE_NOTES: RawReleaseNote[] = [
+  {
+    version: '5.11.1',
+    date: '2026-10-16',
+    highlights: RELEASE_5_11_1_HIGHLIGHTS,
+  },
   {
     version: '5.11.0',
     date: '2026-10-16',
