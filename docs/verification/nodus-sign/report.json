@@ -4,10 +4,11 @@
   "realEngine": true,
   "renderer": "production files",
   "nativeConfirmation": "Native dialog response automated by this test harness",
-  "timestamp": "2026-10-15T22:17:21.542Z",
+  "timestamp": "2026-10-16T08:03:25.894Z",
   "simulatedCrypto": false,
   "screenshots": [
     "01-empty-light.png",
+    "02a-trackpad-finger.png",
     "02-drawing.png",
     "02b-library-import-edit.png",
     "03a-placement-pages-light.png",
@@ -62,13 +63,13 @@
   ],
   "windowSizes": [
     {
-      "x": 215,
+      "x": 135,
       "y": 40,
       "width": 1440,
       "height": 1000
     },
     {
-      "x": 215,
+      "x": 135,
       "y": 40,
       "width": 1024,
       "height": 780
@@ -78,6 +79,8 @@
     "Empty state and pinned navigation",
     "Hide/show panels; keyboard panel resize; zoom; thumbnail navigation",
     "Drawing undo and redo restore actual canvas pixels",
+    "Trackpad finger drawing: whole trackpad framed to scale, strokes from native frames, Esc keeps the editor open, one undo step per stroke",
+    "Crop frame trims the saved signature (553 px wide uncropped, 380 px saved)",
     "Signature library deletion confirmed through the real Nodus dialog; other signatures preserved",
     "Multiple signatures; image import; light background processing; edit and rename",
     "Placement deletion and keyboard position adjustment",
@@ -87,10 +90,12 @@
     "Export and save to Nodus; original byte identical",
     "Reimport from the real Nodus archive",
     "Real automatic installation by button; progress; cancellation; retry; isolated environment; handwriting remains usable during installation",
+    "Certificate box: corner keeps proportions, west edge stretches width only with the opposite edge fixed",
     "Certificate drag and resize; exact position and dimensions; preview only on selected pages; all/current/custom selectors",
     "Signed PDF widgets on pages 1 and 3 only; exported rectangles match 8%/60% position and 70%/15% dimensions",
     "Real PKCS#12; wrong password; appearance profile; handwriting in appearance; explicit authorization; cancellation; real PAdES; validation",
     "Dark theme; small window; history; signature/profile persistence",
+    "Certificate signature without appearance: no placement, one zero-sized widget, Poppler validates all three signatures",
     "Custom sage-stone palette light: {\"actual\":\"rgb(128, 100, 79)\",\"expected\":\"rgb(128, 100, 79)\",\"actualBg\":\"rgb(240, 234, 210)\",\"expectedBg\":\"rgb(240, 234, 210)\"}",
     "Custom sage-stone palette dark: {\"actual\":\"rgb(183, 152, 127)\",\"expected\":\"rgb(183, 152, 127)\",\"actualBg\":\"rgb(44, 37, 33)\",\"expectedBg\":\"rgb(44, 37, 33)\"}",
     "Custom palette in both modes; large interface and accessible font; drawing dialog light/dark; no workspace horizontal overflow",

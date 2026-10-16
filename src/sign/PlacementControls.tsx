@@ -9,20 +9,24 @@ export function PlacementControls({ box, onChange, disabled = false }: {
   const [proportional, setProportional] = useState(true);
   return <fieldset className="sign-placement-controls" disabled={disabled}>
     <legend>{t('Posición y tamaño')}</legend>
-    <p>{t('Porcentajes de la página. La posición se mide desde la esquina superior izquierda.')}</p>
-    <div className="sign-dimensions">
-      {(['x', 'y', 'w', 'h'] as const).map((key, index) => <label key={key}>
-        {t(['Posición horizontal', 'Posición vertical', 'Ancho de firma', 'Alto de firma'][index])} (%)
-        <input type="number" min={key === 'w' || key === 'h' ? 1 : 0} max={100} step={0.1}
-          aria-label={`${t(['Posición horizontal', 'Posición vertical', 'Ancho de firma', 'Alto de firma'][index])} (%)`}
-          value={Number((box[key] * 100).toFixed(1))}
-          onChange={e => {
-            if (e.target.value !== '' && Number.isFinite(e.target.valueAsNumber))
-              onChange(adjustSignBox(box, key, e.target.valueAsNumber / 100, proportional));
-          }} />
-      </label>)}
-    </div>
-    <label className="sign-check"><input type="checkbox" checked={proportional} onChange={e => setProportional(e.target.checked)} />{t('Mantener proporciones')}</label>
+    <p>{t('Arrastra la firma sobre la página para moverla. Usa los tiradores para cambiar su tamaño: las esquinas conservan las proporciones y Mayús las libera.')}</p>
+    <details className="sign-precise">
+      <summary>{t('Ajuste preciso')}</summary>
+      <p>{t('Porcentajes de la página. La posición se mide desde la esquina superior izquierda.')}</p>
+      <div className="sign-dimensions">
+        {(['x', 'y', 'w', 'h'] as const).map((key, index) => <label key={key}>
+          {t(['Posición horizontal', 'Posición vertical', 'Ancho de firma', 'Alto de firma'][index])} (%)
+          <input type="number" min={key === 'w' || key === 'h' ? 1 : 0} max={100} step={0.1}
+            aria-label={`${t(['Posición horizontal', 'Posición vertical', 'Ancho de firma', 'Alto de firma'][index])} (%)`}
+            value={Number((box[key] * 100).toFixed(1))}
+            onChange={e => {
+              if (e.target.value !== '' && Number.isFinite(e.target.valueAsNumber))
+                onChange(adjustSignBox(box, key, e.target.valueAsNumber / 100, proportional));
+            }} />
+        </label>)}
+      </div>
+      <label className="sign-check"><input type="checkbox" checked={proportional} onChange={e => setProportional(e.target.checked)} />{t('Mantener proporciones')}</label>
+    </details>
     <label>{t('Colocación rápida')}
       <select aria-label={t('Colocación rápida')} value="" onChange={e => {
         if (!e.target.value) return;

@@ -92,6 +92,8 @@ export interface SignCryptoRequest {
   box: [number, number, number, number];
   /** One real incremental signature per selected page, with a single explicit authorization. */
   widgets?: { page: number; box: [number, number, number, number] }[];
+  /** False for a signature with no appearance on any page. */
+  visible?: boolean;
   appearancePng: string;
   confirmed: boolean;
 }
@@ -136,5 +138,24 @@ export interface SignApi {
   inspectSignDocument(id: string): Promise<SignInspection>;
   signWithCertificate(request: SignCryptoRequest): Promise<SignDocument>;
   cancelSignOperation(): Promise<void>;
+  /** Finger drawing on the trackpad. Resolves null where only the cursor is available. */
+  startSignTrackpad(onFrame: (frame: SignTrackpadFrame) => void): Promise<SignTrackpadSurface | null>;
+  stopSignTrackpad(): Promise<void>;
+}
+/** Physical size of the touch surface, in millimetres. */
+export interface SignTrackpadSurface {
+  width: number;
+  height: number;
+}
+/** One finger on the trackpad: a serial that is new for every touch, and its place, 0..1 with y upwards. */
+export interface SignTrackpadContact {
+  id: number;
+  x: number;
+  y: number;
+}
+/** Every finger touching one trackpad, and that trackpad's size in millimetres. */
+export interface SignTrackpadFrame extends SignTrackpadSurface {
+  device: number;
+  contacts: SignTrackpadContact[];
 }
 export type SignSource = ProtectSourceSummary;

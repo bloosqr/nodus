@@ -16,13 +16,40 @@ await build({entryPoints:['electron/toolkit/sign/engine.ts'],outfile:path.join(t
 const {SignEngine}=require(path.join(temp,'engine.cjs'));
 const assets=path.resolve('electron/assets/sign');
 test.after(()=>fs.rm(temp,{recursive:true,force:true}));
-test('packaged installation contains the complete hash-locked dependencies and reuses the bundled Python',async()=>{
+test('packaged installation contains the complete hash-locked dependencies',async()=>{
   const pkg=JSON.parse(await fs.readFile('package.json','utf8'));
   assert.ok(pkg.build.extraResources.find(r=>r.to==='sign').filter.includes('requirements.lock'));
   assert.ok(pkg.build.extraResources.some(r=>r.to==='zotero-mcp'));
   const lock=await fs.readFile(path.join(assets,'requirements.lock'),'utf8');
   for(const req of ['pyHanko==0.35.1','cryptography==50.0.1','Pillow==12.1.1','tzdata==2026.4']) assert.ok(lock.includes(req));
   assert.ok(lock.includes('--hash=sha256:'));
+});
+// Stub interpreters record which one would have built the venv, then fail it.
+async function stub(file,log){
+  await fs.mkdir(path.dirname(file),{recursive:true});
+  await fs.writeFile(file,`#!/bin/sh\necho "${file} $*" >> "${log}"\nexit 1\n`,{mode:0o755});
+  return file;
+}
+async function baseFor(name,platform,arch,systemVersion='3.12.9'){
+  const dir=path.join(temp,name),log=path.join(dir,'calls.log'),root=path.join(dir,'root');
+  const bundled=await stub(path.join(dir,'bundled/python/bin/python3'),log);
+  const system=await stub(path.join(dir,'system/python3'),log);
+  const downloaded=await stub(path.join(root,'interpreter/python/bin/python3'),log);
+  let probed=false;
+  const installer=new SignInstaller(root,assets,path.join(dir,'bundled'),async()=>{probed=true;return {path:system,version:systemVersion};},{platform,arch});
+  await assert.rejects(()=>installer.install(()=>{}),/SIGN_INSTALL_FAILED/);
+  const calls=(await fs.readFile(log,'utf8')).trim().split('\n');
+  assert.equal(calls.length,1);
+  assert.match(calls[0],/ -I -m venv /);
+  const used=calls[0].split(' ')[0];
+  return {used:used===bundled?'bundled':used===system?'system':used===downloaded?'downloaded':used,probed};
+}
+test('macOS never builds the engine on the team-signed bundled Python, whose library validation rejects PyPI wheels',{skip:process.platform==='win32'&&'stub interpreters are shell scripts'},async()=>{
+  assert.deepEqual(await baseFor('mac-arm','darwin','arm64'),{used:'system',probed:true});
+  assert.deepEqual(await baseFor('mac-arm-old','darwin','arm64','3.11.4'),{used:'downloaded',probed:true});
+  // Intel reuses the bundled cryptography build, made for the pinned Python only.
+  assert.deepEqual(await baseFor('mac-intel','darwin','x64'),{used:'downloaded',probed:false});
+  assert.deepEqual(await baseFor('linux','linux','x64'),{used:'bundled',probed:false});
 });
 test('failed and cancelled installs do not publish a ready environment',async()=>{
   const failedRoot=path.join(temp,'failed');
