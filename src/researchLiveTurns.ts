@@ -9,6 +9,9 @@ import type { ResearchUiMessage } from './views/researchChatAdapter';
  * streaming answer, and let the user send again while the first turn was still running.
  * The view that sends writes every update here; any view mounted later reads the turn
  * from here and follows it live until it ends.
+ *
+ * Turns are kept per conversation, so several chats can answer at once: the composer locks
+ * only in the chat whose turn is running, and the user can open or start other chats meanwhile.
  */
 export interface LiveResearchTurn {
   key: string;
@@ -20,6 +23,8 @@ export interface LiveResearchTurn {
   /** The conversation up to and including the question being answered. */
   base: ResearchUiMessage[];
   content: string;
+  /** The main process repainted the turn with its own finished text (skills run, route checks). */
+  repainted: boolean;
   reasoning: string;
   concilium?: ConciliumResult;
   activities: ResearchActivity[];
@@ -41,8 +46,14 @@ export const liveResearchTurns = {
   get: (key: string) => turns.get(key) ?? null,
   /** Turns still running, whoever sent them. */
   active: () => [...turns.values()].filter(turn => !turn.done),
+  /** Which of a surface's chats are answering, and how: it changes when a turn starts, is
+   *  repainted or ends, never with a streamed delta, so views re-render only for those. */
+  signature: (scope: string) => [...turns.values()]
+    .filter(turn => !turn.done && turn.key.startsWith(`${scope}:`))
+    .map(turn => `${turn.conversationId}:${turn.assistantId}:${turn.repainted ? 1 : 0}`)
+    .join('|'),
   start(turn: Pick<LiveResearchTurn, 'key' | 'owner' | 'conversationId' | 'assistantId' | 'selectionKey' | 'base'>) {
-    const live: LiveResearchTurn = { ...turn, content: '', reasoning: '', activities: [], stopRequested: false, done: false, outcome: 'active', final: null };
+    const live: LiveResearchTurn = { ...turn, content: '', repainted: false, reasoning: '', activities: [], stopRequested: false, done: false, outcome: 'active', final: null };
     turns.set(turn.key, live);
     emit(live);
   },

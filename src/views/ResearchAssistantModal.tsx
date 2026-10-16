@@ -37,7 +37,7 @@ import { liveResearchTurnKey, liveResearchTurns, type LiveResearchTurn } from '.
 import { ChatMarkdown } from '../components/ChatMarkdown';
 import { ChatAbortedNotice } from '../components/ChatAbortedNotice';
 import { ChatSkillsControl } from '../components/ChatSkillsControl';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from 'react';
 import type {
   AppSettings,
   ChatConversationSummary,
@@ -112,6 +112,8 @@ const GENEALOGY_SUGGESTIONS = [
 ];
 
 type UiMessage = ResearchUiMessage;
+/** What one turn consulted, shown in the activity panel of the chat it belongs to. */
+type ActivityRun = { conversationId: string; turnId: string; activities: ResearchActivity[]; outcome: ResearchActivityStatus };
 
 /** How often a streaming answer is repainted: about 20 times a second, instead of once per
  *  delta. Short enough to read as live typing. */
@@ -190,8 +192,8 @@ export function ResearchAssistantModal({
   const [contextTitle, setContextTitle] = useState<string | null>(null);
   const [concilium, setConcilium] = useState<ConciliumConfig | null>(null);
   const [selectedModel, setSelectedModel] = useFeatureModel(settings, adapter?.modelFeature ?? 'chatModel', adapter?.modelFeature === 'studyModel' ? 'chatModel' : undefined);
-  const [sending, setSending] = useState(false);
-  const [activityRun, setActivityRun] = useState<{ conversationId: string; turnId: string; activities: ResearchActivity[]; outcome: ResearchActivityStatus } | null>(null);
+  // Each chat's latest turn: a chat reopened while it still answers shows its own activity.
+  const [activityRuns, setActivityRuns] = useState<Record<string, ActivityRun>>({});
   // Remembered per provider+model: a conversation keeps whatever level the model was last
   // used at, so a level the user picked is not reset by switching chats or models.
   const [thinkingEffort, setThinkingEffort] = useResearchEffort(settings, selectedModel);
@@ -199,6 +201,7 @@ export function ResearchAssistantModal({
   const setWebSearch = (mode: ResearchWebSearchMode) => { setWebSearchState(mode); void window.nodus.updateSettings({ researchWebSearch: mode }).catch(() => undefined); };
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const activityRun = activeId ? activityRuns[activeId] ?? null : null;
   const draftRestoring = useRef(Boolean(draftScope && draftSeed.current.lastId && !initialTarget && !initialConversationTarget));
   useEffect(() => {
     if(!draftRestoring.current)rememberComposerDraft(draftScope,activeId,{input,attachments,selection});
@@ -254,18 +257,9 @@ export function ResearchAssistantModal({
   // The context balloon's two tabs: how the assistant approaches the corpus, and which of it.
   const [contextTab, setContextTab] = useState<'focus' | 'library'>('focus');
   // The context picker opens as a header balloon, like its neighbours.
-  // Id of the assistant message currently streaming — drives the live caret and
-  // the "stop" affordance. Null when nothing is in flight.
-  const [streamingId, setStreamingId] = useState<string | null>(null);
-  // Set once the main process repaints the turn with its own finished text (skills run, route
-  // checks pending): its drawings are complete blocks and render instead of "Loading…".
-  const [repaintedId, setRepaintedId] = useState<string | null>(null);
   // Id of the last assistant message the user stopped. Its partial text stays and
   // the red notice renders under it instead of replacing the whole answer.
   const [stoppedMessageId, setStoppedMessageId] = useState<string | null>(null);
-  // Set by the stop button and read when the stream settles, so a cancellation that
-  // still rejects is not mistaken for a genuine generation failure.
-  const stopRequestedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const contextTriggerRef = useRef<HTMLButtonElement>(null);
@@ -283,6 +277,37 @@ export function ResearchAssistantModal({
   // This view's identity in the store of turns in progress, which outlives the view.
   const viewId = useRef(crypto.randomUUID()).current;
   const liveScope = adapter?.id ?? 'research';
+  // Turns run per conversation, several at once: only the chat on screen locks while its own
+  // turn runs, and the user can open other chats or start new ones meanwhile. Re-renders when a
+  // turn starts, is repainted or ends; the streamed text is painted by the turn itself.
+  useSyncExternalStore(liveResearchTurns.subscribe, () => liveResearchTurns.signature(liveScope));
+  const liveTurnOnScreen = activeId ? liveResearchTurns.get(liveResearchTurnKey(liveScope, activeId)) : null;
+  const sending = !!liveTurnOnScreen;
+  // Id of the assistant message streaming on screen — drives the live caret and the "stop"
+  // affordance. Null when the chat on screen is not answering.
+  const streamingId = liveTurnOnScreen?.assistantId ?? null;
+  // Set once the main process repaints the turn with its own finished text (skills run, route
+  // checks pending): its drawings are complete blocks and render instead of "Loading…".
+  const repaintedId = liveTurnOnScreen?.repainted ? liveTurnOnScreen.assistantId : null;
+  // The history marks every chat still answering.
+  const runningConversationIds = new Set(liveResearchTurns.active().filter(turn => turn.key.startsWith(`${liveScope}:`)).map(turn => turn.conversationId));
+  const updateActivityRun = (conversationId: string, turnId: string, change: (run: ActivityRun) => ActivityRun) =>
+    setActivityRuns(runs => runs[conversationId]?.turnId === turnId ? { ...runs, [conversationId]: change(runs[conversationId]) } : runs);
+  // A chat whose turn is still running shows it from the store of turns in progress: when it is
+  // reopened (a turn paints only while its chat is on screen), and when the turn was sent by a
+  // view that has since unmounted (the user left the chat and came back). The activity of this
+  // view's own turns is already kept per chat, and may be settled while the turn still saves.
+  const showLiveTurn = useCallback((live: LiveResearchTurn) => {
+    setMessages([...live.base, { id: live.assistantId, role: 'assistant', content: live.content, reasoning: live.reasoning || undefined, concilium: live.concilium, selectionKey: live.selectionKey }]);
+    if (live.owner !== viewId) setActivityRuns(runs => ({ ...runs, [live.conversationId]: { conversationId: live.conversationId, turnId: live.assistantId, activities: live.activities, outcome: 'active' } }));
+  }, [viewId]);
+  // Stops one chat's turn; the surface's other chats keep answering.
+  const stopTurn = (conversationId: string) => {
+    const key = liveResearchTurnKey(liveScope, conversationId);
+    if (!liveResearchTurns.get(key)) return;
+    liveResearchTurns.requestStop(key);
+    void api.cancelResearchChat(conversationId);
+  };
   // Bumped by every conversation load and by "new chat": a load whose answer arrives after a
   // newer one started (two chats clicked in quick succession) must not replace it.
   const loadSequenceRef = useRef(0);
@@ -405,6 +430,8 @@ export function ResearchAssistantModal({
     adapter?.reset?.();
     if (!activeId) void systemPrompts.select(null);
     setActiveProjectId(null);
+    // Now, not at the next render: a turn still running in the chat left behind stops painting here.
+    activeIdRef.current = null;
     setActiveId(null);
     setMessages([]);
     setInput('');
@@ -420,6 +447,7 @@ export function ResearchAssistantModal({
     loadSequenceRef.current++;
     setAttachments([]);
     setAttachmentError('');
+    activeIdRef.current = null;
     setActiveId(null);
     setMessages([]);
     setStoppedMessageId(null);
@@ -450,7 +478,8 @@ export function ResearchAssistantModal({
     setMessages(loadedMessages);
     // A turn still running in this conversation replaces what was saved before it finished.
     activeIdRef.current = conversation.id;
-    followLiveTurn(null);
+    const live = liveResearchTurns.get(liveResearchTurnKey(liveScope, conversation.id));
+    if (live) showLiveTurn(live);
     const council = loadedMessages.filter(message => message.role === 'assistant').at(-1)?.concilium;
     setConcilium(council ? { chairman: council.chairman, models: council.members.map(member => member.model) } : null);
     setStoppedMessageId(null);
@@ -492,7 +521,6 @@ export function ResearchAssistantModal({
   }, [initialConversationTarget?.nonce]);
 
   const openProject = (projectId: string) => {
-    if (sending) return;
     startNewConversation();
     setActiveProjectId(projectId);
     window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -548,7 +576,6 @@ export function ResearchAssistantModal({
   };
   // A notebook opens on its own page; the first message there starts a chat inside it.
   const openNotebook = (notebookId: string) => {
-    if (sending) return;
     startNewConversation();
     setActiveNotebookId(notebookId);
     // An adapter points its own context at it; Research Chat reads it through the selection.
@@ -602,6 +629,7 @@ export function ResearchAssistantModal({
     const deleting = pendingBulkDelete ?? [];
     setPendingBulkDelete(null);
     for (const conversation of deleting) {
+      stopTurn(conversation.id);
       await api.deleteConversation(conversation.id);
       await window.nodus.selectResearchSystemPrompt(`${adapter?.id ?? 'research'}:${conversation.id}`, null);
     }
@@ -615,6 +643,7 @@ export function ResearchAssistantModal({
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
+    stopTurn(pendingDelete.id);
     await api.deleteConversation(pendingDelete.id);
     await window.nodus.selectResearchSystemPrompt(`${adapter?.id ?? 'research'}:${pendingDelete.id}`, null);
     if (pendingDelete.id === activeId) startNewConversation();
@@ -659,43 +688,41 @@ export function ResearchAssistantModal({
       userMessage,
     ].map((m) => ({ role: m.role, content: m.content, attachments: m.attachments }));
 
-    stopRequestedRef.current = false;
     setStoppedMessageId(null);
-    setMessages([...priorMessages, userMessage, { id: assistantId, role: 'assistant', content: '', selectionKey }]);
-    setSending(true);
+    const onScreen = () => activeIdRef.current === conversationId;
+    if (onScreen()) setMessages([...priorMessages, userMessage, { id: assistantId, role: 'assistant', content: '', selectionKey }]);
     const liveKey = liveResearchTurnKey(liveScope, conversationId);
     liveResearchTurns.start({ key: liveKey, owner: viewId, conversationId, assistantId, selectionKey, base: [...priorMessages, userMessage] });
-    // Stopped here, or from a view mounted after this one left.
-    const stopped = () => stopRequestedRef.current || !!liveResearchTurns.get(liveKey)?.stopRequested;
+    // Stopped in this chat, here or from a view mounted after this one left. Read when the stream
+    // settles, so a cancellation that still rejects is not mistaken for a genuine failure.
+    const stopped = () => !!liveResearchTurns.get(liveKey)?.stopRequested;
     let settled: UiMessage[] | null = null;
     let outcome: ResearchActivityStatus = 'failed';
-    setActivityRun({ conversationId, turnId: assistantId, activities: [], outcome: 'active' });
-    setStreamingId(assistantId);
+    setActivityRuns(runs => ({ ...runs, [conversationId]: { conversationId, turnId: assistantId, activities: [], outcome: 'active' } }));
     // Reveal the question and the beginning of the answer once. Streaming
     // deltas must not chase the bottom: keeping this position stable lets the
     // user read from the start and scroll through the reply at their own pace,
     // matching Nodi's chat behaviour.
-    window.setTimeout(() => scrollToBottom('auto'), 0);
+    if (onScreen()) window.setTimeout(() => scrollToBottom('auto'), 0);
 
     let streamed = '';
+    let reasoned = '';
     let councilResult: ConciliumResult | undefined;
     // Deltas arrive one IPC message at a time, often faster than the screen refreshes, and
     // each one used to re-render the timeline and re-parse the growing answer's Markdown.
-    // They are gathered and painted together at most every STREAM_PAINT_MS.
-    let unpainted = '';
+    // They are gathered and painted together at most every STREAM_PAINT_MS. A paint writes
+    // the whole answer so far, so it also completes a chat reopened mid-answer.
     let paintTimer: number | null = null;
     const paint = () => {
       paintTimer = null;
-      const chunk = unpainted;
-      unpainted = '';
-      if (!chunk || activeIdRef.current !== conversationId) return; // user switched away
-      setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content + chunk } : message));
+      if (!onScreen()) return; // user switched away
+      const content = streamed;
+      setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content } : message));
       window.setTimeout(updateJumpIndicator, 0);
     };
     const dropUnpainted = () => {
       if (paintTimer != null) window.clearTimeout(paintTimer);
       paintTimer = null;
-      unpainted = '';
     };
     try {
       await persist(conversationId, [...priorMessages, userMessage], false);
@@ -706,38 +733,34 @@ export function ResearchAssistantModal({
           // than the reply); it then replaces the placeholder the settlement wrote.
           onActivity: event => {
             liveResearchTurns.update(liveKey, turn => ({ activities: updateResearchActivities(turn.activities, event) }));
-            setActivityRun(current => current?.turnId === assistantId && (current.outcome === 'active' || event.status !== 'active') ? { ...current, activities: updateResearchActivities(current.activities, event) } : current);
+            updateActivityRun(conversationId, assistantId, run => run.outcome === 'active' || event.status !== 'active' ? { ...run, activities: updateResearchActivities(run.activities, event) } : run);
           },
           onConcilium: (result) => {
             councilResult = result;
             liveResearchTurns.update(liveKey, () => ({ concilium: result }));
-            if (activeIdRef.current !== conversationId) return;
+            if (!onScreen()) return;
             setMessages(current => current.map(message => message.id === assistantId ? { ...message, concilium: result } : message));
           },
           onReplace: (text) => {
             // The repaint is the whole turn so far: deltas still waiting to be painted are in it.
             dropUnpainted();
             streamed = text;
-            liveResearchTurns.update(liveKey, () => ({ content: text }));
-            setRepaintedId(text ? assistantId : null);
-            if (activeIdRef.current !== conversationId) return;
+            liveResearchTurns.update(liveKey, () => ({ content: text, repainted: !!text }));
+            if (!onScreen()) return;
             setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: text } : message));
             window.setTimeout(updateJumpIndicator, 0);
           },
           onDelta: (delta) => {
             streamed += delta;
             liveResearchTurns.update(liveKey, () => ({ content: streamed }));
-            unpainted += delta;
             if (paintTimer == null) paintTimer = window.setTimeout(paint, STREAM_PAINT_MS);
           },
           onReasoning: (delta) => {
-            liveResearchTurns.update(liveKey, turn => ({ reasoning: turn.reasoning + delta }));
-            if (activeIdRef.current !== conversationId) return;
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === assistantId ? { ...message, reasoning: (message.reasoning ?? '') + delta } : message
-              )
-            );
+            reasoned += delta;
+            liveResearchTurns.update(liveKey, () => ({ reasoning: reasoned }));
+            if (!onScreen()) return;
+            const reasoning = reasoned;
+            setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, reasoning } : message));
           },
         }
       );
@@ -748,7 +771,8 @@ export function ResearchAssistantModal({
       // partial as "nothing generated" and drop the placeholder bubble.
       const aborted = stopped() || Boolean(response.aborted);
       outcome = aborted ? 'cancelled' : 'completed';
-      setActivityRun(current => current?.turnId === assistantId ? { ...current, activities: settleResearchActivities(current.activities, aborted ? 'cancelled' : 'completed'), outcome: aborted ? 'cancelled' : 'completed' } : current);
+      const settledOutcome = outcome;
+      updateActivityRun(conversationId, assistantId, run => ({ ...run, activities: settleResearchActivities(run.activities, settledOutcome), outcome: settledOutcome }));
       if ('concilium' in response && response.concilium) councilResult = response.concilium;
       const answer = response.answer.trim();
       const finalMessages: UiMessage[] = answer || councilResult
@@ -759,7 +783,7 @@ export function ResearchAssistantModal({
           ]
         : [...priorMessages, userMessage];
       settled = finalMessages;
-      if (activeIdRef.current === conversationId) {
+      if (onScreen()) {
         setMessages(finalMessages);
         if (aborted && answer) setStoppedMessageId(assistantId);
         window.setTimeout(updateJumpIndicator, 0);
@@ -778,7 +802,8 @@ export function ResearchAssistantModal({
       outcome = stoppedNow ? 'cancelled' : 'failed';
       if (!adapter) learning.emit({ kind: 'recovery', recovery: learningChatRecovery(e, stoppedNow), conversationId, messageId: assistantId });
       dropUnpainted();
-      setActivityRun(current => current?.turnId === assistantId ? { ...current, activities: settleResearchActivities(current.activities, stoppedNow ? 'cancelled' : 'failed'), outcome: stoppedNow ? 'cancelled' : 'failed' } : current);
+      const settledOutcome = outcome;
+      updateActivityRun(conversationId, assistantId, run => ({ ...run, activities: settleResearchActivities(run.activities, settledOutcome), outcome: settledOutcome }));
       if (stoppedNow) {
         // The user stopped the stream: keep the text that already arrived and mark
         // the message as aborted instead of replacing everything with the error.
@@ -787,7 +812,7 @@ export function ResearchAssistantModal({
           ? [...priorMessages, userMessage, { id: assistantId, role: 'assistant', content: partial, concilium: councilResult, interrupted: true, selectionKey }]
           : [...priorMessages, userMessage];
         settled = finalMessages;
-        if (activeIdRef.current === conversationId) {
+        if (onScreen()) {
           setMessages(finalMessages);
           if (partial) setStoppedMessageId(assistantId);
           window.setTimeout(updateJumpIndicator, 0);
@@ -806,7 +831,7 @@ export function ResearchAssistantModal({
         };
         const finalMessages = [...priorMessages, userMessage, errorMessage];
         settled = finalMessages;
-        if (activeIdRef.current === conversationId) {
+        if (onScreen()) {
           setMessages(finalMessages);
           window.setTimeout(updateJumpIndicator, 0);
         }
@@ -814,48 +839,36 @@ export function ResearchAssistantModal({
       }
     } finally {
       dropUnpainted();
-      // Saved by now: a view that took over shows the settled conversation and unlocks.
+      // Saved by now: the chat unlocks, and shows the settled conversation if it is on screen.
       liveResearchTurns.finish(liveKey, settled, outcome);
-      setSending(false);
-      setStreamingId(null);
-      setRepaintedId(null);
     }
   };
 
-  // A view mounted while a turn it did not send is running (the user left the chat and
-  // came back) follows that turn from the store: the activity, the streaming answer and
-  // the locked composer, exactly as the view that sent it would show them.
-  const followingRef = useRef<string | null>(null);
-  const followLiveTurn = useCallback((turn: LiveResearchTurn | null) => {
-    const foreign = liveResearchTurns.active().filter(item => item.owner !== viewId && item.key.startsWith(`${liveScope}:`));
-    if (turn && turn.owner === viewId) return;
-    if (turn?.done) {
-      if (followingRef.current !== turn.assistantId) { if (!foreign.length) setSending(false); return; }
-      followingRef.current = null;
-      if (activeIdRef.current === turn.conversationId && turn.final) setMessages(turn.final);
-      setActivityRun(current => current?.turnId === turn.assistantId ? { ...current, activities: settleResearchActivities(current.activities, turn.outcome === "active" ? "completed" : turn.outcome), outcome: turn.outcome } : current);
-      setStreamingId(null);
-      if (!foreign.length) setSending(false);
-      return;
-    }
-    if (foreign.length) setSending(true);
-    const live = activeIdRef.current ? liveResearchTurns.get(liveResearchTurnKey(liveScope, activeIdRef.current)) : null;
-    if (!live || live.owner === viewId) return;
-    followingRef.current = live.assistantId;
-    setStreamingId(live.assistantId);
-    setMessages([...live.base, { id: live.assistantId, role: 'assistant', content: live.content, reasoning: live.reasoning || undefined, concilium: live.concilium, selectionKey: live.selectionKey }]);
-    setActivityRun({ conversationId: live.conversationId, turnId: live.assistantId, activities: live.activities, outcome: 'active' });
-  }, [viewId, liveScope]);
+  // The chat on screen follows its turn from the store when this view did not send it (the
+  // user left the chat and came back): the activity and the streaming answer, exactly as the
+  // view that sent it would show them. When any turn of the chat on screen ends, the chat shows
+  // what was saved, also for a turn of this view's that settled while the chat was elsewhere.
   useEffect(() => {
     // Deltas arrive faster than the screen paints; following views repaint at the stream's pace.
     let timer: number | null = null;
+    const liveOnScreen = () => activeIdRef.current ? liveResearchTurns.get(liveResearchTurnKey(liveScope, activeIdRef.current)) : null;
     const off = liveResearchTurns.subscribe(turn => {
-      if (turn.done) { if (timer != null) { window.clearTimeout(timer); timer = null; } followLiveTurn(turn); return; }
-      if (timer == null) timer = window.setTimeout(() => { timer = null; followLiveTurn(null); }, STREAM_PAINT_MS);
+      if (!activeIdRef.current || turn.key !== liveResearchTurnKey(liveScope, activeIdRef.current)) return;
+      if (turn.done) {
+        if (timer != null) { window.clearTimeout(timer); timer = null; }
+        if (turn.final) setMessages(turn.final);
+        if (turn.owner !== viewId) updateActivityRun(turn.conversationId, turn.assistantId, run => ({ ...run, activities: settleResearchActivities(run.activities, turn.outcome === 'active' ? 'completed' : turn.outcome), outcome: turn.outcome }));
+        return;
+      }
+      if (turn.owner === viewId || timer != null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        const live = liveOnScreen();
+        if (live && live.owner !== viewId) showLiveTurn(live);
+      }, STREAM_PAINT_MS);
     });
-    followLiveTurn(null);
     return () => { off(); if (timer != null) window.clearTimeout(timer); };
-  }, [followLiveTurn]);
+  }, [viewId, liveScope, showLiveTurn]);
 
   useEffect(() => {
     if (adapter) return;
@@ -1010,11 +1023,8 @@ export function ResearchAssistantModal({
     </div>
   );
 
-  const handleStop = () => {
-    stopRequestedRef.current = true;
-    for (const turn of liveResearchTurns.active()) if (turn.key.startsWith(`${liveScope}:`)) liveResearchTurns.requestStop(turn.key);
-    void api.cancelResearchChat();
-  };
+  // Stops the chat on screen only; other chats keep answering.
+  const handleStop = () => { if (activeIdRef.current) stopTurn(activeIdRef.current); };
 
   const visibleConversations = conversations.filter((c) => showArchived || !c.archived);
   const archivedCount = conversations.filter((c) => c.archived).length;
@@ -1124,7 +1134,7 @@ export function ResearchAssistantModal({
               notebookLocksMoves={adapterNotebooks ? adapterNotebooks.locksMoves : true}
               activeId={activeId}
               activeProjectId={activeProjectId}
-              sending={sending}
+              runningIds={runningConversationIds}
               archivedCount={archivedCount}
               showArchived={showArchived}
               onToggleArchived={() => setShowArchived((value) => !value)}
@@ -1178,11 +1188,11 @@ export function ResearchAssistantModal({
                 )}
                 {projectHome && activeProjectId && messages.length === 0 && <ProjectChatList
                   conversations={visibleConversations.filter(conversation => conversation.projectId === activeProjectId)}
-                  draggable onOpen={(id) => { if (!sending) void loadConversation(id); }}
+                  draggable onOpen={(id) => void loadConversation(id)}
                 />}
                 {notebookHome && messages.length === 0 && <ProjectChatList
                   conversations={visibleConversations.filter(conversation => conversation.notebookId === activeNotebookId)}
-                  onOpen={(id) => { if (!sending) void loadConversation(id); }}
+                  onOpen={(id) => void loadConversation(id)}
                   empty={adapterNotebooks?.kind === 'course' ? t('Los chats que empieces aquí leerán los materiales de este curso.')
                     : adapterNotebooks ? t('Los chats que empieces aquí leerán las fuentes de este cuaderno.') : t('Los chats que empieces aquí leerán las colecciones de este cuaderno.')}
                 />}

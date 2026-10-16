@@ -429,6 +429,10 @@
 .research-history-row:hover .research-history-row-actions, .research-history-row:focus-within .research-history-row-actions, .research-history-row.is-menu-open .research-history-row-actions { opacity: 1; }
 .research-history-row.is-pinned .research-history-row-actions { opacity: 1; }
 .research-history-row.is-pinned:not(:hover):not(:focus-within):not(.is-menu-open) .research-history-action:not(.is-on) { visibility: hidden; }
+/* A chat still answering while the user is in another one. */
+.research-history-running { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--vault-accent, #6366f1); animation: research-history-running 1.2s ease-in-out infinite; }
+@keyframes research-history-running { 50% { opacity: .3; transform: scale(.75); } }
+@media (prefers-reduced-motion: reduce) { .research-history-running { animation: none; } }
 .research-history-action { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; color: #8a8a8a; }
 .research-history-action:hover { color: #f5f5f5; background: #262626; }
 .research-history-action.is-on { color: var(--vault-accent, #6366f1); }
