@@ -3105,12 +3105,39 @@ export function formatRouteProgramReportFix(audit: RouteAudit | null | undefined
   // a long chain's SMILES runs to thousands of characters and the point is the comparison, not the
   // string.
   const shorten = (text: string): string => (text.length > 120 ? `${text.slice(0, 117)}…` : text);
-  const describe = (species: RouteSpeciesSummary): string =>
-    [species.formula, species.canonicalSmiles ? `\`${shorten(species.canonicalSmiles)}\`` : ''].filter(Boolean).join(' ');
   const lastRan = [...audit.steps].reverse().find((step) => step.ok && step.products.length);
-  const stopsAt = (lastRan?.products ?? []).map(describe).filter(Boolean).join(' + ');
   const wanted = audit.target;
-  const targetDescriptor = wanted ? [wanted.formula, wanted.canonicalSmiles ? `\`${shorten(wanted.canonicalSmiles)}\`` : ''].filter(Boolean).join(' ') : '';
+  // An ISOMER of the target is the one mismatch the cap above destroys. The two descriptors then
+  // read identically up to the 117th character, the difference is inside the part that was cut, and
+  // "add the statements that carry it the rest of the way" is the wrong instruction: nothing is
+  // missing, something is in the wrong place. Measured on a 20-cell route matrix, 2026-10-17: every
+  // step balanced, C38H62N8O11 against C38H62N8O11, four turns spent on it, and the author's own
+  // prose blamed a protecting group that was not the problem. So when the formula matches, both
+  // structures go in whole and the message says what KIND of difference it is.
+  const onlyProduct = (lastRan?.products ?? []).filter((species) => species.canonicalSmiles);
+  const sameFormula = Boolean(wanted?.formula) && onlyProduct.length === 1
+    && onlyProduct[0].formula === wanted!.formula
+    && Boolean(wanted!.canonicalSmiles) && onlyProduct[0].canonicalSmiles !== wanted!.canonicalSmiles;
+  const whole = (text: string): string => (sameFormula ? text : shorten(text));
+  const describe = (species: RouteSpeciesSummary): string =>
+    [species.formula, species.canonicalSmiles ? `\`${whole(species.canonicalSmiles)}\`` : ''].filter(Boolean).join(' ');
+  const stopsAt = (lastRan?.products ?? []).map(describe).filter(Boolean).join(' + ');
+  const targetDescriptor = wanted ? [wanted.formula, wanted.canonicalSmiles ? `\`${whole(wanted.canonicalSmiles)}\`` : ''].filter(Boolean).join(' ') : '';
+  // Stereochemistry is the one class a string comparison settles exactly: drop every @ and an
+  // epimer becomes identical to its target. Saying so, with the count, turns an unreadable
+  // 150-character diff into one instruction. Anything else is reported as structural, without a
+  // guess about which bond moved.
+  const withoutStereo = (text: string): string => text.replace(/@+/g, '');
+  const stereoOnly = sameFormula
+    && withoutStereo(onlyProduct[0].canonicalSmiles!) === withoutStereo(wanted!.canonicalSmiles!);
+  const stereoCount = stereoOnly
+    ? Math.max(1, Math.abs((onlyProduct[0].canonicalSmiles!.match(/@@/g) ?? []).length
+        - (wanted!.canonicalSmiles!.match(/@@/g) ?? []).length))
+    : 0;
+  const isomerNote = !sameFormula ? ''
+    : stereoOnly
+      ? ` They are the SAME MOLECULE apart from stereochemistry: the two differ at ${stereoCount} centre${stereoCount === 1 ? '' : 's'} and at nothing else, so no statement is missing and no extra statement can fix it. Give the block the configuration the target carries at that centre, in the statement that introduces it.`
+      : ' They have the SAME MOLECULAR FORMULA, so no step is missing: the route assembles the right atoms into a different structure. Compare the two strings above in full — the difference is a centre with the wrong configuration, two residues in the wrong order, or a group in the wrong place — and correct the statement that introduces it.';
   return routeFixFence({
     label: 'Fix from the target backwards',
     prompt: [
@@ -3128,8 +3155,9 @@ export function formatRouteProgramReportFix(audit: RouteAudit | null | undefined
       // audited products instead.
       ...(audit.target?.reason === 'not-formed' && stopsAt
         ? [`The program ends at ${stopsAt}, which is not the target${targetDescriptor ? ` (${targetDescriptor})` : ''}.`
-          + ' Add the statements that carry it the rest of the way, or correct the one that takes it'
-          + ' somewhere else.'] : []),
+          + (sameFormula ? isomerNote
+            : ' Add the statements that carry it the rest of the way, or correct the one that takes it'
+              + ' somewhere else.')] : []),
       ...(unbuilt.length ? ['A statement that produces nothing leaves every later statement without'
         + ' an input, so one wrong line accounts for all of them: correct that line first rather'
         + ' than each step.'] : []),
