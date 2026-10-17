@@ -368,7 +368,7 @@ async function invokeRoute(runner: Runner, provider: CapabilityProvider, steps: 
     // one overlong name must not make the package reject the whole route, and a species given as
     // its own structure carries that structure as its name, so cutting one to a figure fixed
     // here would corrupt the label it is displayed under.
-    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => ({ ...entry, name: entry.name.slice(0, labelLimit) }))) } : {}),
+    ...(named && routeAcceptsLabels(provider) ? { labels: labels!.map((entries) => entries.map((entry) => (entry.name ? { ...entry, name: entry.name.slice(0, labelLimit) } : entry))) } : {}),
     ...(await stereoEnumerationAvailable(provider) ? { enumerateStereo: true } : {}),
     // The label check resolves every name again: from the local mirror, for a package that reads it.
     ...mirrorInput(provider, ROUTE_TOOL),

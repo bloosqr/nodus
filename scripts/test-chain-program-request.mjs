@@ -39,7 +39,7 @@ const bundle = async (entry, name) => {
   return import(pathToFileURL(outfile).href);
 };
 
-const { findChainProgramRequest, asksForChainProgram, uncheckedRouteNote, CHAIN_PROGRAM_MAX_RESIDUES } =
+const { findChainProgramRequest, asksForChainProgram, uncheckedRouteNote, CHAIN_PROGRAM_MAX_RESIDUES, CHAIN_PROGRAM_MAX_CODE } =
   await bundle('shared/moleculeInspection.ts', 'moleculeInspection.mjs');
 const { ROUTE_CHAIN_PROGRAM_RULE } = await bundle('shared/routeRules.ts', 'routeRules.mjs');
 
@@ -135,4 +135,41 @@ test('a turn that asked for a chain is not also told it carried no route', async
   assert.equal(asksForChainProgram(fenced('{"sequence": []}')), true);
   // And an answer with neither a program nor a request still gets told, as it always did.
   assert.match(uncheckedRouteNote('I would protect the side chain first.', { correction: false }), /Nothing in this reply was checked/);
+});
+
+test('a residue code longer than the package accepts is refused here, not at the worker', () => {
+  // /code-review on 4b55444a: the reader mirrored the package schema's minItems/maxItems but not
+  // its `items.maxLength: 8`, so `{"sequence": ["Fmoc-Lys(Boc)"]}` passed, spent the worker
+  // round-trip the residue ceiling exists to avoid, and came back as a python SystemExit string.
+  const refused = findChainProgramRequest('```chain-program\n{"sequence": ["Gly", "Fmoc-Lys(Boc)"]}\n```');
+  assert.ok(refused && 'error' in refused, JSON.stringify(refused));
+  assert.match(refused.error, /Fmoc-Lys\(Boc\)/, `the offending code is quoted: ${refused.error}`);
+  assert.match(refused.error, new RegExp(String(CHAIN_PROGRAM_MAX_CODE)), `the limit is given: ${refused.error}`);
+  assert.match(refused.error, /\bLys\b/, `the form that works is shown: ${refused.error}`);
+
+  // A real three-letter code, and the longest the limit allows, both still pass.
+  for (const code of ['Gly', 'A'.repeat(CHAIN_PROGRAM_MAX_CODE)]) {
+    const ok = findChainProgramRequest(`\`\`\`chain-program\n{"sequence": ["${code}"]}\n\`\`\``);
+    assert.deepEqual(ok, { sequence: [code] }, `\`${code}\` is accepted`);
+  }
+});
+
+test('both residue limits match the installed package manifest', async (t) => {
+  // The doc comments claim to mirror the schema. Nothing checked it, so the two could drift and
+  // the reader would start refusing what the generator accepts, or the reverse.
+  const marketplace = [
+    process.env.NODUS_MARKETPLACE_DIR,
+    path.resolve(process.cwd(), '../marketplace'),
+    path.resolve(process.cwd(), '../../../../marketplace'),
+  ].filter(Boolean).find((candidate) => fs.existsSync(path.join(candidate, 'plugins/chemistry-studio/capabilities/chemistry/capability.json')));
+  if (!marketplace) { t.skip('no marketplace checkout beside this one; set NODUS_MARKETPLACE_DIR'); return; }
+
+  const capability = JSON.parse(fs.readFileSync(path.join(marketplace, 'plugins/chemistry-studio/capabilities/chemistry/capability.json'), 'utf8'));
+  const tool = capability.tools.find((entry) => entry.id === 'generate-chain-program');
+  assert.ok(tool, 'the package still declares generate-chain-program');
+  const sequence = tool.inputSchema.properties.sequence;
+  assert.equal(sequence.maxItems, CHAIN_PROGRAM_MAX_RESIDUES,
+    `CHAIN_PROGRAM_MAX_RESIDUES is ${CHAIN_PROGRAM_MAX_RESIDUES} and the manifest says ${sequence.maxItems}`);
+  assert.equal(sequence.items.maxLength, CHAIN_PROGRAM_MAX_CODE,
+    `CHAIN_PROGRAM_MAX_CODE is ${CHAIN_PROGRAM_MAX_CODE} and the manifest says ${sequence.items.maxLength}`);
 });

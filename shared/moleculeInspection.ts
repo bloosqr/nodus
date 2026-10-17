@@ -139,7 +139,12 @@ export type RouteLabelRole = 'reactant' | 'product' | 'agent';
 export interface RouteSpeciesLabel {
   role: RouteLabelRole;
   byproduct: boolean;
-  name: string;
+  /** Absent where the producer has no name for the species — program mode, where the package names
+   *  only what it resolved. OPTIONAL rather than an empty string on purpose: the formatter's
+   *  fallbacks are written with `??`, which treats '' as a name and prints it, and one such label
+   *  silently emptied the building-block alpha-configuration line, the only reader of a
+   *  D-for-L block error. Read it with `||`, never `??`. */
+  name?: string;
   smiles: string;
 }
 
@@ -2398,7 +2403,7 @@ function alphaConfigurationLine(step: RouteStepAudit, stepLabels: RouteSpeciesLa
   const blocks = step.reactants.filter((entry) => entry.alphaConfiguration);
   if (!blocks.length) return null;
   const nameFor = (entry: RouteSpeciesSummary, index: number): string | undefined =>
-    entry.name ?? stepLabels.filter((label) => label.role === 'reactant')[index]?.name;
+    entry.name?.trim() || stepLabels.filter((label) => label.role === 'reactant')[index]?.name?.trim() || undefined;
   const parts = blocks.map((entry) => {
     const name = nameFor(entry, step.reactants.indexOf(entry));
     const measured = entry.alphaConfiguration!;
@@ -2437,6 +2442,12 @@ export function findRouteProgram(answer: string): string | null {
  *  rather than spending a worker round-trip to be told the same thing. */
 export const CHAIN_PROGRAM_MAX_RESIDUES = 120;
 
+/** The longest residue code the package's schema accepts (`items.maxLength`). Mirrored so a
+ *  shorthand the generator cannot read — `Fmoc-Lys(Boc)` for `Lys` — is refused with a sentence
+ *  rather than spending the worker round-trip the ceiling above exists to avoid.
+ *  scripts/test-chain-program-request.mjs checks both numbers against the installed manifest. */
+export const CHAIN_PROGRAM_MAX_CODE = 8;
+
 /** A request for a generated route program: the sequence, and whether the generator may use its
  *  dipeptide blocks. */
 export interface ChainProgramRequest { sequence: string[]; dipeptides?: boolean }
@@ -2472,6 +2483,8 @@ export function findChainProgramRequest(answer: string): ChainProgramRequest | {
   if (!Array.isArray(sequence) || !sequence.length) return { error: `The \`chain-program\` request names no sequence. Write \`sequence\` as a non-empty array, N-terminal residue first. ${shape}` };
   if (!sequence.every((entry) => typeof entry === 'string' && entry.trim() !== '')) return { error: 'Every entry in `sequence` is a non-empty string, one residue each, and no entry may be a list or a number.' };
   if (sequence.length > CHAIN_PROGRAM_MAX_RESIDUES) return { error: `A generated chain is limited to ${CHAIN_PROGRAM_MAX_RESIDUES} residues, and this request names ${sequence.length}.` };
+  const overlong = (sequence as string[]).map((entry) => entry.trim()).filter((entry) => entry.length > CHAIN_PROGRAM_MAX_CODE);
+  if (overlong.length) return { error: `A residue is written as its three-letter code, at most ${CHAIN_PROGRAM_MAX_CODE} characters: ${overlong.slice(0, 3).map((entry) => `\`${entry}\``).join(', ')} ${overlong.length > 1 ? 'are' : 'is'} longer than that. Give the residue, not the protected building block — \`Lys\`, not \`Fmoc-Lys(Boc)\`; the generator chooses the block.` };
   if (dipeptides !== undefined && typeof dipeptides !== 'boolean') return { error: '`dipeptides`, when it is given at all, is true or false.' };
   return { sequence: (sequence as string[]).map((entry) => entry.trim()), ...(dipeptides === true ? { dipeptides: true } : {}) };
 }
@@ -2750,9 +2763,12 @@ function labelledStepLines(labels: RouteSpeciesLabel[][], step: RouteStepAudit):
     if (species.input && species.canonicalSmiles) canonical.set(species.input, species.canonicalSmiles);
   }
   const shown = (entry: RouteSpeciesLabel): string => {
-    if (!entry.smiles) return entry.name;
+    // A label may carry no name (program mode names only what the package resolved), so the
+    // structure stands alone rather than following an empty dash.
+    const name = entry.name?.trim();
+    if (!entry.smiles) return name ?? '';
     const smiles = entry.smiles.split('.').map((part) => canonical.get(part.trim()) ?? part.trim()).join('.');
-    return `${entry.name} — \`${smiles}\``;
+    return name ? `${name} — \`${smiles}\`` : `\`${smiles}\``;
   };
   const side = (role: RouteLabelRole, byproduct?: boolean): string => {
     const entries = (labels[step.index] ?? []).filter((entry) => entry.role === role && (byproduct === undefined || entry.byproduct === byproduct));
@@ -3145,6 +3161,18 @@ export interface RouteProgramReportInputs {
  *  transformation, exactly as the package's own bridge reads it. */
 const isProgramStep = (line: RouteProgramTraceLine): boolean => line.from !== null;
 
+/** The package's per-line species names, kept only where they are what they claim to be: a plain
+ *  object of string values. Every other field in this normaliser is checked that way; this one
+ *  accepted any non-null object, so an array passed and a number could reach the printed report. */
+function namesOf(value: unknown): Record<string, string> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const kept: Record<string, string> = {};
+  for (const [smiles, name] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof name === 'string' && name.trim()) kept[smiles] = name.trim();
+  }
+  return Object.keys(kept).length ? kept : null;
+}
+
 const programStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0) : [];
 
@@ -3179,7 +3207,7 @@ export function normalizeRouteProgramTrace(data: unknown): RouteProgramTraceLine
       failure: line.failure ?? null,
       operation: operationName(line.provenance),
       ...(typeof line.note === 'string' && line.note.trim() ? { note: line.note.trim() } : {}),
-      ...(typeof names === 'object' && names !== null ? { names: names as Record<string, string> } : {}),
+      ...(namesOf(names) ? { names: namesOf(names)! } : {}),
     });
   }
   return out;
@@ -3210,8 +3238,15 @@ export function routeProgramReportInputs(lines: RouteProgramTraceLine[]): RouteP
     steps.push(ran ? line.equation! : '');
     conditions.push(ran ? (line.note ?? line.operation ?? '') : '');
     if (!ran) { labels.push([]); continue; }
-    const named = (role: RouteLabelRole, smiles: string, byproduct: boolean): RouteSpeciesLabel =>
-      ({ role, byproduct, name: line.names?.[smiles] ?? '', smiles });
+    // A name the package did not give is OMITTED, never sent as an empty string: the formatter's
+    // fallbacks are written with `??`, which treats '' as a name and prints it. Measured on
+    // harness-runs/spps-08-ladder2-program-mode-thinking-none turn 3, where the building-block
+    // alpha-configuration line read "... the right one:  (S)" and named no block at all — while
+    // the names-first arm of the same length and turn named it in full.
+    const named = (role: RouteLabelRole, smiles: string, byproduct: boolean): RouteSpeciesLabel => {
+      const name = line.names?.[smiles];
+      return { role, byproduct, smiles, ...(typeof name === 'string' && name.trim() ? { name } : {}) };
+    };
     labels.push([
       ...line.reactants.map((smiles) => named('reactant', smiles, false)),
       ...line.reagents.map((smiles) => named('agent', smiles, false)),

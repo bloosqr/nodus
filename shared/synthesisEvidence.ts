@@ -570,7 +570,7 @@ export function hasCarbon(smiles: string): boolean {
 }
 
 /** A route's starting materials: organic reactants no earlier step makes, in first-use order. */
-export function routeStartingMaterials(labels: Array<Array<{ role: string; byproduct: boolean; name: string; smiles: string }>>): Array<{ name: string; smiles: string }> {
+export function routeStartingMaterials(labels: Array<Array<{ role: string; byproduct: boolean; name?: string; smiles: string }>>): Array<{ name: string; smiles: string }> {
   const made = new Set<string>();
   const out = new Map<string, { name: string; smiles: string }>();
   for (const step of labels) {
@@ -585,7 +585,7 @@ export function routeStartingMaterials(labels: Array<Array<{ role: string; bypro
 }
 
 /** The route's target: the last step's organic product (not a byproduct), or null. */
-export function routeTargetSmiles(labels: Array<Array<{ role: string; byproduct: boolean; name: string; smiles: string }>>): { name: string; smiles: string } | null {
+export function routeTargetSmiles(labels: Array<Array<{ role: string; byproduct: boolean; name?: string; smiles: string }>>): { name: string; smiles: string } | null {
   const last = labels[labels.length - 1] ?? [];
   const product = last.find((label) => label.role === 'product' && !label.byproduct && hasCarbon(label.smiles));
   return product ? { name: product.name || product.smiles, smiles: product.smiles } : null;

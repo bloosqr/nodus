@@ -20,6 +20,7 @@ const allowedSkips = new Map([
   ['the package declares the fence the rule names, with the fields the rule names', 'the chemistry package checkout is not beside this one'],
   // Same reason: the application's own tool input is checked against the manifest that declares it.
   ['every key the forward-step input carries is one the package declares', 'no marketplace checkout beside this one; set NODUS_MARKETPLACE_DIR'],
+  ['both residue limits match the installed package manifest', 'no marketplace checkout beside this one; set NODUS_MARKETPLACE_DIR'],
   // Local only, with the held rules it checks: the RDKit layer of the stereo guard needs the
   // operator's index venv and tools/check-prompt-stereo.py, neither of which is in any checkout.
   ['RDKit agrees with the allow-list, when the index venv is available', 'ord-index/.venv or tools/check-prompt-stereo.py not present; the allow-list check still ran'],

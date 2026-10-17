@@ -99,10 +99,16 @@ test('a supplied name travels with its structure; a computed one has none', () =
   const acid = labels[0].find((entry) => entry.smiles === 'CC(=O)O');
   assert.equal(acid.name, 'acetic acid');
   const carried = labels[0].find((entry) => entry.smiles === '*OC(=O)[C@@H](NC(C)=O)C(C)C');
-  // The application derived this structure, so nobody named it. Blank rather than invented: a
+  // The application derived this structure, so nobody named it. ABSENT rather than invented: a
   // name here would be checked against the structure and refused.
-  assert.equal(carried.name, '');
-  // And a blank must not reach the name lookup as an empty label.
+  //
+  // This used to be an empty string, which is the same intent said in a way the formatter does not
+  // honour: its fallbacks are written with `??`, which treats '' as a name and prints it. Found by
+  // /code-review on 4b55444a and confirmed in production — the building-block alpha-configuration
+  // line, the only reader of a D-for-L block error, printed "... the right one:  (S)" and named no
+  // block at all. The assertion below always wanted blanks excluded from the lookup; the field now
+  // agrees with it. See scripts/test-route-program-block-names.mjs.
+  assert.equal(carried.name, undefined);
   assert.equal(routeLabelNames(labels).get('*OC(=O)[C@@H](NC(C)=O)C(C)C'), undefined);
   assert.equal(routeLabelNames(labels).get('CC(=O)O'), 'acetic acid');
 });
