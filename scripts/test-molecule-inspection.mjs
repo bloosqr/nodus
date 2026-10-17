@@ -2340,7 +2340,14 @@ test('the report starts the step support before it waits on the final report', a
   // drawings 52.9s then step support 41.0s inside a 96.7s total, where the precedent lookup they
   // both wait on took 6.4s. The support needs the lookup's classes and nothing else — in
   // particular not the drawings — so it belongs beside them, not behind them.
-  const source = await readFile(new URL('../electron/ai/moleculeInspection.ts', import.meta.url), 'utf8');
+  const whole = await readFile(new URL('../electron/ai/moleculeInspection.ts', import.meta.url), 'utf8');
+  // Searched from the names-first builder's own declaration, because the program-mode report is a
+  // second function with its own phases and the same `final report` label — it has no step support
+  // and no review to order, so its copy of the label is not what this guard is about, and reading
+  // the whole file found that one first.
+  const from = whole.indexOf('export async function appendRouteReportAndDrawings(');
+  assert.ok(from > 0, 'the names-first route report builder is still named that');
+  const source = whole.slice(from);
   const support = source.indexOf("timed('step support'");
   // Renamed when every diagram moved into one gated final report; the ordering it guards is the
   // same, since that report is still the phase the drawings happen inside.
@@ -2366,7 +2373,7 @@ test('a step that balanced only by refiling a declared reactant is a failing ste
     balanced: true, chargeBalanced: true, differences: [], unspecifiedStereocentres: 0,
   };
   // The step balances only after the checker's own edit, and the failure says so before the reason.
-  assert.equal(routeStepFailure({ ...base, refiledReactant: refiled }), `balanced only after the checker refiled a declared reactant: ${refiled}`);
+  assert.equal(routeStepFailure({ ...base, refiledReactant: refiled }), `balances only if a declared reactant takes no part: ${refiled}`);
   // Which path it takes turns on how far the rescue search reaches, not on the chemistry, so a
   // step with nothing refiled is still clean.
   assert.equal(routeStepFailure(base), null);
@@ -2458,7 +2465,7 @@ test('the step line and the route verdict cannot disagree about which step faile
     // Nor may a failing line call the step plainly "balanced": a refiled step balanced only after
     // the checker changed the author's declaration.
     if (cause === 'refiledReactant') {
-      assert.match(line, /^- Step 1 FAIL — balanced only after the checker refiled a declared reactant\./);
+      assert.match(line, /^- Step 1 FAIL — balances only if a declared reactant takes no part\./);
     }
   }
 });

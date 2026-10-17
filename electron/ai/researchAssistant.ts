@@ -23,10 +23,10 @@ import { ResearchCorpusRun } from './researchCorpusRun';
 import { RESEARCH_CHAT_AGENT_DECISION_BYTES, RESEARCH_CHAT_AGENT_SETTINGS, RESEARCH_CHAT_LIGHT_AGENT_SETTINGS, researchScopeForPrompt, validateRetrievalSettings, compactResearchTraversal } from '@shared/researchCorpus';
 import { planResearchTurn, literalResearchTurnPlan } from './researchTurnPlanner';
 import { inspectResearchMolecules, appendStructureAudit, appendRouteReportAndDrawings, resolveNamedRoute, chemistryRunner } from './moleculeInspection';
-import { asksForRoute, countRouteSteps, FORWARD_STEPS_REQUIRED_RULE, FORWARD_STEPS_SYSTEM_RULE, forwardStepsRequired, findRouteProgram, findStepNamedSpecies, formatAuthorStructureNote, formatResolutionSourceNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatStructureDisagreementNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeConversationState, routeFixPromptForHistory, routeReportsForHistory, stripDrawingRequests, uncheckedRouteNote } from '@shared/moleculeInspection';
+import { asksForChainProgram, asksForRoute, countRouteSteps, FORWARD_STEPS_REQUIRED_RULE, FORWARD_STEPS_SYSTEM_RULE, forwardStepsRequired, findRouteProgram, findStepNamedSpecies, formatAuthorStructureNote, formatResolutionSourceNote, formatMissingSpeciesPrompt, formatNameCorrectionNote, formatStructureDisagreementNote, formatRouteCheckUnavailable, isRouteFixPrompt, MOLECULE_DOSSIER_SYSTEM_RULE, ROUTE_CONTINUITY_SYSTEM_RULE, requestedTargetFor, routeConversationState, routeFixPromptForHistory, routeReportsForHistory, stripDrawingRequests, uncheckedRouteNote } from '@shared/moleculeInspection';
 import { SYNTHESIS_TEMPLATE_ADDENDUM, looksLikeSynthesisRequest } from '@shared/synthesisPrompt';
-import { routeContractTurn, routeProgramMode } from '@shared/routeRules';
-import { forwardStepsAvailable } from './moleculeInspection';
+import { ROUTE_CHAIN_PROGRAM_RULE, routeContractTurn, routeProgramMode } from '@shared/routeRules';
+import { chainProgramAvailable, forwardStepsAvailable } from './moleculeInspection';
 
 /** Whether the forward-step search was offered to the model this turn, said out loud in the log.
  *  A run where the model never used the fence is ambiguous otherwise: it may have declined, or it
@@ -35,6 +35,15 @@ function forwardStepsOffered(): boolean {
   const offered = forwardStepsAvailable();
   const how = forwardStepsRequired() ? 'offered to the model as REQUIRED' : 'offered to the model';
   console.info(`[forward-steps] ${offered ? how : 'NOT offered: the installed package has no propose-forward-steps tool'}`);
+  return offered;
+}
+
+/** Whether the deterministic chain generator was offered this turn, said out loud for the same
+ *  reason: an answer that hand-wrote a chain is ambiguous otherwise — it may have chosen to, or
+ *  it may never have been told it could ask. Those call for opposite responses. */
+function chainProgramOffered(): boolean {
+  const offered = chainProgramAvailable();
+  console.info(`[chain-program] ${offered ? 'offered to the model' : 'NOT offered: the installed package has no generate-chain-program tool'}`);
   return offered;
 }
 import { routeProgramTransformsBlock } from './routeProgramTransforms';
@@ -316,7 +325,10 @@ async function auditAnswer(answer: string, execution: ReturnType<typeof skillExe
     // below finds nothing and the legacy branch reports "no route" over a route that is perfectly
     // checkable. Branch before it. Measured 2026-10-13: the model wrote a valid program and the
     // reply still said nothing had been checked, because this gate came first.
-    if (chemistryEnabled && routeProgramMode() && findRouteProgram(skilled)) {
+    // A generated-program request counts as a route here for the same reason a written program
+    // does: the branch below cannot read either one, and an answer that asked for a chain is an
+    // answer whose route the application is about to produce, execute and check.
+    if (chemistryEnabled && routeProgramMode() && (findRouteProgram(skilled) || asksForChainProgram(skilled))) {
       return await appendRouteReportAndDrawings(skilled, skilled, { ...options, target: execution.target });
     }
     const resolved = await resolveNamedRoute(skilled, skilled, { ...options, target: execution.target });
@@ -769,6 +781,11 @@ async function buildResearchChatPrompt(request: ResearchChatRequest, skills = en
     // offers. They are the PACKAGE's, read from the installed slot, so they are never named twice.
     // Empty when no list could be read, and the mode then has nothing valid to offer.
     routeContractTurn(routeRequest, programCorrection) && routeProgramMode() ? routeProgramTransformsBlock() : '',
+    // The one route the model is asked NOT to write. Sent on the same turns as the rest of the
+    // program contract — including a correction, which in program mode asks for the whole route
+    // back, so a correction sent without this rule would be asking the model to hand-write the
+    // chain it was just told not to.
+    routeContractTurn(routeRequest, programCorrection) && routeProgramMode() && chainProgramOffered() ? ROUTE_CHAIN_PROGRAM_RULE : '',
     routeEvidence ? SYNTHESIS_EVIDENCE_SYSTEM_RULE : '',
     !genealogy && hasResearchSourceRestriction(request)
       ? 'Source restriction: use only the supplied context from the selected works. Do not supplement it with other corpus sources or general knowledge. If the selected sources are insufficient, state that explicitly. Continue answering in the configured language.' : '',

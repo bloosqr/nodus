@@ -183,6 +183,12 @@ export interface RouteStepAudit {
   /** A bond edit at carbon the step cannot explain: an undeclared 1,2-shift, or a new C–C or
    *  C–heteroatom bond at a carbon nothing activates. */
   skeletonProblem?: string;
+  /** A stereocentre that comes out with the opposite configuration. Its own field, not a balance
+   *  difference: an epimer has the same formula, so the equation balances and `balanced` stays
+   *  true. It used to arrive with `balanced` cleared and the text in `differences`, which printed
+   *  `NOT balanced` about atoms that counted correctly — and a reader told that counts atoms,
+   *  finds nothing, and never examines the configuration. */
+  stereoProblem?: string;
   /** Set when the step balanced only because a species listed under Reactants was treated as
    *  taking no part. Reported because the arithmetic cannot tell a condition that was never
    *  consumed from a reagent that was, whose product the author forgot to name. */
@@ -1571,6 +1577,10 @@ export function uncheckedRouteNote(answer: string, options: { correction: boolea
     // A program IS the route here, and it carries no `Step N` headings, so the count above never
     // clears it: this branch owns the decision outright rather than falling through.
     if (findRouteProgram(typeof answer === 'string' ? answer : '')) return '';
+    // A generator request IS the route in this mode — the application turns it into the program
+    // and checks that. A request the application refused has already been told why, in its own
+    // words; adding "this reply carried no route program" on top of that contradicts it.
+    if (asksForChainProgram(typeof answer === 'string' ? answer : '')) return '';
     // A program in the WRONG FENCE is the one failure where the generic note misleads. Measured
     // 2026-10-13 on condense-solution: the model wrote a correct program inside a plain ``` fence,
     // the parser saw no program, and the reply closed by explaining how to write one — advice that
@@ -1813,6 +1823,7 @@ function normalizeRouteStep(entry: unknown, index: number): RouteStepAudit | nul
     ...(value.radical === true ? { radical: true } : {}),
     // Kept whole, like the checker's other messages: it ends with what to do.
     ...(typeof value.skeletonProblem === 'string' && value.skeletonProblem ? { skeletonProblem: value.skeletonProblem.slice(0, 1000) } : {}),
+    ...(typeof value.stereoProblem === 'string' && value.stereoProblem ? { stereoProblem: value.stereoProblem.slice(0, 1000) } : {}),
     ...(typeof value.refiledReactant === 'string' && value.refiledReactant ? { refiledReactant: value.refiledReactant.slice(0, 1000) } : {}),
     ...(typeof value.monatomicSpecies === 'string' && value.monatomicSpecies ? { monatomicSpecies: value.monatomicSpecies.slice(0, 1000) } : {}),
   };
@@ -2421,6 +2432,57 @@ export function findRouteProgram(answer: string): string | null {
   return body || null;
 }
 
+/** The residue ceiling the generator declares. Mirrors the `sequence` maxItems in the package's
+ *  own schema: checked here so an over-long request is refused with the number it asked for,
+ *  rather than spending a worker round-trip to be told the same thing. */
+export const CHAIN_PROGRAM_MAX_RESIDUES = 120;
+
+/** A request for a generated route program: the sequence, and whether the generator may use its
+ *  dipeptide blocks. */
+export interface ChainProgramRequest { sequence: string[]; dipeptides?: boolean }
+
+/** The generator request a program-mode answer carries INSTEAD of a hand-written program, read
+ *  from its own fence.
+ *
+ *  Read by the application rather than through the package's own chat protocol, for two reasons
+ *  that both come from code: a declared tool with no request protocol is deliberately never
+ *  offered to the model at all (`deriveCapabilityTools` in electron/chatSkills.ts leaves it out
+ *  rather than advertise a path that does not exist), and the generator returns a plain object
+ *  with no artifact and no view, so the generic fence lane would remove the block and render
+ *  nothing in its place. The application reads the request, calls the tool, and runs what comes
+ *  back as the route — so the program is executed and audited exactly as a written one is, and
+ *  never retyped by the model.
+ *
+ *  Only the FIRST fence counts, as for `findRouteProgram`: an answer that asks for two sequences
+ *  has not decided which route it means.
+ *
+ *  A malformed request comes back as `{ error }` rather than null, because the two call for
+ *  opposite responses — null means the answer did not ask, and an error means it asked wrongly
+ *  and has something it can correct. */
+export function findChainProgramRequest(answer: string): ChainProgramRequest | { error: string } | null {
+  const fence = /```[ \t]*chain-program[ \t]*\r?\n([\s\S]*?)\r?\n?```/i.exec(typeof answer === 'string' ? answer : '');
+  if (!fence) return null;
+  const body = fence[1].trim();
+  const shape = 'It holds one JSON object and nothing else: {"sequence": ["Gly", "Ala"]}.';
+  if (!body) return { error: `The \`chain-program\` block is empty. ${shape}` };
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return { error: `The \`chain-program\` block is not valid JSON. ${shape}` }; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: `The \`chain-program\` block is not a JSON object. ${shape}` };
+  const { sequence, dipeptides } = parsed as { sequence?: unknown; dipeptides?: unknown };
+  if (!Array.isArray(sequence) || !sequence.length) return { error: `The \`chain-program\` request names no sequence. Write \`sequence\` as a non-empty array, N-terminal residue first. ${shape}` };
+  if (!sequence.every((entry) => typeof entry === 'string' && entry.trim() !== '')) return { error: 'Every entry in `sequence` is a non-empty string, one residue each, and no entry may be a list or a number.' };
+  if (sequence.length > CHAIN_PROGRAM_MAX_RESIDUES) return { error: `A generated chain is limited to ${CHAIN_PROGRAM_MAX_RESIDUES} residues, and this request names ${sequence.length}.` };
+  if (dipeptides !== undefined && typeof dipeptides !== 'boolean') return { error: '`dipeptides`, when it is given at all, is true or false.' };
+  return { sequence: (sequence as string[]).map((entry) => entry.trim()), ...(dipeptides === true ? { dipeptides: true } : {}) };
+}
+
+/** Whether a program-mode answer asked for a generated program, however badly. The unchecked-route
+ *  note reads this: an answer that asked and asked wrongly is told what was wrong with the
+ *  request, and must not also be told it carried no route at all. */
+export function asksForChainProgram(answer: string): boolean {
+  return findChainProgramRequest(answer) !== null;
+}
+
 /** Every reason this route did not pass, in the order the verdict says them. Empty means it passed.
  *
  *  Extracted from `formatRouteAudit` on 2026-10-14, which computed it inline and kept it local, so
@@ -2573,16 +2635,21 @@ export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][
     const refiledNote = step.refiledReactant ? ` ${step.refiledReactant}` : '';
     // Not plain "balanced" beside FAIL: the equation closed only after the checker moved a species
     // the author declared consumed.
-    const balanceNote = step.balanced && step.refiledReactant ? REFILED_BALANCE : balance;
+    // Stereo first: the plugin blocks in that order, and a refusal for configuration cannot also
+    // carry refiling advice (the balance repair is not attempted on an inverted step).
+    const balanceNote = step.balanced && step.stereoProblem
+      ? INVERTED_BALANCE
+      : step.balanced && step.refiledReactant ? REFILED_BALANCE : balance;
     // Printed for the same reason, and it is the more urgent of the two: a lone atom of a diatomic
     // element said nothing at all in this line, so the step named no fault while failing.
     const monatomicNote = step.monatomicSpecies ? ` ${step.monatomicSpecies}` : '';
     const skeletonNote = skeletonFailure ? ` ${sentence(step.skeletonProblem ?? '')}` : skeletonFacts(step);
+    const stereoProblemNote = step.stereoProblem ? ` ${sentence(step.stereoProblem)}` : '';
     const agents = step.agents.length ? ` [agents: ${sideTrace(step.agents, names)}]` : '';
     const stepLabels = labels[step.index] ?? [];
     const reactantSide = groupedSideTrace(step.reactants, stepLabels.filter((entry) => entry.role === 'reactant'), names, step.balanced === true, step.products);
     const productSide = groupedSideTrace(step.products, stepLabels.filter((entry) => entry.role === 'product'), names, step.balanced === true, step.reactants);
-    lines.push(`- ${label} ${verdict} — ${balanceNote}${stereo}.${nameNote}${largeNote}${refiledNote}${monatomicNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
+    lines.push(`- ${label} ${verdict} — ${balanceNote}${stereo}.${nameNote}${largeNote}${refiledNote}${monatomicNote}${stereoProblemNote}${assemblyNote}${skeletonNote} ${reactantSide}${agents} → ${productSide}`);
     const alpha = alphaConfigurationLine(step, stepLabels);
     if (alpha) lines.push(alpha);
   }
@@ -2794,8 +2861,20 @@ function sentence(text: string): string {
   return /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`;
 }
 
-/** How a step that balanced only after the checker refiled a declared reactant is described. */
-const REFILED_BALANCE = 'balanced only after the checker refiled a declared reactant';
+/** How a step whose equation closes only once a declared reactant is set aside is described.
+ *
+ *  It used to read "balanced only after the checker refiled a declared reactant", which describes a
+ *  repair that has been made — under a FAIL verdict. Measured on
+ *  harness-runs/spps-06-ladder1-names-first-thinking-none, step 12, where that line stood unchanged
+ *  through three correction rounds: a reader cannot act on a sentence that says the step was both
+ *  fixed and not fixed. The condition is the honest form, and it is the actionable one. */
+const REFILED_BALANCE = 'balances only if a declared reactant takes no part';
+
+/** How a step whose equation closes but whose configuration does not is described. Said this way
+ *  round deliberately: the atoms ARE right, and a reader told "NOT balanced" about them goes and
+ *  counts them. Measured on harness-runs/spps-06-ladder1-names-first-thinking-none, where three
+ *  correction rounds left the inverted centre untouched. */
+const INVERTED_BALANCE = 'balanced, but a stereocentre is inverted';
 
 export function routeStepFailure(step: RouteStepAudit): string | null {
   if (step.nameProblems?.length) return step.nameProblems.join('; ');
@@ -2805,6 +2884,10 @@ export function routeStepFailure(step: RouteStepAudit): string | null {
   // assembles a product from more than one substrate. The report already shows this, so the
   // one-click prompts must name it too, or they point at a different step than the checker did.
   if (step.assemblyProblem) return step.assemblyProblem;
+  // A balanced step with one centre the wrong way round. The equation is closed, so only this
+  // reads the fault — which is why the predicate has to grow with the field rather than rely on
+  // `balanced` having been cleared for it.
+  if (step.stereoProblem) return step.stereoProblem;
   // Likewise a balanced step whose bond changes the reactants cannot make: a ring closed onto a
   // carbon nothing activates, a bromine beyond the α-carbon, an undeclared 1,2-shift.
   if (step.skeletonProblem) return step.skeletonProblem;
@@ -3009,6 +3092,137 @@ function unresolvedStepLines(names: UnresolvedName[], indent: string): string {
   if (!names.length) return '';
   const roleWord = (entry: UnresolvedName) => (entry.byproduct ? 'Byproduct' : entry.role === 'reactant' ? 'Reactant' : entry.role === 'product' ? 'Product' : 'Agent');
   return names.map((entry) => `${indent}- “${entry.name}” (${roleWord(entry)}) could not be resolved to a structure, so the checker built this step without it; any balance failure above follows from that. Give it a systematic IUPAC name for the whole species (a salt by its cation and anion), or — for a reactive intermediate such as an enolate salt, which references rarely name — its isomeric SMILES.\n`).join('');
+}
+
+// ---------------------------------------------------------------- program trace → report inputs
+
+/** One line of an executed route program, as the package reports it under `programTrace`.
+ *
+ *  Only the fields the report needs are declared. The package owns the shape; this is a reader. */
+export interface RouteProgramTraceLine {
+  ref: string;
+  /** The reference this line acts on. `null` for a `start` line, which is not a step. */
+  from: string | null;
+  reactants: string[];
+  reagents: string[];
+  products: string[];
+  equation: string | null;
+  executed: boolean;
+  failure: unknown;
+  /** The transformation this line applied, as the program named it — `fmoc-removal`, and so on.
+   *  A `smarts=` line has no id, so it is reported as the word itself. */
+  operation: string | null;
+  /** The model's own note on this line, from a `note M3: …` statement. */
+  note?: string;
+  /** The systematic names the model wrote for the species it supplied, by SMILES. A computed
+   *  intermediate has none: the application derived it, so nobody named it. */
+  names?: Record<string, string>;
+}
+
+/** What a program answer's report needs that the audit alone does not carry. */
+export interface RouteProgramReportInputs {
+  /** One reaction SMILES per audited step, '' for a line that never ran. Indexed to match
+   *  `audit.steps`, which is why a skipped line keeps its slot. */
+  steps: string[];
+  labels: RouteSpeciesLabel[][];
+  /** Every distinct structure the program touched, for the structure check. The computed
+   *  intermediates are the interesting ones: in program mode they are the only place the
+   *  application's own work is visible. */
+  species: string[];
+  /** The arrow text for each step's drawing, indexed like `steps`.
+   *
+   *  The names-first path takes this from the model's "Reagents and conditions:" prose, which is
+   *  where a temperature, a time and a workup come from. Program mode HAS NO SUCH PROSE — the
+   *  model writes operations, and the application supplies the conditions a transformation
+   *  implies — so none of that is recoverable here and none is invented. What the program does
+   *  know is which transformation it applied and what the step consumed as an agent, and that is
+   *  what the arrow carries: the line's own note when it wrote one, else the transformation it
+   *  named. An empty entry draws a bare arrow, as before. */
+  conditions: string[];
+}
+
+/** Whether a trace line is a step. A `start` line has no source molecule and contributes no
+ *  transformation, exactly as the package's own bridge reads it. */
+const isProgramStep = (line: RouteProgramTraceLine): boolean => line.from !== null;
+
+const programStrings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0) : [];
+
+/** How a line's operation reads: the curated verb's own id, or the word `smarts` for a line that
+ *  supplied a pattern of its own and so has no id to quote. */
+function operationName(provenance: unknown): string | null {
+  const operation = provenance as { kind?: unknown; id?: unknown } | null;
+  if (typeof operation !== 'object' || operation === null) return null;
+  if (typeof operation.id === 'string' && operation.id) return operation.id;
+  return operation.kind === 'smarts' ? 'smarts' : null;
+}
+
+/** Reads `programTrace` off the route-audit artifact. Defensive throughout: an older package
+ *  returns no trace at all, and a report that assumed one would lose the whole audit with it. */
+export function normalizeRouteProgramTrace(data: unknown): RouteProgramTraceLine[] | null {
+  const trace = (data as { programTrace?: unknown } | null)?.programTrace;
+  const lines = (trace as { lines?: unknown } | null)?.lines;
+  if (!Array.isArray(lines)) return null;
+  const out: RouteProgramTraceLine[] = [];
+  for (const entry of lines) {
+    const line = entry as Record<string, unknown> | null;
+    if (typeof line !== 'object' || line === null) return null;
+    const names = line.names;
+    out.push({
+      ref: typeof line.ref === 'string' ? line.ref : '',
+      from: typeof line.from === 'string' ? line.from : null,
+      reactants: programStrings(line.reactants),
+      reagents: programStrings(line.reagents),
+      products: programStrings(line.products),
+      equation: typeof line.equation === 'string' ? line.equation : null,
+      executed: line.executed === true,
+      failure: line.failure ?? null,
+      operation: operationName(line.provenance),
+      ...(typeof line.note === 'string' && line.note.trim() ? { note: line.note.trim() } : {}),
+      ...(typeof names === 'object' && names !== null ? { names: names as Record<string, string> } : {}),
+    });
+  }
+  return out;
+}
+
+/** The report inputs for an executed program.
+ *
+ *  This MIRRORS the package's `routeProgramToAuditInput`, which is what built the audit being
+ *  reported: same step test, same empty slot for a line that did not run, same reactant/agent/
+ *  product order, same byproduct flag on every product after the first. It has to, because the
+ *  labels and the drawings are matched to steps BY INDEX — a slot dropped here would shift every
+ *  later label and picture onto the wrong step.
+ *
+ *  A name is '' where the model supplied none, and `routeLabelNames` skips blanks, so an unnamed
+ *  intermediate simply has no name rather than an empty one. */
+export function routeProgramReportInputs(lines: RouteProgramTraceLine[]): RouteProgramReportInputs {
+  const steps: string[] = [];
+  const labels: RouteSpeciesLabel[][] = [];
+  const species: string[] = [];
+  const conditions: string[] = [];
+  const seen = new Set<string>();
+  const remember = (smiles: string): void => {
+    if (smiles && !seen.has(smiles)) { seen.add(smiles); species.push(smiles); }
+  };
+  for (const line of lines) {
+    if (!isProgramStep(line)) continue;
+    const ran = line.executed && !line.failure && typeof line.equation === 'string' && line.equation.length > 0;
+    steps.push(ran ? line.equation! : '');
+    conditions.push(ran ? (line.note ?? line.operation ?? '') : '');
+    if (!ran) { labels.push([]); continue; }
+    const named = (role: RouteLabelRole, smiles: string, byproduct: boolean): RouteSpeciesLabel =>
+      ({ role, byproduct, name: line.names?.[smiles] ?? '', smiles });
+    labels.push([
+      ...line.reactants.map((smiles) => named('reactant', smiles, false)),
+      ...line.reagents.map((smiles) => named('agent', smiles, false)),
+      ...line.products.map((smiles, index) => named('product', smiles, index > 0)),
+    ]);
+    // Agents are deliberately left out of the structure check: they take no part in the balance,
+    // and the block is about what the route itself is made of.
+    for (const smiles of line.reactants) remember(smiles);
+    for (const smiles of line.products) remember(smiles);
+  }
+  return { steps, labels, species, conditions };
 }
 
 /** The one-click correction for a route PROGRAM the toolkit refused to run.

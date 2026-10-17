@@ -26,7 +26,9 @@ import {
   formatEvidenceSources,
   routeStepFailure,
   routeStepSummaries,
+  findChainProgramRequest,
   findRouteProgram,
+  type ChainProgramRequest,
   formatRouteAudit,
   formatRouteCheckUnavailable,
   formatRouteProgramReportFix,
@@ -37,6 +39,8 @@ import {
   normalizeMoleculeDossier,
   normalizeReactionPrecedent,
   normalizeRouteAudit,
+  normalizeRouteProgramTrace,
+  routeProgramReportInputs,
   parseNameFeedback,
   parseRouteReview,
   ROUTE_NAME_FEEDBACK_SYSTEM,
@@ -51,6 +55,7 @@ import {
   type RouteStepAudit,
   type RouteReview,
   type RouteSpeciesLabel,
+  type RouteProgramTraceLine,
   type StepSupport,
   type UnresolvedName,
   MAX_SPECIES_NAME,
@@ -192,7 +197,7 @@ function programProvider() {
  *
  *  Unlike the names-first path there are no steps to count: the program decides how many
  *  equations there are, so nothing here can check a returned count against an expected one. */
-async function invokeRouteProgram(runner: Runner, provider: CapabilityProvider, program: string, target?: string | null): Promise<{ audit: RouteAudit | null; blocked: string[] }> {
+async function invokeRouteProgram(runner: Runner, provider: CapabilityProvider, program: string, target?: string | null): Promise<{ audit: RouteAudit | null; blocked: string[]; trace: RouteProgramTraceLine[] | null }> {
   const indexDir = await reactionIndexService().localDirectory().catch(() => null);
   const input = {
     program,
@@ -210,7 +215,48 @@ async function invokeRouteProgram(runner: Runner, provider: CapabilityProvider, 
   // checked, when in fact its program had been read and found wanting. Found 2026-10-13.
   const data = artifact?.data as { blocked?: unknown } | undefined;
   const blocked = Array.isArray(data?.blocked) ? data.blocked.filter((entry): entry is string => typeof entry === 'string') : [];
-  return { audit: artifact ? normalizeRouteAudit(artifact.data) : null, blocked };
+  // The trace is what makes the rest of the report possible: the audit says whether the route
+  // holds, and the trace says which structures it was made of, step by step. It rode back in the
+  // artifact from the first version of program mode and was simply never read.
+  return {
+    audit: artifact ? normalizeRouteAudit(artifact.data) : null,
+    blocked,
+    trace: artifact ? normalizeRouteProgramTrace(artifact.data) : null,
+  };
+}
+
+const CHAIN_PROGRAM_TOOL = 'generate-chain-program';
+
+function chainProgramProvider() {
+  const provider = capabilityRegistry().providers.get(CHEMISTRY_CAPABILITY);
+  return provider && provider.tools.some((tool) => tool.id === CHAIN_PROGRAM_TOOL) ? provider : null;
+}
+
+/** Whether the installed package carries the deterministic chain generator, so the contract only
+ *  offers the `chain-program` fence when there is something behind it. An older package never
+ *  hears about it and its answers write their programs out, as they always did. */
+export function chainProgramAvailable(): boolean {
+  return chainProgramProvider() !== null;
+}
+
+/** The generated program for one sequence, as the package returns it.
+ *
+ *  Invoked BY THE APPLICATION, from the request the answer carried. The generator declares no
+ *  artifact and no view, so it has nothing the chat pipeline could render in place of the fence:
+ *  what it returns is program text, and the only useful thing to do with program text is execute
+ *  it. That is why this is an application call and not a request protocol — and why the model
+ *  never sees the program it asked for, which is also what stops it being retyped. */
+async function invokeChainProgram(runner: Runner, request: ChainProgramRequest, options: InspectOptions): Promise<{ program: string; statements: number }> {
+  options.signal?.throwIfAborted();
+  const provider = chainProgramProvider();
+  if (!provider) throw new Error('the installed chemistry package has no chain-program generator');
+  const input = { sequence: request.sequence, ...(request.dipeptides ? { dipeptides: true } : {}) };
+  dumpToolInput(CHAIN_PROGRAM_TOOL, input);
+  const result = await runner.invoke({ provider, toolId: CHAIN_PROGRAM_TOOL, input }) as unknown as
+    { program?: unknown; statements?: unknown };
+  const program = typeof result?.program === 'string' ? result.program.trim() : '';
+  if (!program) throw new Error('the chain-program generator returned no program');
+  return { program, statements: typeof result?.statements === 'number' ? result.statements : 0 };
 }
 
 /** Whether the installed package carries the forward-step search, so the contract only offers a
@@ -1076,34 +1122,96 @@ async function checkStepCompatibility(runner: Runner, labels: RouteSpeciesLabel[
  *  stock lines and no per-species drawings to assemble: the application executed the operations
  *  and the audit it gets back is already the verdict. That is the point of the mode — the model
  *  never wrote a structure, so none of it can be mis-declared. */
-async function appendRouteProgramReport(finalAnswer: string, program: string, options: InspectOptions): Promise<string> {
+/** Where the program came from: the answer's own fence, or the application's generator, called
+ *  with the sequence the answer asked for. Everything after the program text is identical, which
+ *  is the point — a generated route is executed, audited and reported by exactly the code that
+ *  handles a written one, so a pass means the same thing in both arms of a comparison. */
+type RouteProgramSource = { kind: 'written'; program: string } | { kind: 'generated'; request: ChainProgramRequest };
+
+async function appendRouteProgramReport(finalAnswer: string, source: RouteProgramSource, options: InspectOptions): Promise<string> {
   const provider = programProvider();
   if (!provider) return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the installed chemistry package has no route-program tool')}\n`;
   const { runner, dispose } = chemistryRunner(options);
+  // The same `[routeReport]` line the names-first path writes, because `tools/run-stats.mjs` reads
+  // that tag to account for a turn and nothing else emits it. Without it a program turn's report
+  // cost did not vanish — it was charged to `other`, which is where unexplained time goes, so the
+  // one arm that had just been given drawings to compile was also the arm whose report read 0.0s.
+  const started = Date.now();
+  const timings: string[] = [];
+  const timed = <T,>(label: string, promise: Promise<T>): Promise<T> => {
+    const t0 = Date.now();
+    return promise.finally(() => timings.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}s`));
+  };
+  // Said in the report, not left to be inferred: a reader comparing two runs has to be able to
+  // tell a route the model wrote from one it asked for, and the audit below looks the same either
+  // way. A generation that fails is reported as a refused request, with the fix chip, rather than
+  // as a route that did not pass — nothing was checked, so no verdict on the chemistry is owed.
+  let provenance = '';
   try {
-    const { audit, blocked } = await invokeRouteProgram(runner, provider, program, options.target);
+    let program: string;
+    if (source.kind === 'written') program = source.program;
+    else {
+      try {
+        const generated = await timed('generate', invokeChainProgram(runner, source.request, options));
+        program = generated.program;
+        provenance = `_Program generated by the application from the sequence this answer asked for — ${source.request.sequence.join('-')}, ${generated.statements} statement${generated.statements === 1 ? '' : 's'}${source.request.dipeptides ? ', dipeptide blocks allowed' : ''}. The model wrote no operations and did not see the program._\n\n`;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'the program could not be generated';
+        const fix = formatRouteProgramReportFix(null, [reason]);
+        return [finalAnswer.trimEnd(), '', '### Route check (RDKit)', '',
+          '**No program was generated for that sequence**, so no equation was checked.',
+          `- ${reason}`, ...(fix ? ['', fix] : []), ''].join('\n');
+      }
+    }
+    const { audit, blocked, trace } = await timed('program', invokeRouteProgram(runner, provider, program, options.target));
     // The audit is the report; the fix chip is what makes a failure recoverable. Appending it here
     // is the only place it can happen for a program: this function returns before the names-first
     // builder that used to be the sole caller of any fix-prompt code, which is why every program
     // failure on record took exactly one turn with its fix rounds unspent.
     if (audit) {
       const fix = formatRouteProgramReportFix(audit, blocked);
-      return `${finalAnswer.trimEnd()}\n\n${formatRouteAudit(audit)}\n${fix ? `\n${fix}\n` : ''}`;
+      // Everything below needs the trace. Without one (an older package) the report is exactly
+      // what it always was, rather than nothing: the audit is still the verdict.
+      const inputs = trace ? routeProgramReportInputs(trace) : null;
+      // The structures the APPLICATION computed. The names-first block checks what the model
+      // wrote; here the model wrote no intermediate at all, so this block is the only place the
+      // executed chain is visible as structures rather than as references.
+      const structures = inputs?.species.length
+        ? await timed('structures', inspectCandidates(inputs.species, options).then(
+          (dossiers) => (dossiers.length ? `${formatStructureAudit(inputs.species, dossiers)}\n\n` : ''),
+          () => '',
+        ))
+        : '';
+      // Same gate as the names-first path, and for the same reason: a route with a failing step is
+      // about to be rewritten, and every picture made for it is discarded with it.
+      const compile = compileProvider();
+      const drawings = !compile || !inputs ? ''
+        : routePasses(audit)
+          // The arrow text is the transformation the line named, or the note it wrote. A
+          // temperature, a time or a workup is NOT available in this mode and is not invented:
+          // the model never writes conditions, so an arrow here says what was done, not how.
+          ? await timed('final report', printFinalReport(runner, compile, inputs.steps, inputs.conditions, audit, inputs.labels, options))
+          : 'Not drawn: the route has a step that does not pass yet. Every step is summarised and drawn in one final report, once the whole route passes.';
+      const report = formatRouteAudit(audit, inputs?.labels ?? []);
+      return `${finalAnswer.trimEnd()}\n\n${provenance}${structures}${report}\n${drawings ? `\n${drawings}\n` : ''}${fix ? `\n${fix}\n` : ''}`;
     }
     // Rejected, not unchecked: the package read the program and said what is wrong with it, so the
     // model is given those lines to act on rather than a note that nothing happened.
     if (blocked.length) {
       const fix = formatRouteProgramReportFix(null, blocked);
-      return [finalAnswer.trimEnd(), '', '### Route check (RDKit)', '',
+      return [finalAnswer.trimEnd(), '', ...(provenance ? [provenance.trimEnd(), ''] : []), '### Route check (RDKit)', '',
         '**The route program could not be executed** — it was read and refused, so no equation was checked.',
         ...blocked.map((entry) => `- ${entry}`), ...(fix ? ['', fix] : []), ''].join('\n');
     }
-    return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable('the chemistry package returned no route audit for the program')}\n`;
+    return `${finalAnswer.trimEnd()}\n\n${provenance}${formatRouteCheckUnavailable('the chemistry package returned no route audit for the program')}\n`;
   } catch (error) {
     // A program that will not parse or an operation that cannot apply is a result, not a crash:
     // the message is the checker's and goes back to the model as the fix.
     return `${finalAnswer.trimEnd()}\n\n${formatRouteCheckUnavailable(error instanceof Error ? error.message : 'the route program could not be executed')}\n`;
   } finally {
+    // In `finally`, so a refused program is accounted for too: a turn that spent 40s having its
+    // program read and rejected is not a turn that spent nothing on the report.
+    console.info(`${new Date().toISOString()} [routeReport] ${((Date.now() - started) / 1000).toFixed(1)}s · ${timings.join(' · ')}`);
     dispose();
   }
 }
@@ -1120,8 +1228,21 @@ export async function appendRouteReportAndDrawings(
   // see no steps and hand back the bare answer. Branch before it. An answer that carries no
   // program falls through, which is what a refusal or a prose-only reply should do.
   if (routeProgramMode()) {
+    // A generator request is read FIRST, and an answer that carries both is a decided answer only
+    // by the request: the contract says one route per answer, and of the two this is the one the
+    // application can vouch for. A request it cannot read is reported as a refused request rather
+    // than quietly falling through to a hand-written program, which would hide the mistake behind
+    // a route that might well pass.
+    const requested = findChainProgramRequest(modelAnswer);
+    if (requested && 'error' in requested) {
+      const fix = formatRouteProgramReportFix(null, [requested.error]);
+      return [finalAnswer.trimEnd(), '', '### Route check (RDKit)', '',
+        '**The request for a generated program could not be read**, so nothing was generated and no equation was checked.',
+        `- ${requested.error}`, ...(fix ? ['', fix] : []), ''].join('\n');
+    }
+    if (requested) return appendRouteProgramReport(finalAnswer, { kind: 'generated', request: requested }, options);
     const program = findRouteProgram(modelAnswer);
-    if (program) return appendRouteProgramReport(finalAnswer, program, options);
+    if (program) return appendRouteProgramReport(finalAnswer, { kind: 'written', program }, options);
   }
   // The names-first path derives the equations from the resolved names and passes them in.
   const steps = overrides.steps ?? [];
