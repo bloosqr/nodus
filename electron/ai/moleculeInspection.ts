@@ -65,7 +65,7 @@ import { compoundAvailability, findStartingSmiles, formatStartingMaterialStock, 
 import { chemistryStockDirectory } from './chemistryStock';
 import { textbookCitations, textbookSchemeDirectory } from './textbookSchemes';
 import { formatTextbookPrecedents, TEXTBOOK_ID } from '@shared/textbookSchemes';
-import { compatibilityFixLines, formatCompatibility, normalizeCompatibility, type StepCompatibility } from '@shared/stepCompatibility';
+import { compatibilityFixLines, compatibilityReagentText, formatCompatibility, normalizeCompatibility, type StepCompatibility } from '@shared/stepCompatibility';
 import { invokeDisconnectionsEach, invokeForwardSteps, synthesisEvidenceWorkIds, textbookPassages } from './synthesisEvidence';
 import { opsinDirectory, pubchemMirrorDirectory } from './pubchemMirror';
 import { dumpToolInput } from './routeInputDump';
@@ -1106,8 +1106,7 @@ async function checkStepCompatibility(runner: Runner, labels: RouteSpeciesLabel[
     const smiles = (role: RouteSpeciesLabel['role'], keepByproducts: boolean) => entries
       .filter((entry) => entry.role === role && (keepByproducts || !entry.byproduct) && entry.smiles)
       .map((entry) => entry.smiles).slice(0, 12);
-    const agents = entries.filter((entry) => entry.role === 'agent' && entry.name).map((entry) => entry.name);
-    return { reactants: smiles('reactant', true), products: smiles('product', false), reagents: [conditions[index] ?? '', ...agents].filter(Boolean).join('; ').slice(0, 2000) };
+    return { reactants: smiles('reactant', true), products: smiles('product', false), reagents: compatibilityReagentText(conditions[index], entries) };
   });
   if (!steps.some((step) => step.reactants.length && step.products.length && step.reagents)) return [];
   const textbookDir = textbookSchemeDirectory(options.evidenceScope);
