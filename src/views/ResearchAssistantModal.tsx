@@ -8,6 +8,7 @@ import { AcademicSecondary } from '../components/AcademicSecondary';
 import { ProjectInstructionsDialog } from '../components/ProjectInstructionsDialog';
 import { ResearchActivityPanel } from '../components/ResearchActivityPanel';
 import { ResearchWebSearchControl } from '../components/ResearchWebSearchControl';
+import { ResearchVerificationControl } from '../components/ResearchVerificationControl';
 import { ResearchWebSources } from '../components/ResearchWebSources';
 import { openWebSource } from '../researchWebSources';
 import { settleResearchActivities, updateResearchActivities, type ResearchActivity, type ResearchActivityStatus } from '@shared/researchActivity';
@@ -212,6 +213,12 @@ export function ResearchAssistantModal({
     setWebSearchState(mode);
     setSelection(current => withResearchContextLayers(current, { ...researchContextLayers(current, isAcademic), web: mode !== 'off' }));
     void window.nodus.updateSettings({ researchWebSearch: mode }).catch(() => undefined);
+  };
+  const [answerVerification, setAnswerVerificationState] = useState<'off' | 'legacy' | 'structured'>(settings.researchAnswerVerification ?? 'off');
+  useEffect(() => { setAnswerVerificationState(settings.researchAnswerVerification ?? 'off'); }, [settings.researchAnswerVerification]);
+  const setAnswerVerification = (mode: 'off' | 'structured') => {
+    setAnswerVerificationState(mode);
+    void window.nodus.updateSettings({ researchAnswerVerification: mode }).catch(() => undefined);
   };
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -1408,6 +1415,7 @@ export function ResearchAssistantModal({
                   }}
                 />
                 {!adapter && !isGenealogy && <ResearchWebSearchControl value={turnWebSearch} onChange={setWebSearch} disabled={sending} />}
+                {!adapter && !isGenealogy && <ResearchVerificationControl value={answerVerification} onChange={setAnswerVerification} disabled={sending} />}
                 {!simpleInterface && <ResearchEffortControl model={selectedModel} value={thinkingEffort} onChange={setThinkingEffort} disabled={sending} />}
                 {sending ? (
                   <button
