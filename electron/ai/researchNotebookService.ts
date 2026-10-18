@@ -1,3 +1,4 @@
+import { researchSourcePresentation, researchHistorySourceNotices } from '@shared/researchSourceNotices';
 import type { ResearchNotebookInput, ResearchNotebookPreparation, ResolvedResearchScope } from '@shared/researchCorpus';
 import type { ResearchChatRequest } from '@shared/types';
 import { notebookPreparationStatus, validateRetrievalSettings } from '@shared/researchCorpus';
@@ -131,8 +132,13 @@ function authorizedNotebookHistory(input: ResearchChatRequest, scope: ResolvedRe
   const known = input.conversationId ? getDb().prepare(`SELECT role,content_hash FROM research_conversation_provenance WHERE conversation_id=? AND scope_id=?`)
     .all(input.conversationId, scope.id) as { role: string; content_hash: string }[] : [];
   const trusted = new Set(known.map(row => `${row.role}:${row.content_hash}`));
-  return input.messages.filter((message, index) => index === lastUser || trusted.has(`${message.role}:${researchFingerprint(message.content)}`))
-    .map(({ role, content }) => ({ role, content }));
+  return input.messages.filter((message, index) => index === lastUser || trusted.has(`${message.role}:${researchFingerprint(message.content)}`)
+    || message.role === 'assistant' && !message.content.trim() && trusted.has(`assistant:${researchFingerprint(researchHistorySourceNotices(message.sourceNotices).join('\n\n'))}`))
+    .map(({ role, content, sourceNotices }) => {
+      // Annotations remain untrusted context, never citation provenance or a tool grant.
+      const notes = role === 'assistant' ? researchHistorySourceNotices(sourceNotices) : [];
+      return { role, content, ...(notes.length ? { sourceNotices: notes } : {}) };
+    });
 }
 
 /** Only provider results that passed scope validation can authorize later reuse.
@@ -145,7 +151,7 @@ export function rememberNotebookTurn(input: ResearchChatRequest, answer: string)
   const user = input.messages.filter(message => message.role === 'user').at(-1);
   const insert = getDb().prepare(`INSERT OR IGNORE INTO research_conversation_provenance(conversation_id,scope_id,role,content_hash,created_at) VALUES (?,?,?,?,?)`);
   getDb().transaction(() => {
-    for (const [role, content] of [['user', user?.content], ['assistant', answer]]) if (content) insert.run(input.conversationId, scope.id, role, researchFingerprint(content), new Date().toISOString());
+    for (const [role, content] of [['user', user?.content], ['assistant', answer], ['assistant', researchSourcePresentation(answer).content]]) if (content) insert.run(input.conversationId, scope.id, role, researchFingerprint(content), new Date().toISOString());
   })();
   return answer;
 }

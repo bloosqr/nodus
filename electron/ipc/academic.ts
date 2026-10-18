@@ -5,6 +5,7 @@ import { manualIndexStatus, scheduleManualIndex } from '../ai/manualIdeaIndex';
 import { embedQuery as embedResearchQuery } from '../ai/aiClient';
 import { assertAcademicAutomation } from '../ai/academicMode';
 import { registerResearchAttachmentIpc } from './researchAttachments';
+import { registerResearchHarnessIpc } from './researchHarness';
 import { dialogTitle } from '../dialogTitles';
 import { getResearchSystemPrompts, saveResearchSystemPrompt, selectResearchSystemPrompt, deleteResearchSystemPrompt } from '../db/researchSystemPromptsRepo';
 import { mergeHybridResults, searchSnippet } from '@shared/hybridSearch';
@@ -146,13 +147,12 @@ import type {
   DictionaryEvidenceRef,
   DictionaryEvidenceRequest,
   DictionaryGenerationRequest,
-  DictionaryProgress,
   DictionaryListRequest,
   DictionaryRelationType,
 } from '@shared/dictionary';
 import { immersionAnnotationDocumentId } from '@shared/readerAnnotations';
 import { applyDecorativeImageOption, invalidateDecorativeImageGeneration } from '../ai/decorativeImages';
-import { DictionaryGenerationQueue } from '../ai/dictionaryGenerationQueue';
+import { dictionaryGenerationJobs } from '../ai/dictionaryGenerationLane';
 import * as zotero from '../zotero/zoteroClient';
 import * as dedupe from '../db/dedupeRepo';
 import * as ideaDedupe from '../db/ideaDedupeRepo';
@@ -403,26 +403,6 @@ function announceDictionary(entryId: string | null): void {
   }
 }
 
-function announceDictionaryProgress(progress: DictionaryProgress): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('dictionary:progress', localizedForUi(progress));
-      if (progress.phase === 'failed' && isAiModelRequiredError(progress.error)) {
-        win.webContents.send('ai:modelRequired');
-      }
-    }
-  }
-}
-
-const dictionaryGenerationJobs = new DictionaryGenerationQueue(
-  async (request, report) => {
-    const version = await generateDictionaryEntry(request, report);
-    announceDictionary(request.entryId);
-    return version;
-  },
-  announceDictionaryProgress,
-);
-
 function announceWritingDraftAnnotations(draftId: string | null): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
@@ -469,6 +449,7 @@ function pageCapableLibraryCopy(nodusId: string): OpenEvidenceAtPageResult['loca
 
 let releasePreparationProgress: (() => void) | null = null;
 export function registerAcademicIpc(context: IpcContext): void {
+  registerResearchHarnessIpc(context);
   releasePreparationProgress?.();
   releasePreparationProgress = onDocumentaryPreparationChanged(() => {
     const progress = preparationExperience.getResearchPreparationProgress();
@@ -1765,7 +1746,8 @@ export function registerAcademicIpc(context: IpcContext): void {
         },
         controller.signal,
         result => { if (!e.sender.isDestroyed()) e.sender.send('research:chatStream:concilium', requestId, result); },
-        activity => { if (!e.sender.isDestroyed()) e.sender.send('research:chatStream:activity', requestId, activity); }
+        activity => { if (!e.sender.isDestroyed()) e.sender.send('research:chatStream:activity', requestId, activity); },
+        run => { if (!e.sender.isDestroyed()) e.sender.send('research:chatStream:run', requestId, run); }
       );
     } finally {
       const s = (t: number) => (t ? ((t - t0) / 1000).toFixed(1) : '-');

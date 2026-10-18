@@ -1,4 +1,6 @@
 import { ResearchEffortControl } from '../components/ResearchEffortControl';
+import { ResearchHarnessControl, useResearchHarnessOptions, type ResearchHarnessOptions } from '../components/ResearchHarnessControl';
+import { ResearchHarnessPanel } from '../components/ResearchHarnessPanel';
 import { useResearchEffort } from '../hooks/useResearchEffort';
 import type { ResearchEffort } from '@shared/researchReasoning';
 import { DocumentVisualScope, DocumentVisualActions, DocumentVisualFigures } from '../components/DocumentVisualScope';
@@ -46,7 +48,9 @@ import { SectionHeader } from '../components/SectionHeader';
 import { GalleryFilterMenu, GalleryFilterReset, GallerySortMenu, passesFilter, type GalleryFilterOption } from '../components/GalleryFilters';
 import { PROMPT_LANGUAGE_OPTIONS } from '@shared/promptLanguageOptions';
 import { ModelPicker } from '../components/ModelPicker';
-import { Markdown, type MarkdownCitation } from '../components/Markdown';
+import type { MarkdownCitation } from '../components/Markdown';
+import { ResearchMarkdown as Markdown } from '../components/ResearchSourceNotice';
+import { researchSourcePresentation } from '@shared/researchSourceNotices';
 import { StudyMarkdown, StudyMarkdownInline } from '../components/StudyMarkdown';
 import { SourceCitationModal, type CitationTarget, type OpenCitationLibraryWork } from '../components/SourceCitationModal';
 import { SaveToNotesModal } from '../components/SaveToNotesModal';
@@ -200,6 +204,7 @@ export function ImmersionView({
   const [model, setModel] = useFeatureModel(settings, 'immersionModel');
   // The thinking level for that model, shared with the Research chat's memory.
   const [thinkingEffort, setThinkingEffort] = useResearchEffort(settings, model ?? null);
+  const harnessOptions = useResearchHarnessOptions(settings, 'immersion');
 
   const [scope, setScope] = useState<ImmersionScope | null>(null);
   const [scoping, setScoping] = useState(false);
@@ -313,6 +318,8 @@ export function ImmersionView({
       scope,
       request: {
         topic: scope.topic,
+        harnessVersion: harnessOptions.version, explorationMode: harnessOptions.exploration,
+        webSearch: harnessOptions.web,
         documentSkills: documentSkills.policy,
         language,
         minutes,
@@ -433,6 +440,7 @@ export function ImmersionView({
 
   return (
     <div className="theme-workspace-surface h-full flex flex-col min-h-0">
+      <ResearchHarnessPanel mode="immersion" onResumed={() => void refreshSessions()} />
       {mode !== 'scope' && <WorkspaceTabStrip
         homeLabel={t('Inmersión')}
         homeIcon="target"
@@ -478,6 +486,7 @@ export function ImmersionView({
               model={model}
               thinkingEffort={thinkingEffort}
               onThinkingEffort={setThinkingEffort}
+              harnessOptions={harnessOptions}
               hasModel={hasModel}
               scoping={scoping}
               error={error}
@@ -1010,6 +1019,7 @@ function SessionListRow({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function ImmersionComposerModal({
+  harnessOptions,
   documentSkills,
   settings,
   topic,
@@ -1034,6 +1044,7 @@ export function ImmersionComposerModal({
   onExplore,
   onClose,
 }: {
+  harnessOptions?: ResearchHarnessOptions;
   documentSkills: ReturnType<typeof useDocumentSkills>;
   settings: AppSettings;
   topic: string;
@@ -1160,6 +1171,7 @@ export function ImmersionComposerModal({
             </div>
           </div>
 
+          {harnessOptions && <ResearchHarnessControl options={harnessOptions} web disabled={scoping} />}
           <DocumentSkillsControl value={documentSkills.policy} onChange={documentSkills.setPolicy} onValidityChange={documentSkills.setValid} />
 
           {error && (
@@ -2676,5 +2688,5 @@ function sessionMarkdown(session: ImmersionSession): string {
     lines.push('');
   }
   lines.push(`## ${t('Cierre Feynman')}`, '', plan.exam.feynman, '');
-  return lines.join('\n');
+  return researchSourcePresentation(lines.join('\n')).content;
 }

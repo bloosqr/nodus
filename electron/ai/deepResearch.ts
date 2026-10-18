@@ -1,6 +1,8 @@
 import { withJobThinkingEffort } from './thinkingEffort';
 import { registerNotebookRun } from './researchNotebookService';
-import { bindAcademicCorpusRun } from './researchCorpusRun';
+import { bindAcademicCorpusRun, resolveAcademicRunScope } from './researchCorpusRun';
+import { currentResearchHarness, researchHarnessEnabled, withResearchHarness } from './researchHarnessRuntime';
+import { researchHarnessContext } from './researchHarnessContext';
 import { withDocumentVisualPlanning } from './documentVisualContext';
 import { documentSkillCatalog } from '../../shared/documentSkills';
 import { listDocumentSkills } from '../capabilities/documentCatalog';
@@ -114,6 +116,15 @@ function sectionClaimsForWriting(section: DeepResearchPlanSection): string[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function generateDeepResearchReport(request: DeepResearchRequest, onProgress?: (p: DeepResearchProgress) => void, signal?: AbortSignal): Promise<DeepResearchReport> {
+  if (getActiveVault().type === 'academic' && researchHarnessEnabled(request) && !currentResearchHarness()) {
+    const scope = resolveAcademicRunScope(request.notebookId);
+    const context = researchHarnessContext('deep-research', request, scope);
+    let latest: DeepResearchProgress = { phase: 'discovery', message: context.objective };
+    return withResearchHarness({ request, context, scope, signal,
+      validate: () => { if (getActiveVault().id !== scope.vaultId || resolveAcademicRunScope(request.notebookId).id !== scope.id) throw new Error('research_scope_changed'); },
+      onUpdate: researchRun => onProgress?.({ ...latest, researchRun }),
+    }, runSignal => generateDeepResearchReport({ ...request, model: context.model }, progress => { latest = progress; onProgress?.({ ...progress, researchRun: currentResearchHarness()?.summary() }); }, runSignal));
+  }
   const settings = getSettings();
   const academic = getActiveVault().type === 'academic';
   if (request.notebookId && !academic) throw new Error('Research notebooks require an academic vault');
@@ -1109,6 +1120,10 @@ async function aiPlanReport(input: PlanInput, model: ModelRef | null, approach?:
   );
   const ai = await completeJson<AiPlan>({ system, user, temperature: 0.2, maxTokens: 6000 }, isAiPlan, model);
   const draft = planFromAi(ai);
+  // V1's supervisor and final source-bound review own the research loop. Repeating
+  // the legacy planner, editorial review and red team before writing consumes the
+  // same allowance without establishing any documentary claim.
+  if (currentResearchHarness()) return draft;
   let candidate = draft;
   try {
     const reviewSystem = promptPack.reviewPlan;
