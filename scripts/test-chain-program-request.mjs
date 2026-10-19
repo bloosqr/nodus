@@ -39,7 +39,7 @@ const bundle = async (entry, name) => {
   return import(pathToFileURL(outfile).href);
 };
 
-const { findChainProgramRequest, asksForChainProgram, uncheckedRouteNote, CHAIN_PROGRAM_MAX_RESIDUES, CHAIN_PROGRAM_MAX_CODE } =
+const { findChainProgramRequest, asksForChainProgram, uncheckedRouteNote, CHAIN_PROGRAM_MAX_RESIDUES, CHAIN_PROGRAM_MAX_CODE, CHAIN_PROGRAM_C_TERMINALS, CHAIN_PROGRAM_N_TERMINALS } =
   await bundle('shared/moleculeInspection.ts', 'moleculeInspection.mjs');
 const { ROUTE_CHAIN_PROGRAM_RULE } = await bundle('shared/routeRules.ts', 'routeRules.mjs');
 
@@ -54,6 +54,14 @@ test('the dipeptide flag is carried only when it is asked for', () => {
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "dipeptides": true}')), { sequence: ['Gly'], dipeptides: true });
   // Absent rather than `false`, so the input sent to the generator holds only what was asked.
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "dipeptides": false}')), { sequence: ['Gly'] });
+});
+
+test('the terminal groups and the protected-output flag are carried only when asked for', () => {
+  assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "cTerminal": "amide"}')), { sequence: ['Gly'], cTerminal: 'amide' });
+  assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "nTerminal": "formyl"}')), { sequence: ['Gly'], nTerminal: 'formyl' });
+  assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "nTerminal": "boc", "cleave": false}')), { sequence: ['Gly'], nTerminal: 'boc', cleave: false });
+  // true is the bridge default; carrying it would send a flag that changes nothing.
+  assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "cleave": true}')), { sequence: ['Gly'] });
 });
 
 test('an answer that asks for nothing is null, not an error', () => {
@@ -80,6 +88,9 @@ test('every malformed request names what is wrong with it', () => {
   assert.match(reason('{"sequence": ["Gly", 7]}'), /non-empty string/i);
   assert.match(reason('{"sequence": ["Gly", "  "]}'), /non-empty string/i);
   assert.match(reason('{"sequence": ["Gly"], "dipeptides": "yes"}'), /true or false/i);
+  assert.match(reason('{"sequence": ["Gly"], "cTerminal": "thioester"}'), /cTerminal/);
+  assert.match(reason('{"sequence": ["Gly"], "nTerminal": 7}'), /nTerminal/);
+  assert.match(reason('{"sequence": ["Gly"], "cleave": "no"}'), /cleave/);
 });
 
 test('a sequence past the declared ceiling is refused here, with the number it asked for', () => {
@@ -116,6 +127,8 @@ test('every JSON object written in the contract is one the reader accepts', () =
 test('the contract names the fence it is asking for, and the generator behind it', () => {
   assert.match(ROUTE_CHAIN_PROGRAM_RULE, /`chain-program`/);
   assert.match(ROUTE_CHAIN_PROGRAM_RULE, /"sequence"/);
+  assert.match(ROUTE_CHAIN_PROGRAM_RULE, /"cTerminal"/);
+  assert.match(ROUTE_CHAIN_PROGRAM_RULE, /"nTerminal"/);
   // The refusal path has to be reachable from the contract, or a refused request has nowhere to go.
   assert.match(ROUTE_CHAIN_PROGRAM_RULE, /refused/i);
 });
@@ -165,11 +178,24 @@ test('both residue limits match the installed package manifest', async (t) => {
   if (!marketplace) { t.skip('no marketplace checkout beside this one; set NODUS_MARKETPLACE_DIR'); return; }
 
   const capability = JSON.parse(fs.readFileSync(path.join(marketplace, 'plugins/chemistry-studio/capabilities/chemistry/capability.json'), 'utf8'));
-  const tool = capability.tools.find((entry) => entry.id === 'generate-chain-program');
-  assert.ok(tool, 'the package still declares generate-chain-program');
-  const sequence = tool.inputSchema.properties.sequence;
-  assert.equal(sequence.maxItems, CHAIN_PROGRAM_MAX_RESIDUES,
-    `CHAIN_PROGRAM_MAX_RESIDUES is ${CHAIN_PROGRAM_MAX_RESIDUES} and the manifest says ${sequence.maxItems}`);
-  assert.equal(sequence.items.maxLength, CHAIN_PROGRAM_MAX_CODE,
-    `CHAIN_PROGRAM_MAX_CODE is ${CHAIN_PROGRAM_MAX_CODE} and the manifest says ${sequence.items.maxLength}`);
+  let tool = capability.tools.find((entry) => entry.id === 'generate-chain-program');
+  if (!tool) {
+    // `generate-chain-program` is local-only: the build overlay injects it and restores the
+    // committed manifest afterwards. Read the overlay when the committed manifest has no tool.
+    const overlayPath = path.join(marketplace, 'plugins/chemistry-studio/_local/overlay.mjs');
+    if (fs.existsSync(overlayPath)) {
+      const overlay = (await import(pathToFileURL(overlayPath).href)).default;
+      tool = overlay.capabilityTools?.find((entry) => entry.id === 'generate-chain-program');
+    }
+  }
+  if (!tool) { t.skip('no local-only generate-chain-program tool to compare; set NODUS_MARKETPLACE_DIR to a built tree'); return; }
+  const properties = tool.inputSchema.properties;
+  assert.equal(properties.sequence.maxItems, CHAIN_PROGRAM_MAX_RESIDUES,
+    `CHAIN_PROGRAM_MAX_RESIDUES is ${CHAIN_PROGRAM_MAX_RESIDUES} and the schema says ${properties.sequence.maxItems}`);
+  assert.equal(properties.sequence.items.maxLength, CHAIN_PROGRAM_MAX_CODE,
+    `CHAIN_PROGRAM_MAX_CODE is ${CHAIN_PROGRAM_MAX_CODE} and the schema says ${properties.sequence.items.maxLength}`);
+  assert.deepEqual(properties.cTerminal.enum, [...CHAIN_PROGRAM_C_TERMINALS],
+    'the request reader and the generator schema disagree on cTerminal');
+  assert.deepEqual(properties.nTerminal.enum, [...CHAIN_PROGRAM_N_TERMINALS],
+    'the request reader and the generator schema disagree on nTerminal');
 });

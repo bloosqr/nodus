@@ -36,7 +36,7 @@ const built = await build({
 });
 fs.mkdirSync(path.dirname(outfile), { recursive: true });
 fs.writeFileSync(outfile, built.outputFiles[0].contents);
-const { normalizeRouteProgramTrace, routeProgramReportInputs, routeLabelNames } =
+const { normalizeRouteProgramTrace, routeProgramReportInputs, routeLabelNames, formatChainProgramPreflight } =
   await import(pathToFileURL(outfile).href);
 
 /** A support-bound dipeptide assembly, with one failure and one line left unexecuted after it.
@@ -169,4 +169,31 @@ test('an older package returns no trace, and that is not a failure', () => {
 test('a trace line that is not an object is refused outright', () => {
   // Rather than silently contributing an empty step, which would misalign the rest.
   assert.equal(normalizeRouteProgramTrace({ programTrace: { lines: ['nope'] } }), null);
+});
+
+test('the sequence-level preflight renders as its own section, never as a step finding', () => {
+  const text = formatChainProgramPreflight({
+    findings: [
+      { id: 'dkp-c-terminal-pro', label: 'C-terminal proline (diketopiperazine)', severity: 'medium',
+        why: 'the free amine can close onto the ester', choice: '2-CTC trityl ester', answeredBy: null },
+      { id: 'aspartimide', label: 'aspartimide motif Asp-Gly', severity: 'medium',
+        why: 'the side-chain carbonyl can close', choice: 'Dmb dipeptide block',
+        answeredBy: 'Fmoc-Asp(OtBu)-(Dmb)Gly-OH' },
+    ],
+    choices: { linker: 'Wang/2-CTC ester', deprotection: '20% piperidine in DMF',
+      cleavage: 'TFA/TIS/H2O 95:2.5:2.5, 2 h' },
+    assumptions: ['no synthesizer guarantee'],
+    blocking: false,
+  });
+  assert.match(text, /### Preflight \(sequence-level\)/);
+  assert.match(text, /C-terminal proline/);
+  assert.match(text, /Answered by Fmoc-Asp\(OtBu\)-/);
+  assert.match(text, /\*\*Linker:\*\*/);
+  assert.match(text, /\*\*Cleavage:\*\*/);
+  assert.doesNotMatch(text, /Step \d/);
+});
+
+test('an absent preflight renders as nothing, so an older package is unchanged', () => {
+  assert.equal(formatChainProgramPreflight(null), '');
+  assert.equal(formatChainProgramPreflight({}), '');
 });

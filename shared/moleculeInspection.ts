@@ -2448,9 +2448,23 @@ export const CHAIN_PROGRAM_MAX_RESIDUES = 120;
  *  scripts/test-chain-program-request.mjs checks both numbers against the installed manifest. */
 export const CHAIN_PROGRAM_MAX_CODE = 8;
 
-/** A request for a generated route program: the sequence, and whether the generator may use its
- *  dipeptide blocks. */
-export interface ChainProgramRequest { sequence: string[]; dipeptides?: boolean }
+/** The C-terminal groups the generator accepts. Mirrored here so a request is refused before it
+ *  spends a worker call; keep in step with the package's `cTerminal` enum. */
+export const CHAIN_PROGRAM_C_TERMINALS = ['acid', 'amide', 'ester', 'hydrazide'] as const;
+
+/** The N-terminal groups the generator accepts. `boc` is only meaningful with `cleave: false`
+ *  because the final TFA removes it; the generator refuses the combination with a sentence. */
+export const CHAIN_PROGRAM_N_TERMINALS = ['free', 'acetyl', 'formyl', 'boc', 'biotin', 'pyroglutamyl'] as const;
+
+/** A request for a generated route program: the sequence, whether the generator may use its
+ *  dipeptide blocks, and the terminal groups the target requires. */
+export interface ChainProgramRequest {
+  sequence: string[];
+  dipeptides?: boolean;
+  cTerminal?: string;
+  nTerminal?: string;
+  cleave?: boolean;
+}
 
 /** The generator request a program-mode answer carries INSTEAD of a hand-written program, read
  *  from its own fence.
@@ -2479,14 +2493,29 @@ export function findChainProgramRequest(answer: string): ChainProgramRequest | {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return { error: `The \`chain-program\` block is not valid JSON. ${shape}` }; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: `The \`chain-program\` block is not a JSON object. ${shape}` };
-  const { sequence, dipeptides } = parsed as { sequence?: unknown; dipeptides?: unknown };
+  const { sequence, dipeptides, cTerminal, nTerminal, cleave } =
+    parsed as { sequence?: unknown; dipeptides?: unknown; cTerminal?: unknown;
+      nTerminal?: unknown; cleave?: unknown };
   if (!Array.isArray(sequence) || !sequence.length) return { error: `The \`chain-program\` request names no sequence. Write \`sequence\` as a non-empty array, N-terminal residue first. ${shape}` };
   if (!sequence.every((entry) => typeof entry === 'string' && entry.trim() !== '')) return { error: 'Every entry in `sequence` is a non-empty string, one residue each, and no entry may be a list or a number.' };
   if (sequence.length > CHAIN_PROGRAM_MAX_RESIDUES) return { error: `A generated chain is limited to ${CHAIN_PROGRAM_MAX_RESIDUES} residues, and this request names ${sequence.length}.` };
   const overlong = (sequence as string[]).map((entry) => entry.trim()).filter((entry) => entry.length > CHAIN_PROGRAM_MAX_CODE);
   if (overlong.length) return { error: `A residue is written as its three-letter code, at most ${CHAIN_PROGRAM_MAX_CODE} characters: ${overlong.slice(0, 3).map((entry) => `\`${entry}\``).join(', ')} ${overlong.length > 1 ? 'are' : 'is'} longer than that. Give the residue, not the protected building block — \`Lys\`, not \`Fmoc-Lys(Boc)\`; the generator chooses the block.` };
   if (dipeptides !== undefined && typeof dipeptides !== 'boolean') return { error: '`dipeptides`, when it is given at all, is true or false.' };
-  return { sequence: (sequence as string[]).map((entry) => entry.trim()), ...(dipeptides === true ? { dipeptides: true } : {}) };
+  if (cTerminal !== undefined && (typeof cTerminal !== 'string' || !(CHAIN_PROGRAM_C_TERMINALS as readonly string[]).includes(cTerminal))) {
+    return { error: `\`cTerminal\`, when it is given, is one of ${CHAIN_PROGRAM_C_TERMINALS.map((entry) => `\`${entry}\``).join(', ')}.` };
+  }
+  if (nTerminal !== undefined && (typeof nTerminal !== 'string' || !(CHAIN_PROGRAM_N_TERMINALS as readonly string[]).includes(nTerminal))) {
+    return { error: `\`nTerminal\`, when it is given, is one of ${CHAIN_PROGRAM_N_TERMINALS.map((entry) => `\`${entry}\``).join(', ')}.` };
+  }
+  if (cleave !== undefined && typeof cleave !== 'boolean') return { error: '`cleave`, when it is given at all, is true or false.' };
+  return {
+    sequence: (sequence as string[]).map((entry) => entry.trim()),
+    ...(dipeptides === true ? { dipeptides: true } : {}),
+    ...(typeof cTerminal === 'string' ? { cTerminal } : {}),
+    ...(typeof nTerminal === 'string' ? { nTerminal } : {}),
+    ...(cleave === false ? { cleave: false } : {}),
+  };
 }
 
 /** Whether a program-mode answer asked for a generated program, however badly. The unchecked-route
@@ -2544,6 +2573,45 @@ export function routeAuditFailureReasons(audit: RouteAudit, review: RouteReview 
   else if (audit.target?.reason === 'stereo-mismatch') reasons.push('the target is formed only with the wrong stereochemistry');
   if (reviewProblems.length) reasons.push(`a route review raised ${reviewProblems.length} problem(s)`);
   return reasons;
+}
+
+/** Render the generator's sequence-level preflight report for a program-mode answer.
+ *
+ *  The report is deliberately separate from the per-step route check: its findings are reasons the
+ *  route made a choice (a Dmb block, a trityl linker, OPfp coupling), not equations that failed.
+ *  The model sees the same section a reader does, which is the point of returning it from the
+ *  generator at all. An absent/older report renders as the empty string, so a clean package without
+ *  the local generator is unchanged. */
+export function formatChainProgramPreflight(preflight: unknown): string {
+  if (!preflight || typeof preflight !== 'object' || Array.isArray(preflight)) return '';
+  const report = preflight as {
+    findings?: unknown; choices?: unknown; assumptions?: unknown; blocking?: unknown;
+  };
+  const findings = Array.isArray(report.findings) ? report.findings : [];
+  const choices = report.choices && typeof report.choices === 'object' && !Array.isArray(report.choices)
+    ? report.choices as { linker?: unknown; cleavage?: unknown; deprotection?: unknown }
+    : null;
+  if (!findings.length && !choices) return '';
+  const lines: string[] = [
+    '### Preflight (sequence-level)',
+    '',
+    'These are the generator\'s sequence-level choices and reasons, not per-step findings.',
+    '',
+  ];
+  for (const raw of findings) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const finding = raw as { label?: unknown; id?: unknown; severity?: unknown; why?: unknown; choice?: unknown; answeredBy?: unknown };
+    const label = typeof finding.label === 'string' ? finding.label : typeof finding.id === 'string' ? finding.id : 'finding';
+    const severity = typeof finding.severity === 'string' ? finding.severity : 'low';
+    const why = typeof finding.why === 'string' ? finding.why : '';
+    const choice = typeof finding.choice === 'string' ? finding.choice : '';
+    const answered = typeof finding.answeredBy === 'string' ? ` Answered by ${finding.answeredBy}.` : '';
+    lines.push(`- **${label}** (${severity}) — ${why}${why && choice ? ' ' : ''}${choice}${answered}`);
+  }
+  if (choices && typeof choices.linker === 'string') lines.push(`- **Linker:** ${choices.linker}`);
+  if (choices && typeof choices.deprotection === 'string') lines.push(`- **Deprotection:** ${choices.deprotection}`);
+  if (choices && typeof choices.cleavage === 'string') lines.push(`- **Cleavage:** ${choices.cleavage}`);
+  return lines.join('\n');
 }
 
 export function formatRouteAudit(audit: RouteAudit, labels: RouteSpeciesLabel[][] = [], review: RouteReview | null = null, reviewPending = false, unresolved: UnresolvedName[] = []): string {
