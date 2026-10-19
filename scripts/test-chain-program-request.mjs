@@ -61,6 +61,7 @@ test('the terminal groups and the protected-output flag are carried only when as
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "nTerminal": "formyl"}')), { sequence: ['Gly'], nTerminal: 'formyl' });
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "nTerminal": "boc", "cleave": false}')), { sequence: ['Gly'], nTerminal: 'boc', cleave: false });
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Ala", "Pro"], "cTerminal": "ester", "bocSecond": true}')), { sequence: ['Ala', 'Pro'], cTerminal: 'ester', bocSecond: true });
+  assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Ala", "Gly"], "cTerminal": "hydroxamate"}')), { sequence: ['Ala', 'Gly'], cTerminal: 'hydroxamate' });
   // true is the bridge default; carrying it would send a flag that changes nothing.
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "cleave": true}')), { sequence: ['Gly'] });
 });

@@ -2450,7 +2450,7 @@ export const CHAIN_PROGRAM_MAX_CODE = 8;
 
 /** The C-terminal groups the generator accepts. Mirrored here so a request is refused before it
  *  spends a worker call; keep in step with the package's `cTerminal` enum. */
-export const CHAIN_PROGRAM_C_TERMINALS = ['acid', 'amide', 'ester', 'hydrazide'] as const;
+export const CHAIN_PROGRAM_C_TERMINALS = ['acid', 'amide', 'ester', 'hydrazide', 'hydroxamate'] as const;
 
 /** The N-terminal groups the generator accepts. `boc` is only meaningful with `cleave: false`
  *  because the final TFA removes it; the generator refuses the combination with a sentence. */
