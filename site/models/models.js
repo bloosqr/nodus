@@ -141,12 +141,12 @@ The URL carries the state, so a filtered view can be shared:
     return row[facet.field] !== undefined && row[facet.field] !== null;
   }
 
-  // A model fits a machine when it needs no more than that machine has; a model
-  // that runs on a CPU runs anywhere.
+  // A model fits a machine when it needs no more than that machine has. CPU
+  // support is its own option: it does not imply that a small Mac or GPU has
+  // enough memory for the rest of the local stack.
   function fits(row, option) {
     if (row.machines) return row.machines.includes(option.id);
-    if (row.fit.cpu) return true;
-    if (option.kind === 'cpu') return false;
+    if (option.kind === 'cpu') return Boolean(row.fit.cpu);
     const need = row.fit[option.kind];
     return need != null && need <= option.gb;
   }
