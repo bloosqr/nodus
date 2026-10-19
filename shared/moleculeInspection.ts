@@ -2464,6 +2464,7 @@ export interface ChainProgramRequest {
   cTerminal?: string;
   nTerminal?: string;
   cleave?: boolean;
+  bocSecond?: boolean;
 }
 
 /** The generator request a program-mode answer carries INSTEAD of a hand-written program, read
@@ -2493,9 +2494,9 @@ export function findChainProgramRequest(answer: string): ChainProgramRequest | {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return { error: `The \`chain-program\` block is not valid JSON. ${shape}` }; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: `The \`chain-program\` block is not a JSON object. ${shape}` };
-  const { sequence, dipeptides, cTerminal, nTerminal, cleave } =
+  const { sequence, dipeptides, cTerminal, nTerminal, cleave, bocSecond } =
     parsed as { sequence?: unknown; dipeptides?: unknown; cTerminal?: unknown;
-      nTerminal?: unknown; cleave?: unknown };
+      nTerminal?: unknown; cleave?: unknown; bocSecond?: unknown };
   if (!Array.isArray(sequence) || !sequence.length) return { error: `The \`chain-program\` request names no sequence. Write \`sequence\` as a non-empty array, N-terminal residue first. ${shape}` };
   if (!sequence.every((entry) => typeof entry === 'string' && entry.trim() !== '')) return { error: 'Every entry in `sequence` is a non-empty string, one residue each, and no entry may be a list or a number.' };
   if (sequence.length > CHAIN_PROGRAM_MAX_RESIDUES) return { error: `A generated chain is limited to ${CHAIN_PROGRAM_MAX_RESIDUES} residues, and this request names ${sequence.length}.` };
@@ -2509,12 +2510,14 @@ export function findChainProgramRequest(answer: string): ChainProgramRequest | {
     return { error: `\`nTerminal\`, when it is given, is one of ${CHAIN_PROGRAM_N_TERMINALS.map((entry) => `\`${entry}\``).join(', ')}.` };
   }
   if (cleave !== undefined && typeof cleave !== 'boolean') return { error: '`cleave`, when it is given at all, is true or false.' };
+  if (bocSecond !== undefined && typeof bocSecond !== 'boolean') return { error: '`bocSecond`, when it is given at all, is true or false.' };
   return {
     sequence: (sequence as string[]).map((entry) => entry.trim()),
     ...(dipeptides === true ? { dipeptides: true } : {}),
     ...(typeof cTerminal === 'string' ? { cTerminal } : {}),
     ...(typeof nTerminal === 'string' ? { nTerminal } : {}),
     ...(cleave === false ? { cleave: false } : {}),
+    ...(bocSecond === true ? { bocSecond: true } : {}),
   };
 }
 

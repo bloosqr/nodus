@@ -259,6 +259,7 @@ async function invokeChainProgram(runner: Runner, request: ChainProgramRequest, 
     ...(request.cTerminal ? { cTerminal: request.cTerminal } : {}),
     ...(request.nTerminal ? { nTerminal: request.nTerminal } : {}),
     ...(request.cleave === false ? { cleave: false } : {}),
+    ...(request.bocSecond ? { bocSecond: true } : {}),
   };
   dumpToolInput(CHAIN_PROGRAM_TOOL, input);
   const result = await runner.invoke({ provider, toolId: CHAIN_PROGRAM_TOOL, input }) as unknown as

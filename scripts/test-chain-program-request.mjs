@@ -60,6 +60,7 @@ test('the terminal groups and the protected-output flag are carried only when as
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "cTerminal": "amide"}')), { sequence: ['Gly'], cTerminal: 'amide' });
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "nTerminal": "formyl"}')), { sequence: ['Gly'], nTerminal: 'formyl' });
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "nTerminal": "boc", "cleave": false}')), { sequence: ['Gly'], nTerminal: 'boc', cleave: false });
+  assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Ala", "Pro"], "cTerminal": "ester", "bocSecond": true}')), { sequence: ['Ala', 'Pro'], cTerminal: 'ester', bocSecond: true });
   // true is the bridge default; carrying it would send a flag that changes nothing.
   assert.deepEqual(findChainProgramRequest(fenced('{"sequence": ["Gly"], "cleave": true}')), { sequence: ['Gly'] });
 });
@@ -91,6 +92,7 @@ test('every malformed request names what is wrong with it', () => {
   assert.match(reason('{"sequence": ["Gly"], "cTerminal": "thioester"}'), /cTerminal/);
   assert.match(reason('{"sequence": ["Gly"], "nTerminal": 7}'), /nTerminal/);
   assert.match(reason('{"sequence": ["Gly"], "cleave": "no"}'), /cleave/);
+  assert.match(reason('{"sequence": ["Gly"], "bocSecond": "yes"}'), /bocSecond/);
 });
 
 test('a sequence past the declared ceiling is refused here, with the number it asked for', () => {
