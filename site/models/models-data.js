@@ -55,7 +55,7 @@ SHAPES
     },
     'mimo-pro': {
       name: 'MiMo V2.6 Pro', provider: 'xiaomi',
-      input: 0.435, output: 0.87, intelligence: 46, speed: 51, taskCost: 0.13,
+      input: 0.435, output: 0.87, intelligence: 46, speed: 48, taskCost: 0.13,
       source: 'https://artificialanalysis.ai/models/mimo-v2-6-pro',
     },
     'haiku-high': {
@@ -105,8 +105,13 @@ SHAPES
     },
     'sol-max': {
       name: 'GPT-6.1 Sol', reasoning: 'Max', provider: 'openai',
-      input: 2.00, output: 10.00, intelligence: 52, speed: 64, speedApprox: true, taskCost: 0.72,
+      input: 2.00, output: 10.00, intelligence: 52, speed: 55, speedApprox: true, taskCost: 0.72,
       source: 'https://artificialanalysis.ai/models/gpt-6-1-sol',
+    },
+    'opus-max': {
+      name: 'Claude Opus 5.5', reasoning: 'Max', provider: 'anthropic',
+      input: 4.00, output: 20.00, intelligence: 58, speed: 94, speedApprox: true, taskCost: 5.98,
+      source: 'https://artificialanalysis.ai/models/claude-opus-5-5',
     },
   };
 
@@ -464,7 +469,7 @@ SHAPES
           row: { runs: 'api' },
           columns: [...API_HEAD, { key: 'profile', label: 'Profile', type: 'text' }],
           rows: [
-            { ref: 'deepseek-flash-max', pick: 'Research Chat', profile: '**Research Chat: speed and tools**' },
+            { ref: 'deepseek-flash-max', pick: 'Research Chat', profile: '**Featured for Research Chat: speed and tools**' },
             { ref: 'mimo-pro', profile: 'Reasoning and long context' },
             { ref: 'haiku-high', pick: 'Dictionary', profile: '**Dictionary: accuracy per cost**' },
             { ref: 'haiku-max', profile: 'Higher score; longer time to first token' },
@@ -558,7 +563,7 @@ SHAPES
       label: 'Deep Research + Immersion',
       icon: 'compass',
       accent: '#22d3ee',
-      updated: '2026-10-19',
+      updated: '2026-10-20',
       title: 'Deep Research + Immersion',
       intro: '**Deep Research** requires iterative searches, planning, tool calls, source reconciliation and citations. **Immersion** requires explanations, extended dialogue and adaptation to the user’s level. Both use APIs by default; local embeddings and search can handle the retrieval step.',
       filters: [PRICE, SPEED, PROVIDER],
@@ -569,7 +574,7 @@ SHAPES
           row: { runs: 'api' },
           columns: [...API_HEAD, { key: 'research', label: 'Deep Research', type: 'text' }, { key: 'immersion', label: 'Immersion', type: 'text' }],
           rows: [
-            { ref: 'deepseek-flash-max', research: '**Balance of tools and price**', immersion: 'Good' },
+            { ref: 'deepseek-flash-max', pick: 'Deep Research', research: '**Featured: balance of tools and price**', immersion: 'Good' },
             { ref: 'mimo-pro', research: 'Demanding research', immersion: 'Good' },
             { ref: 'haiku-high', research: 'Cheap subtasks', immersion: '**Conversation and tutoring**' },
             { ref: 'haiku-max', research: 'Reasoning, with high latency', immersion: 'Complex tutoring' },
@@ -578,6 +583,7 @@ SHAPES
             { ref: 'gemini-flash-high', research: 'Multimodal documents', immersion: 'Good' },
             { ref: 'sonnet-max', research: '**Premium tier**', immersion: 'Premium tier' },
             { ref: 'sol-max', research: '**Premium tier, less verbose**', immersion: 'Premium tier' },
+            { ref: 'opus-max', research: '**Premium tier, highest score**', immersion: '**Premium tier, deepest tutoring**' },
           ],
           callout: {
             tone: 'info',
@@ -657,6 +663,7 @@ SHAPES
         { label: 'Artificial Analysis · Gemini 3.8 Flash', url: 'https://artificialanalysis.ai/models/releases/gemini-3-8-flash' },
         { label: 'Artificial Analysis · Gemini 3.5 Flash-Lite', url: 'https://artificialanalysis.ai/models/gemini-3-5-flash-lite' },
         { label: 'Artificial Analysis · Claude Sonnet 5.5', url: 'https://artificialanalysis.ai/models/claude-sonnet-5-5' },
+        { label: 'Artificial Analysis · Claude Opus 5.5', url: 'https://artificialanalysis.ai/models/claude-opus-5-5' },
         { label: 'Artificial Analysis · GPT-6.1 Sol', url: 'https://artificialanalysis.ai/models/gpt-6-1-sol' },
         { label: 'Qwen3.8 27B', url: 'https://huggingface.co/Qwen/Qwen3.8-27B' },
         { label: 'Qwen3.5 9B', url: 'https://huggingface.co/Qwen/Qwen3.5-9B' },
@@ -682,6 +689,7 @@ SHAPES
 
   /* Newest first. One line per review. */
   const changelog = [
+    { date: '2026-10-20', text: 'Added Claude Opus 5.5 to Deep Research + Immersion, refreshed the measured speed of GPT-6.1 Sol and MiMo V2.6 Pro, and marked DeepSeek Flash as the featured model in both Research Chat and Deep Research.' },
     { date: '2026-10-20', text: 'Raised the memory requirements for every local generative model and explained why a grounded answer needs more than the Q4 weights: local chat now starts at 24 GB unified or 12 GB VRAM, and 16 GB machines are recommended for retrieval only.' },
     { date: '2026-10-19', text: 'Added BGE-M3 via OpenRouter as the recommended API embedding model, and Gemini 3.5 Flash-Lite to the Idea Extraction candidates.' },
     { date: '2026-10-19', text: 'First edition: local models, embeddings and rerankers, Research Chat + Dictionary, Idea Extraction, Deep Research + Immersion, and the decision guide.' },
