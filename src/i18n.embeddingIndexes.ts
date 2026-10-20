@@ -1,5 +1,8 @@
 export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>> = {
   "en": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "The CLS and mean profiles share a single download. Deleting it affects both.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "The weights shared by the CLS and mean profiles will be deleted.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} uses mean pooling, an earlier recipe that retrieves less well. This index keeps working; prepare one with {replacement} whenever you like.",
     "Ideas de capítulos": "Chapter ideas",
     "Documentos de estudio": "Study documents",
     "Búsquedas de estudio": "Study searches",
@@ -92,6 +95,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Applied"
   },
   "fr": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "Les profils CLS et mean partagent un seul téléchargement. Le supprimer affecte les deux.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "Les poids partagés par les profils CLS et mean seront supprimés.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} utilise le mean pooling, une recette antérieure qui retrouve moins bien. Cet index continue de fonctionner ; préparez-en un avec {replacement} quand vous le souhaitez.",
     "Ideas de capítulos": "Idées des chapitres",
     "Documentos de estudio": "Documents d’étude",
     "Búsquedas de estudio": "Recherches d’étude",
@@ -184,6 +190,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Appliqué"
   },
   "de": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "Die Profile CLS und mean teilen sich einen einzigen Download. Wenn Sie ihn löschen, betrifft das beide.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "Die von den Profilen CLS und mean gemeinsam genutzten Gewichte werden gelöscht.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} verwendet Mean Pooling, ein älteres Verfahren mit schwächerer Suche. Dieser Index funktioniert weiter; erstellen Sie bei Gelegenheit einen mit {replacement}.",
     "Ideas de capítulos": "Kapitelideen",
     "Documentos de estudio": "Lerndokumente",
     "Búsquedas de estudio": "Lernsuche",
@@ -276,6 +285,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Angewendet"
   },
   "pt": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "Os perfis CLS e mean partilham uma única transferência. Eliminá-la afeta ambos.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "Serão eliminados os pesos partilhados pelos perfis CLS e mean.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} usa mean pooling, uma receita anterior que recupera pior. Este índice continua a funcionar; prepare um com {replacement} quando quiser.",
     "Ideas de capítulos": "Ideias dos capítulos",
     "Documentos de estudio": "Documentos de estudo",
     "Búsquedas de estudio": "Pesquisas de estudo",
@@ -368,6 +380,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Aplicado"
   },
   "pt-BR": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "Os perfis CLS e mean compartilham um único download. Excluí-lo afeta ambos.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "Os pesos compartilhados pelos perfis CLS e mean serão excluídos.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} usa mean pooling, uma receita anterior que recupera pior. Este índice continua funcionando; prepare um com {replacement} quando quiser.",
     "Ideas de capítulos": "Ideias dos capítulos",
     "Documentos de estudio": "Documentos de estudo",
     "Búsquedas de estudio": "Buscas de estudo",
@@ -460,6 +475,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Aplicado"
   },
   "it": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "I profili CLS e mean condividono un unico download. Eliminarlo ha effetto su entrambi.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "Verranno eliminati i pesi condivisi dai profili CLS e mean.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} usa il mean pooling, una ricetta precedente che recupera peggio. Questo indice continua a funzionare; preparane uno con {replacement} quando vuoi.",
     "Ideas de capítulos": "Idee dei capitoli",
     "Documentos de estudio": "Documenti di studio",
     "Búsquedas de estudio": "Ricerche di studio",
@@ -552,6 +570,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Applicato"
   },
   "tr": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "CLS ve mean profilleri tek bir indirmeyi paylaşır. Silmek ikisini de etkiler.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "CLS ve mean profillerinin paylaştığı ağırlıklar silinecek.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model}, daha zayıf erişim sağlayan eski bir yöntem olan mean pooling kullanır. Bu dizin çalışmaya devam eder; dilediğinizde {replacement} ile bir dizin hazırlayın.",
     "Ideas de capítulos": "Bölüm fikirleri",
     "Documentos de estudio": "Çalışma belgeleri",
     "Búsquedas de estudio": "Çalışma aramaları",
@@ -644,6 +665,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "Uygulandı"
   },
   "zh-CN": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "CLS 和 mean 配置共用同一份下载。删除它会同时影响两者。",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "将删除 CLS 和 mean 配置共用的权重。",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} 使用 mean pooling，这是检索效果较差的旧方案。此索引仍可正常使用；可随时用 {replacement} 准备一个新索引。",
     "Ideas de capítulos": "章节观点",
     "Documentos de estudio": "学习文档",
     "Búsquedas de estudio": "学习搜索",
@@ -736,6 +760,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "已应用"
   },
   "zh-TW": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "CLS 與 mean 設定共用同一份下載。刪除它會同時影響兩者。",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "將刪除 CLS 與 mean 設定共用的權重。",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} 使用 mean pooling，這是檢索效果較差的舊方案。此索引仍可正常使用；可隨時用 {replacement} 準備一個新索引。",
     "Ideas de capítulos": "章節觀點",
     "Documentos de estudio": "學習文件",
     "Búsquedas de estudio": "學習搜尋",
@@ -828,6 +855,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "已套用"
   },
   "ja": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "CLS と mean のプロファイルは同じダウンロードを共有します。削除すると両方に影響します。",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "CLS と mean のプロファイルが共有する重みを削除します。",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model} は mean pooling を使用しています。これは検索精度が低い以前の方式です。このインデックスは引き続き使えます。都合のよいときに {replacement} でインデックスを準備してください。",
     "Ideas de capítulos": "章のアイデア",
     "Documentos de estudio": "学習ドキュメント",
     "Búsquedas de estudio": "学習検索",
@@ -920,6 +950,9 @@ export const EMBEDDING_INDEX_TRANSLATIONS: Record<string, Record<string, string>
     "Aplicado": "適用済み"
   },
   "ko": {
+    "Los perfiles CLS y mean comparten una única descarga. Eliminarla afecta a ambos.": "CLS 및 mean 프로필은 하나의 다운로드를 공유합니다. 삭제하면 두 프로필 모두에 영향을 줍니다.",
+    "Se eliminarán los pesos compartidos de los perfiles CLS y mean.": "CLS 및 mean 프로필이 공유하는 가중치가 삭제됩니다.",
+    "{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.": "{model}은(는) 검색 성능이 낮은 이전 방식인 mean pooling을 사용합니다. 이 인덱스는 계속 작동합니다. 원할 때 {replacement}(으)로 인덱스를 준비하세요.",
     "Ideas de capítulos": "장별 아이디어",
     "Documentos de estudio": "학습 문서",
     "Búsquedas de estudio": "학습 검색",
