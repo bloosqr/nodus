@@ -464,6 +464,10 @@ export function ResearchAssistantModal({
 
   const setContextLayer = (layer: (typeof CONTEXT_LAYERS)[number]['id'], on: boolean) =>
     setSelection(current => withResearchContextLayers(current, toggleResearchContextLayer(researchContextLayers(current, isAcademic), layer, on)));
+  const setAllContextLayers = (on: boolean) => {
+    setWebSearch(on ? 'auto' : 'off');
+    setSelection(current => withResearchContextLayers(current, { ideas: on, documents: on, indexed: on, web: on }));
+  };
 
   const startNewConversation = () => {
     if (attachmentBusyRef.current) return;
@@ -1622,6 +1626,8 @@ export function ResearchAssistantModal({
           <div className="context-tab-scroll">
             <p className="research-context-intro">{t('Elige qué consulta el asistente antes de responder.')}</p>
             <div className="research-context-layers" data-testid="research-context-layers">
+              <ContextLayerSwitch testId="research-context-select-all" icon="layers" label={t('Seleccionar todo')}
+                checked={CONTEXT_LAYERS.every(layer => contextLayers[layer.id]) && turnWebSearch !== 'off'} disabled={sending && !!adapter} onChange={setAllContextLayers} />
               {CONTEXT_LAYERS.map(layer => <ContextLayerSwitch key={layer.id} testId={`research-context-layer-${layer.id}`} icon={layer.icon} label={t(layer.label)}
                 description={t(layer.description)} checked={contextLayers[layer.id]} disabled={sending && !!adapter} onChange={on => setContextLayer(layer.id, on)} />)}
               <ContextLayerSwitch testId="research-context-layer-web" icon="globe" label={t('Búsqueda web')}
@@ -1731,12 +1737,12 @@ function ProjectChatList({ conversations, onOpen, empty, draggable = false }: { 
 
 /** One layer of the context balloon: what it reads, and a switch. */
 function ContextLayerSwitch({ testId, icon, label, description, checked, disabled, onChange }: {
-  testId: string; icon: string; label: string; description: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void;
+  testId: string; icon: string; label: string; description?: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void;
 }) {
   return <button type="button" role="switch" aria-checked={checked} disabled={disabled} className="research-context-layer" data-testid={testId}
     onClick={() => onChange(!checked)}>
     <Icon name={icon} size={16} />
-    <span><strong>{label}</strong><small>{description}</small></span>
+    <span><strong>{label}</strong>{description && <small>{description}</small>}</span>
     <span className="research-context-switch" aria-hidden="true"><span /></span>
   </button>;
 }
