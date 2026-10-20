@@ -211,6 +211,32 @@ function observeProviderQuota(
   aiRequestScheduler.observeQuota(providerRequestDescriptor(model, opts, key, endpoint), headers);
 }
 
+/** Which application function asked for a model call, for NODUS_AI_CALL_TRACE=1.
+ *
+ *  `requestHash` tells you that two requests were identical but not who made either, which is
+ *  exactly the gap when a run makes more calls than its turns explain: the 2026-10-20 icotrokinra
+ *  run made 45 provider calls over 6 turns, one request repeated 7 times, and the log could not
+ *  name a single one of them. With this on, one run attributes all of them.
+ *
+ *  Off by default and returns null, so nothing is captured when nothing reads it: a stack per
+ *  request is waste, and `formatMeta` drops a null without printing a key. */
+function aiCallSite(): string | null {
+  try {
+    if (process.env.NODUS_AI_CALL_TRACE !== '1') return null;
+    // Frame 0 is Error, frame 1 is this function; the caller's caller is what we want.
+    const frames = (new Error().stack ?? '').split('\n').slice(2);
+    for (const frame of frames) {
+      const name = /at (?:async )?([A-Za-z0-9_$.<>]+)/.exec(frame)?.[1];
+      if (!name) continue;
+      if (/^(aiCallSite|scheduleProviderRequest|Object\.|Module\.|process\.|new Promise)/.test(name)) continue;
+      return name;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function scheduleProviderRequest<T>(
   model: ModelRef,
   opts: CallOpts,
@@ -220,6 +246,7 @@ function scheduleProviderRequest<T>(
 ): Promise<T> {
   const queuedAt = process.hrtime.bigint();
   const requestHash = providerRequestHash(model, opts);
+  const callSite = aiCallSite();
   return aiRequestScheduler.run(providerRequestDescriptor(model, opts, key, endpoint), async () => {
     currentResearchHarness()?.reserveModelCall();
     const startedAt = process.hrtime.bigint();
@@ -229,6 +256,7 @@ function scheduleProviderRequest<T>(
       class: opts.requestClass ?? 'interactive',
       jobId: opts.jobId ?? null,
       requestHash,
+      callSite,
     };
     perfLogNs('AI queue wait', startedAt - queuedAt, opts.perf, meta);
     try {
