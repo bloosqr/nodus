@@ -24,8 +24,16 @@ try {
   const chat = catalog.NODUS_LOCAL_MODELS.filter((model) => model.kind === 'chat');
   assert.deepEqual(embeddings.map((model) => model.label), [
     'EmbeddingGemma 2 Q8 · 512', 'EmbeddingGemma 2 Q8 · 256',
-    'BGE-M3 Q8_0', 'GTE Multilingual Base INT8', 'Multilingual E5 Small INT8',
+    'BGE-M3 Q8_0', 'Harrier OSS v1 0.6B Q8_0', 'GTE Multilingual Base INT8', 'Multilingual E5 Small INT8',
   ]);
+  const harrier = embeddings.find((model) => model.id === 'harrier-oss-v1-0.6b-q8_0');
+  assert.equal(harrier.runtime, 'llama_cpp', 'Harrier runs in the managed llama.cpp server, like BGE-M3');
+  assert.equal(harrier.pooling, 'last', 'Harrier is a decoder embedder: last-token pooling, never mean');
+  assert.equal(harrier.dimensions, 1024);
+  assert.equal(harrier.contextLength, 8192, 'the causal KV cache is sized to the 8,000-character input cap, not 32k');
+  assert.match(harrier.assets[0].url, /\/resolve\/d79decec1ab9442e969e79804515b9c31683d30e\//, 'the GGUF download is pinned to a revision');
+  assert.ok(embeddings.filter((model) => model.id !== harrier.id).every((model) => model.pooling === undefined),
+    'historical embedding models keep their implicit mean pooling');
   assert.deepEqual(chat.map((model) => model.label), [
     'Qwen3.5-0.8B Q4', 'Gemma 4 E2B Q4', 'Granite 4.0 Micro Q4', 'LFM2.5-VL-1.6B Q4',
   ]);
@@ -61,7 +69,8 @@ try {
   assert.match(manager, /fsp\.stat\(`\$\{path\.join\(directory, asset\.file\)\}\.download`\)/, 'status includes bytes from an in-progress partial asset');
   assert.match(manager, /createHash\('sha256'\)/, 'downloads verify SHA-256');
   assert.match(manager, /'--mmproj'/, 'llama-server receives the multimodal projector');
-  assert.match(manager, /'--embedding', '--pooling', 'mean'/, 'BGE runs through llama.cpp embedding mode');
+  assert.match(manager, /'--embedding', '--pooling', model\.pooling \?\? 'mean'/,
+    'llama.cpp embedding mode uses each model\'s pooling, mean by default (BGE-M3)');
   const embeddingArgs = manager.match(/if \(mode === 'embedding'\) \{([\s\S]*?)\n  \}/)?.[1] ?? '';
   assert.match(embeddingArgs, /'--batch-size', String\(contextPerSlot\)/,
     'the logical embedding batch accepts one complete model-context input');

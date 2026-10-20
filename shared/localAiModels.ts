@@ -29,6 +29,9 @@ export interface NodusLocalModelDefinition {
   licenseUrl: string;
   contextLength?: number;
   dimensions?: number;
+  /** llama.cpp embedding pooling. Part of the vector space: encoders pool the mean,
+   *  decoder embedders (Harrier/Qwen3) the appended end-of-text token. */
+  pooling?: 'mean' | 'last';
   /** Profiles in a family share verified assets and one download. */
   assetFamily?: string;
   validation?: 'experimental' | 'validated';
@@ -153,6 +156,7 @@ const TEXT_NO_EXTRACTION_CAPABILITIES: NodusLocalCapabilities = {
 const HF_REVISIONS: Record<string, string> = {
   'onnx-community/embeddinggemma-2-ONNX': EMBEDDING_GEMMA2_REVISION,
   'ggml-org/bge-m3-Q8_0-GGUF': '9eba04c5d75ba5a1595e45de734d36bef4e5cb98',
+  'mradermacher/harrier-oss-v1-0.6b-GGUF': 'd79decec1ab9442e969e79804515b9c31683d30e',
   'onnx-community/gte-multilingual-base': '2edbf5e672aab465f9ed4c154a8b61791c082c69',
   'Xenova/multilingual-e5-small': '761b726dd34fb83930e26aab4e9ac3899aa1fa78',
   'unsloth/Qwen3.5-0.8B-GGUF': '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0',
@@ -202,6 +206,37 @@ export const NODUS_LOCAL_MODELS: readonly NodusLocalModelDefinition[] = [
         url: hf('ggml-org/bge-m3-Q8_0-GGUF', 'bge-m3-q8_0.gguf'),
         bytes: 634_553_760,
         sha256: 'aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173',
+      },
+    ],
+  },
+  {
+    // Q8_0 conversion of microsoft/harrier-oss-v1-0.6b. Its vectors were checked against the
+    // onnx-community FP16 export of the original weights (cosine 0.9999 on multilingual text):
+    // the GGUF metadata already declares last-token pooling and appends <|endoftext|>.
+    id: 'harrier-oss-v1-0.6b-q8_0',
+    label: 'Harrier OSS v1 0.6B Q8_0',
+    kind: 'embedding',
+    runtime: 'llama_cpp',
+    quantization: 'Q8_0',
+    description: 'Embeddings multilingües de Microsoft con instrucción de búsqueda. La mejor puntuación MTEB multilingüe de los modelos locales; reserva unos 6,5 GB de memoria de GPU, así que conviene un equipo con 16 GB o más.',
+    sourceUrl: 'https://huggingface.co/mradermacher/harrier-oss-v1-0.6b-GGUF',
+    licenseLabel: 'MIT',
+    licenseUrl: 'https://huggingface.co/microsoft/harrier-oss-v1-0.6b',
+    // The model accepts 32k tokens, but llama.cpp b10002 needs each embedding input in one
+    // physical batch and reserves the tied vocabulary head for every token of it (~0.6 MB per
+    // token): 8k reserves ~6.4 GB on Metal (BGE-M3: ~0.6 GB). 8k still fits the 8,000-character
+    // input cap in every common script (Hindi ~7.2k tokens); a 4k window would reject CJK text.
+    contextLength: 8192,
+    dimensions: 1024,
+    pooling: 'last',
+    capabilities: EMBEDDING_CAPABILITIES,
+    modelFile: 'harrier-oss-v1-0.6b.Q8_0.gguf',
+    assets: [
+      {
+        file: 'harrier-oss-v1-0.6b.Q8_0.gguf',
+        url: hf('mradermacher/harrier-oss-v1-0.6b-GGUF', 'harrier-oss-v1-0.6b.Q8_0.gguf'),
+        bytes: 639_448_320,
+        sha256: 'ba2c9408f82cfdb73aaf70aaea9f125f3fb24c5e76ce0efb469e1530e5ec53e4',
       },
     ],
   },

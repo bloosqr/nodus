@@ -1436,7 +1436,7 @@ async function ensureNodusLocalServerUnlocked(
     args.push(
       '--batch-size', String(contextPerSlot),
       '--ubatch-size', String(contextPerSlot),
-      '--embedding', '--pooling', 'mean',
+      '--embedding', '--pooling', model.pooling ?? 'mean',
     );
   }
   const installed = await installedRuntimeBackend();
@@ -1547,6 +1547,11 @@ export async function withNodusLocalServerLease<T>(
         });
         acquired.server.stopWhenIdle = true;
       }
+      // llama.cpp answers «Compute error.» once a backend graph has failed, for example a
+      // Metal command buffer refused under GPU memory pressure. That process keeps failing
+      // every later request, however small, while a fresh one recovers: retire it once its
+      // in-flight requests finish so the next attempt (batch bisection retries) starts clean.
+      if (/Compute error/i.test(error instanceof Error ? error.message : String(error))) acquired.server.stopWhenIdle = true;
       throw error;
     } finally {
       await serializeLifecycle(async () => {

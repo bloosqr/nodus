@@ -6,7 +6,15 @@ const fixture = window as any;
 fixture.actions = [];
 const listeners = new Set<() => void>();
 const progressListeners = new Set<() => void>();
-let settings = { embeddingProvider: 'openai', embeddingModel: 'model-a', researchReranking: 'off' };
+let settings: any = { embeddingProvider: 'openai', embeddingModel: 'model-a', researchReranking: 'off', researchRerankerModel: 'bge-reranker-v2-m3-q8_0' };
+// The BGE reranker an earlier version installed is already on disk.
+const installedRerankers = new Set(['bge-reranker-v2-m3-q8_0']);
+const rerankerSizes: Record<string, number> = { 'bge-reranker-v2-m3-q4_k_m': 438376864, 'qwen3-reranker-0.6b-q8_0': 639153184, 'bge-reranker-v2-m3-q8_0': 635676416 };
+const rerankerStatus = () => {
+  const models = Object.entries(rerankerSizes).map(([id, bytes]) => ({ id, bytes, available: installedRerankers.has(id), downloading: false, progress: 0 }));
+  const selected = models.find(model => model.id === settings.researchRerankerModel)!;
+  return { selected: selected.id, available: selected.available, downloading: false, progress: 0, bytes: selected.bytes, models };
+};
 let indexes = [
   { id: 'a', profile: { provider: 'openai', model: 'model-a' }, active: true, pending: 0 },
   { id: 'b', profile: { provider: 'openai', model: 'model-b' }, active: false, pending: 2 },
@@ -16,8 +24,13 @@ let indexes = [
   run: { id: `run-${index.id}`, indexId: index.id, generation: 1, reason: 'content_changed', lastReason: 'content_changed', state: 'complete', reviewed: 40, reused: 38, computed: 2, excluded: 0, failed: 0, providerInputs: 2, startedAt: '2026-10-19T10:00:00.000Z', updatedAt: '2026-10-19T10:00:00.000Z', error: null } }));
 const emit = () => { for (const listener of listeners) listener(); };
 fixture.nodus = {
-  getLocalRerankerStatus: async () => ({ available: false, downloading: false, progress: 0, bytes: 635676416 }),
-  prepareLocalReranker: async (action: string) => { fixture.actions.push(['reranker', action]); return { available: true, downloading: false, progress: 1, bytes: 635676416 }; },
+  getLocalRerankerStatus: async () => rerankerStatus(),
+  prepareLocalReranker: async (action: string, modelId?: string) => {
+    fixture.actions.push(['reranker', action, modelId]);
+    if (action === 'download' && modelId) installedRerankers.add(modelId);
+    return rerankerStatus();
+  },
+  deleteLocalReranker: async (modelId: string) => { fixture.actions.push(['rerankerDelete', modelId]); installedRerankers.delete(modelId); return rerankerStatus(); },
   updateSettings: async (patch: any) => { fixture.actions.push(['settings', patch]); settings = { ...settings, ...patch }; return settings; },
   listEmbeddingIndexRuns: async (id: string) => indexes.filter(index => index.id === id).map(index => index.run),
   compareEmbeddingIndexes: async (input: any) => {
