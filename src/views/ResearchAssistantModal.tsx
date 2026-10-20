@@ -41,6 +41,7 @@ import { ResearchEffortControl } from '../components/ResearchEffortControl';
 import { ModelPicker } from '../components/ModelPicker';
 import { liveResearchTurnKey, liveResearchTurns, type LiveResearchTurn } from '../researchLiveTurns';
 import { researchChatPresentation } from '@shared/researchSourceNotices';
+import { toReadingCopy } from '@shared/readingCopy';
 import { ResearchSourceNotice } from '../components/ResearchSourceNotice';
 import { ChatMarkdown } from '../components/ChatMarkdown';
 import { ChatAbortedNotice } from '../components/ChatAbortedNotice';
@@ -300,7 +301,7 @@ export function ResearchAssistantModal({
   const [conversationNotice, setConversationNotice] = useState<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [copiedMessage, setCopiedMessage] = useState<{ id: string; format: 'markdown' | 'reading' } | null>(null);
   const [showContext, setShowContext] = useState(false);
   // The context balloon's two tabs: how the assistant approaches the corpus, and which of it.
   const [contextTab, setContextTab] = useState<'focus' | 'library'>('focus');
@@ -431,13 +432,15 @@ export function ResearchAssistantModal({
     setShowJumpToBottom(false);
   }, []);
 
-  const copyMessageMarkdown = useCallback(async (message: UiMessage) => {
-    const text = (!adapter && message.role === 'assistant' ? researchChatPresentation(message).content : message.content).trim();
+  const copyMessage = useCallback(async (message: UiMessage, format: 'markdown' | 'reading') => {
+    const content = (!adapter && message.role === 'assistant' ? researchChatPresentation(message).content : message.content).trim();
+    const text = format === 'reading' ? toReadingCopy(content) : content;
     if (!text) return;
     await navigator.clipboard.writeText(text);
-    setCopiedMessageId(message.id);
+    const copied = { id: message.id, format };
+    setCopiedMessage(copied);
     window.setTimeout(() => {
-      setCopiedMessageId((current) => (current === message.id ? null : current));
+      setCopiedMessage((current) => (current === copied ? null : current));
     }, 1400);
   }, [adapter]);
 
@@ -485,7 +488,7 @@ export function ResearchAssistantModal({
     setStoppedMessageId(null);
     setContextTitle(null);
     setShowJumpToBottom(false);
-    setCopiedMessageId(null);
+    setCopiedMessage(null);
   };
 
   useEffect(() => {
@@ -502,7 +505,7 @@ export function ResearchAssistantModal({
     setSelection(current => cloneSelection(initialTarget.selection ?? { ...current, sourceFilter: undefined }));
     if (initialTarget.prompt) setInput(initialTarget.prompt);
     setShowJumpToBottom(false);
-    setCopiedMessageId(null);
+    setCopiedMessage(null);
   }, [initialTarget]);
 
   const loadConversation = async (id: string, messageId?: string | null, messageIndex?: number | null, restoringDraft = false): Promise<boolean> => {
@@ -1368,7 +1371,7 @@ export function ResearchAssistantModal({
                     className={`msg-in flex rounded-lg transition-shadow duration-500 ${highlightedMessageId === message.id ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-neutral-950' : ''} ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`research-message group relative max-w-[78%] rounded-lg border px-3 py-2 text-sm ${message.role === 'assistant' ? 'pr-24' : 'pr-16'} ${
+                      className={`research-message group relative max-w-[78%] rounded-lg border px-3 py-2 text-sm ${message.role === 'assistant' ? 'pr-28' : 'pr-16'} ${
                         message.role === 'user'
                           ? 'research-accent-solid text-white whitespace-pre-wrap'
                           : message.error
@@ -1417,17 +1420,29 @@ export function ResearchAssistantModal({
                             <Icon name="notebook" size={13} />
                           </button>
                         )}
+                        {message.role === 'assistant' && message.content.trim() && (
+                          <button
+                            type="button"
+                            className="rounded p-1 text-neutral-500 opacity-70 transition hover:bg-neutral-800 research-accent-hover hover:opacity-100"
+                            title={copiedMessage?.id === message.id && copiedMessage.format === 'reading' ? t('Copiado') : t('Copiar sin referencias')}
+                            aria-label={t('Copiar sin referencias')}
+                            data-testid={`research-copy-reading-${message.id}`}
+                            onClick={() => void copyMessage(message, 'reading')}
+                          >
+                            <Icon name={copiedMessage?.id === message.id && copiedMessage.format === 'reading' ? 'check' : 'copyText'} size={13} />
+                          </button>
+                        )}
                         <button
                           className={`rounded p-1 opacity-70 transition hover:opacity-100 ${
                             message.role === 'user'
                               ? 'text-white hover:bg-white/10'
                               : 'text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200'
                           }`}
-                          title={copiedMessageId === message.id ? t('Copiado') : t('Copiar en Markdown')}
-                          onClick={() => void copyMessageMarkdown(message)}
+                          title={copiedMessage?.id === message.id && copiedMessage.format === 'markdown' ? t('Copiado') : t('Copiar en Markdown')}
+                          onClick={() => void copyMessage(message, 'markdown')}
                           disabled={!message.content.trim()}
                         >
-                          <Icon name={copiedMessageId === message.id ? 'check' : 'copy'} size={13} />
+                          <Icon name={copiedMessage?.id === message.id && copiedMessage.format === 'markdown' ? 'check' : 'copy'} size={13} />
                         </button>
                       </div>
                       {message.attachments?.length ? renderAttachments(message.attachments) : null}
