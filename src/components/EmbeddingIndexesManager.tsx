@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppSettings, EmbeddingProvider } from '@shared/types';
 import type { EmbeddingIndexPreview, EmbeddingIndexProgress, EmbeddingIndexSummary } from '@shared/embeddingIndexes';
 import { PROVIDER_LABELS } from '@shared/providers';
+import { getNodusLocalModel } from '@shared/localAiModels';
 import { EmbeddingModelControl } from './EmbeddingModelControl';
 import { ConfirmModal } from './ConfirmModal';
 import { t, tx } from '../i18n';
@@ -108,6 +109,15 @@ export function EmbeddingIndexesManager({ settings, onChange, vaultId }: { setti
           : index.profile.input?.kind === 'plain' || (!index.profile.input && defaultEmbeddingInputProfile(index.profile.provider, index.profile.model).kind !== 'gemma2') ? t('Sin prefijos')
             : index.profile.input?.kind === 'e5' ? 'E5' : index.profile.input?.kind === 'nomic' ? 'Nomic' : index.profile.input?.kind === 'harrier' ? 'Harrier' : index.profile.input?.kind === 'gemini' ? 'Gemini' : 'EmbeddingGemma 2'} · {index.id.slice(0, 8)}</p>
         <p className="mt-1 text-xs">{index.legacy ? t('Heredado: reconstruye el índice antes de activarlo.') : index.pending ? tx('{n} pendientes', { n: index.pending }) : t('Actualizado')}</p>
+        {!index.legacy && (() => {
+          const current = index.profile.provider === 'nodus' ? getNodusLocalModel(index.profile.model) : undefined;
+          const replacement = current?.supersededBy ? getNodusLocalModel(current.supersededBy) : undefined;
+          // Only the pooling changes, so the new index keeps this index's input recipe.
+          return current && replacement && <div className="mt-2 rounded-md border border-amber-700/50 p-2 text-xs text-amber-200" data-testid="embedding-index-superseded">
+            <p>{tx('{model} usa mean pooling, una receta anterior que recupera peor. Este índice sigue funcionando; prepara uno con {replacement} cuando quieras.', { model: current.label, replacement: replacement.label })}</p>
+            <button className="btn btn-ghost mt-1" disabled={busy} onClick={() => void showPreview({ provider: 'nodus', model: replacement.id, input: index.profile.input ?? defaultEmbeddingInputProfile('nodus', replacement.id) })}>{t('Preparar índice de embeddings')}</button>
+          </div>;
+        })()}
         <details className="mt-2 text-xs text-neutral-400"><summary>{t('Cobertura y almacenamiento')}</summary>
           <ul className="mt-2 space-y-1">{index.coverage.map(family => <li key={family.family}>{t(familyLabels[family.family] ?? family.family)}: {family.indexed}/{family.total - family.excluded}{family.excluded ? ` · ${family.excluded} ${t('excluidos')}` : ''}</li>)}</ul>
           <p className="mt-2">{t('Espacio compartido')}: {size(index.sharedBytes)} · {t('Espacio liberable')}: {size(index.reclaimableBytes)}</p>

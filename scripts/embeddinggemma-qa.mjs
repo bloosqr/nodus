@@ -12,8 +12,8 @@ import { createResearchTestRoot, researchTestEnvironment, macResearchSandbox, ve
 import { prepareEmbeddingCorpus } from './embeddinggemma-corpus.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const productionProfiles = ['multilingual-e5-small-int8', 'gte-multilingual-base-int8', 'bge-m3-q8_0', 'embeddinggemma-2-text-q8-512-v1', 'embeddinggemma-2-text-q8-256-v1', 'harrier-oss-v1-0.6b-q8_0'];
-// Each llama.cpp embedder runs with its own pooling; Harrier instructs queries only.
+const productionProfiles = ['multilingual-e5-small-int8', 'gte-multilingual-base-int8', 'bge-m3-q8_0', 'embeddinggemma-2-text-q8-512-v1', 'embeddinggemma-2-text-q8-256-v1', 'harrier-oss-v1-0.6b-q8_0', 'gte-multilingual-base-int8-cls', 'bge-m3-q8_0-cls'];
+// Each embedder runs with its own pooling (mean when undeclared); Harrier instructs queries only.
 const llamaProfile = modelId => NODUS_LOCAL_MODELS.find(model => model.id === modelId)?.runtime === 'llama_cpp';
 const HARRIER_QUERY_PREFIX = 'Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ';
 const controls = ['embeddinggemma-2-text-q4-512-lab', 'embeddinggemma-2-text-q4-256-lab', 'embeddinggemma-2-text-q8-768-lab'];
@@ -80,7 +80,8 @@ async function prepareModel(modelId) {
 function inferenceWorker(modelId, directory) {
   const eg2 = modelId.startsWith('embeddinggemma-2-');
   const file = eg2 ? path.join(repo, 'dist-electron/embeddingGemma2Worker.cjs') : path.join(repo, 'scripts/embeddinggemma-legacy-worker.cjs');
-  const worker = new Worker(file, { workerData: { directory, dtype: modelId.includes('-q4-') ? 'q4' : 'q8', threads: Math.max(1, Math.min(4, os.availableParallelism() - 1)) } });
+  const pooling = NODUS_LOCAL_MODELS.find(model => model.id === modelId)?.pooling ?? 'mean';
+  const worker = new Worker(file, { workerData: { directory, pooling, dtype: modelId.includes('-q4-') ? 'q4' : 'q8', threads: Math.max(1, Math.min(4, os.availableParallelism() - 1)) } });
   let next = 0; const pending = new Map();
   worker.on('message', reply => { const request = pending.get(reply.id); if (!request) return; pending.delete(reply.id); reply.ok ? request.resolve(reply.result) : request.reject(new Error(reply.error)); });
   const fail = error => { for (const request of pending.values()) request.reject(error); pending.clear(); };
@@ -154,7 +155,7 @@ async function runChild(modelId, directory, audit) {
     if (!vector.every(Number.isFinite) || Math.abs(Math.hypot(...vector) - 1) > .0001) throw new Error('Invalid native result');
     const warm = []; for (let n = 0; n < 5; n++) { const before = performance.now(); await runtime.embed(['When was the school library opened?'], 'query'); warm.push(performance.now() - before); }
     const report = { profile: modelId, platform: process.platform, architecture: process.arch, node: process.version, cpu: os.cpus()[0].model, memoryBytes: os.totalmem(), dimensions: vector.length, coldMs, warmMs: warm,
-      maxRssKiB: process.resourceUsage().maxRSS, network: 'OS sandbox denies all external inference traffic', runtime: modelId.startsWith('embeddinggemma') ? 'Transformers.js 4.3.1 / CPU' : llamaProfile(modelId) ? `llama.cpp b10002 / native · ${NODUS_LOCAL_MODELS.find(model => model.id === modelId).pooling ?? 'mean'} pooling` : 'Transformers.js 3.8.1 / CPU', results: [] };
+      maxRssKiB: process.resourceUsage().maxRSS, network: 'OS sandbox denies all external inference traffic', runtime: modelId.startsWith('embeddinggemma') ? 'Transformers.js 4.3.1 / CPU' : llamaProfile(modelId) ? `llama.cpp b10002 / native · ${NODUS_LOCAL_MODELS.find(model => model.id === modelId).pooling ?? 'mean'} pooling` : `Transformers.js 3.8.1 / CPU · ${NODUS_LOCAL_MODELS.find(model => model.id === modelId).pooling ?? 'mean'} pooling`, results: [] };
     if (modelId.startsWith('embeddinggemma')) {
       try { await runtime.embed(['token '.repeat(10000)], 'query'); throw new Error('Oversized input was silently accepted'); }
       catch (error) { if (!/8192 tokens/.test(error.message)) throw error; report.oversizeRejected = true; }

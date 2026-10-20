@@ -116,6 +116,16 @@ test('saved-index controls preserve the active index and deletion requires every
     await dialog.getByRole('button', { name: 'Eliminar definitivamente', exact: true }).click();
     await manager.getByText(/Sin índice semántico activo/).waitFor();
     assert.ok((await page.evaluate(() => window.actions)).some(action => action[0] === 'delete' && action[1] === 'a'));
+    // An index of a superseded mean-pooled profile keeps working and points to its CLS profile.
+    await page.evaluate(() => window.addLegacyPoolingIndex());
+    const superseded = page.getByTestId('embedding-index-c').getByTestId('embedding-index-superseded');
+    await superseded.getByText(/BGE-M3 Q8_0 · mean usa mean pooling.*BGE-M3 Q8_0 · CLS/).waitFor();
+    await superseded.getByRole('button', { name: 'Preparar índice de embeddings', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancelar', exact: true }).click();
+    const upgrade = (await page.evaluate(() => window.actions)).find(action => action[0] === 'preview' && action[1].model === 'bge-m3-q8_0-cls');
+    assert.equal(upgrade?.[1].provider, 'nodus');
+    assert.equal(upgrade?.[1].input.kind, 'plain', 'the CLS index keeps the input recipe of the index it replaces, not the form selection');
+    assert.equal(await page.getByTestId('embedding-index-b').getByTestId('embedding-index-superseded').count(), 0, 'cloud indexes show no pooling hint');
     await page.setViewportSize({ width: 640, height: 900 });
     const box = await manager.boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 640);
     const artifacts = process.env.NODUS_EMBEDDING_UI_ARTIFACTS || root;

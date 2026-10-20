@@ -23,6 +23,12 @@ let indexes = [
   bytes: 245760, sharedBytes: 65536, reclaimableBytes: 245760, updatedAt: '2026-10-19T10:00:00.000Z', error: null,
   run: { id: `run-${index.id}`, indexId: index.id, generation: 1, reason: 'content_changed', lastReason: 'content_changed', state: 'complete', reviewed: 40, reused: 38, computed: 2, excluded: 0, failed: 0, providerInputs: 2, startedAt: '2026-10-19T10:00:00.000Z', updatedAt: '2026-10-19T10:00:00.000Z', error: null } }));
 const emit = () => { for (const listener of listeners) listener(); };
+// A local BGE-M3 index prepared with the earlier mean-pooled profile.
+fixture.addLegacyPoolingIndex = () => {
+  indexes = [...indexes, { ...indexes[0], id: 'c', active: false, dimensions: 1024, profile: { provider: 'nodus', model: 'bge-m3-q8_0', endpoint: 'nodus-local-runtime', modelRevision: 'digest', recipeVersion: 1 },
+    run: { ...indexes[0].run, id: 'run-c', indexId: 'c' } }];
+  emit();
+};
 fixture.nodus = {
   getLocalRerankerStatus: async () => rerankerStatus(),
   prepareLocalReranker: async (action: string, modelId?: string) => {

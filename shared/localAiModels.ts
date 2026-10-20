@@ -29,11 +29,16 @@ export interface NodusLocalModelDefinition {
   licenseUrl: string;
   contextLength?: number;
   dimensions?: number;
-  /** llama.cpp embedding pooling. Part of the vector space: encoders pool the mean,
-   *  decoder embedders (Harrier/Qwen3) the appended end-of-text token. */
-  pooling?: 'mean' | 'last';
+  /** Embedding pooling. Part of the vector space: BERT-style encoders pool their
+   *  trained [CLS] token, decoder embedders (Harrier/Qwen3) the appended end-of-text
+   *  token. Undeclared means mean pooling, the historical recipe of the first profiles. */
+  pooling?: 'mean' | 'cls' | 'last';
   /** Profiles in a family share verified assets and one download. */
   assetFamily?: string;
+  /** Settings row title for a family's single download. */
+  assetFamilyLabel?: string;
+  /** A profile kept only so existing indexes stay valid; new indexes should use this id. */
+  supersededBy?: string;
   validation?: 'experimental' | 'validated';
   vision?: boolean;
   /** Benchmarked role contract. Unsupported roles are blocked before inference. */
@@ -173,7 +178,7 @@ export const NODUS_LOCAL_MODELS: readonly NodusLocalModelDefinition[] = [
     id: `embeddinggemma-2-text-q8-${dimensions}-v1`,
     label: `EmbeddingGemma 2 Q8 · ${dimensions}`,
     kind: 'embedding', runtime: 'embeddinggemma2', quantization: 'Q8', dimensions,
-    assetFamily: EMBEDDING_GEMMA2_FAMILY, validation: 'experimental',
+    assetFamily: EMBEDDING_GEMMA2_FAMILY, assetFamilyLabel: 'EmbeddingGemma 2 Q8 · 256 / 512', validation: 'experimental',
     description: dimensions === 512 ? 'Texto multilingüe · perfil recomendado de esta familia. Validación de producto pendiente.' : 'Texto multilingüe · índice más pequeño. Validación de producto pendiente.',
     sourceUrl: 'https://huggingface.co/onnx-community/embeddinggemma-2-ONNX',
     licenseLabel: 'Apache-2.0 · revisar términos del recurso', licenseUrl: 'https://ai.google.dev/gemma/apache_2',
@@ -186,18 +191,24 @@ export const NODUS_LOCAL_MODELS: readonly NodusLocalModelDefinition[] = [
       { file: 'onnx/model_quantized.onnx_data', url: hf('onnx-community/embeddinggemma-2-ONNX', 'onnx/model_quantized.onnx_data'), bytes: 313724928, sha256: '278a7ff1248c3618e4bd11a607fc54f7bdc7778854230f3956d3f86bd9db4f3b' },
     ].map(asset => ({ ...asset, license: 'Apache-2.0', licenseUrl: 'https://ai.google.dev/gemma/apache_2', licenseNotice: 'legal/EMBEDDINGGEMMA_2_NOTICE.md' })),
   })),
-  {
-    id: 'bge-m3-q8_0',
-    label: 'BGE-M3 Q8_0',
+  // BGE-M3 is trained for [CLS] pooling, but the first profile ran llama.cpp with mean pooling
+  // (llama.cpp warns about it; SciFact nDCG@10 0.425, far below its published dense result). Its id,
+  // contract and fingerprint stay as they were so prepared indexes remain valid; both share one download.
+  ...([
+    { id: 'bge-m3-q8_0-cls', label: 'BGE-M3 Q8_0 · CLS', pooling: 'cls' as const, description: 'Embeddings multilingües de alta calidad para corpus amplios.' },
+    { id: 'bge-m3-q8_0', label: 'BGE-M3 Q8_0 · mean', supersededBy: 'bge-m3-q8_0-cls', description: 'Perfil anterior con mean pooling. Sigue sirviendo los índices ya preparados; para un índice nuevo usa BGE-M3 Q8_0 · CLS.' },
+  ]).map((profile): NodusLocalModelDefinition => ({
+    ...profile,
     kind: 'embedding',
     runtime: 'llama_cpp',
     quantization: 'Q8_0',
-    description: 'Embeddings multilingües de alta calidad para corpus amplios.',
     sourceUrl: 'https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF',
     licenseLabel: 'MIT',
     licenseUrl: 'https://huggingface.co/BAAI/bge-m3',
     contextLength: 8192,
     dimensions: 1024,
+    assetFamily: 'bge-m3-q8_0',
+    assetFamilyLabel: 'BGE-M3 Q8_0',
     capabilities: EMBEDDING_CAPABILITIES,
     modelFile: 'bge-m3-q8_0.gguf',
     assets: [
@@ -208,7 +219,7 @@ export const NODUS_LOCAL_MODELS: readonly NodusLocalModelDefinition[] = [
         sha256: 'aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173',
       },
     ],
-  },
+  })),
   {
     // Q8_0 conversion of microsoft/harrier-oss-v1-0.6b. Its vectors were checked against the
     // onnx-community FP16 export of the original weights (cosine 0.9999 on multilingual text):
@@ -240,18 +251,22 @@ export const NODUS_LOCAL_MODELS: readonly NodusLocalModelDefinition[] = [
       },
     ],
   },
-  {
-    id: 'gte-multilingual-base-int8',
-    label: 'GTE Multilingual Base INT8',
+  // Same story as BGE-M3: GTE is trained for [CLS] pooling and the first profile pooled the mean.
+  ...([
+    { id: 'gte-multilingual-base-int8-cls', label: 'GTE Multilingual Base INT8 · CLS', pooling: 'cls' as const, description: 'Embeddings multilingües con contexto largo y buen equilibrio entre precisión y memoria.' },
+    { id: 'gte-multilingual-base-int8', label: 'GTE Multilingual Base INT8 · mean', supersededBy: 'gte-multilingual-base-int8-cls', description: 'Perfil anterior con mean pooling. Sigue sirviendo los índices ya preparados; para un índice nuevo usa GTE Multilingual Base INT8 · CLS.' },
+  ]).map((profile): NodusLocalModelDefinition => ({
+    ...profile,
     kind: 'embedding',
     runtime: 'transformers',
     quantization: 'INT8',
-    description: 'Embeddings multilingües con contexto largo y buen equilibrio entre precisión y memoria.',
     sourceUrl: 'https://huggingface.co/onnx-community/gte-multilingual-base',
     licenseLabel: 'Apache-2.0',
     licenseUrl: 'https://huggingface.co/Alibaba-NLP/gte-multilingual-base',
     contextLength: 8192,
     dimensions: 768,
+    assetFamily: 'gte-multilingual-base-int8',
+    assetFamilyLabel: 'GTE Multilingual Base INT8',
     capabilities: EMBEDDING_CAPABILITIES,
     modelFile: 'onnx/model_int8.onnx',
     assets: [
@@ -271,7 +286,7 @@ export const NODUS_LOCAL_MODELS: readonly NodusLocalModelDefinition[] = [
         sha256: 'ab2bd164ebd8ca9003dc49a981b611e849b5d326f504c8873ba76e07fa6c0082',
       },
     ],
-  },
+  })),
   {
     id: 'multilingual-e5-small-int8',
     label: 'Multilingual E5 Small INT8',
